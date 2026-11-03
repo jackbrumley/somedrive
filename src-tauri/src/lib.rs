@@ -1,53 +1,31 @@
 mod app;
+mod launch;
 mod platform;
 
 #[cfg(target_os = "linux")]
 pub use platform::linux::wayland::env::configure_linux_app_identity;
 
 use app::commands::*;
-use tauri::Manager;
-
-/// Options parsed from the command line in `main.rs`.
-pub struct LaunchOptions {
-    /// The in-app updater relaunched this version because the install failed.
-    pub update_failed: bool,
-}
+pub use launch::{parse_launch_options, LaunchOptions};
 
 pub fn run(launch: LaunchOptions) {
-    if let Err(error) = app::session_log::initialize_session_logging() {
-        eprintln!("Failed to initialize session logging: {}", error);
-    }
-    if let Err(error) = app::session_log::initialize_app_logger() {
-        eprintln!("Failed to initialize app logger: {}", error);
-    }
-
-    log::info!(
-        "Application launch | version={} platform={}/{}",
-        env!("CARGO_PKG_VERSION"),
-        std::env::consts::OS,
-        std::env::consts::ARCH
-    );
-
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            log::warn!("Second launch attempt detected; focusing existing window");
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-            }
+        // Must be the first plugin: a second launch hands its arguments to the
+        // running instance and exits here, before it writes to that
+        // instance's logs or starts a second sync engine.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            app::tray::handle_second_launch(app, launch::launch_shows_window(&args));
         }))
-        .plugin(tauri_plugin_autostart::Builder::new().build())
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .app_name("somedrive")
+                .arg("--start-hidden")
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(app::state::create_app_state())
-        .setup(move |app| {
-            app::bootstrap::configure_shell(app)?;
-            if launch.update_failed {
-                app::commands::update::show_update_failed_dialog(app.handle());
-            }
-            Ok(())
-        })
+        .setup(move |app| app::bootstrap::run_setup(app, launch))
         .invoke_handler(tauri::generate_handler![
             get_status_snapshot,
             get_sync_runtime_snapshot,
@@ -56,6 +34,10 @@ pub fn run(launch: LaunchOptions) {
             set_sync_download_concurrency,
             check_for_updates,
             install_update,
+            minimize_to_tray_or_taskbar,
+            close_main_window,
+            get_close_to_tray,
+            set_close_to_tray,
             list_account_profiles,
             create_account_profile,
             rename_account_profile,
@@ -85,6 +67,14 @@ pub fn run(launch: LaunchOptions) {
             app::session_log::get_raw_logger_mode,
             app::session_log::set_raw_logger_mode
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // The single shutdown owner: every exit (tray Quit, close with
+            // close-to-tray off, a termination signal, an update) passes
+            // through here, so sync is drained before the process ends.
+            if let tauri::RunEvent::Exit = event {
+                app::shutdown::finish_before_exit(app_handle);
+            }
+        });
 }

@@ -5,6 +5,7 @@ pub mod status;
 pub mod sync_runtime;
 pub mod sync_settings;
 pub mod update;
+pub mod window;
 
 pub use accounts::*;
 pub use activity::*;
@@ -13,3 +14,4 @@ pub use status::*;
 pub use sync_runtime::*;
 pub use sync_settings::*;
 pub use update::*;
+pub use window::*;

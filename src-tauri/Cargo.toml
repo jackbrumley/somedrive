@@ -23,7 +23,7 @@ dirs = "5.0"
 arboard = "3"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 futures-util = "0.3"
-tokio = { version = "1", features = ["sync", "time", "macros"] }
+tokio = { version = "1", features = ["sync", "time", "macros", "signal"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
@@ -34,6 +34,10 @@ clap = { version = "4", features = ["derive"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 # GTK prgname = Wayland app_id; must be set before any GTK use (platform::linux).
 gtk = "0.18"
+# The tray is a StatusNotifierItem (ksni): Tauri's Linux tray (libappindicator)
+# reports no clicks. zbus checks for a StatusNotifier watcher.
+ksni = { version = "0.3.7", default-features = false, features = ["tokio"] }
+zbus = "5"
 
 [target.'cfg(unix)'.dependencies]
 # setsid() detaches the in-app updater from the app's session.

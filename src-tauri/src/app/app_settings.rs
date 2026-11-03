@@ -5,22 +5,35 @@ const DEFAULT_DOWNLOAD_CONCURRENCY: usize = 12;
 const MIN_DOWNLOAD_CONCURRENCY: usize = 8;
 const MAX_DOWNLOAD_CONCURRENCY: usize = 256;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct AppSettingsFile {
     #[serde(default)]
     sync: SyncSettings,
     #[serde(default)]
+    window: WindowSettings,
+    #[serde(default)]
     developer: DeveloperSettings,
 }
 
-impl Default for AppSettingsFile {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WindowSettings {
+    /// Closing the window parks it (tray, else taskbar) instead of quitting.
+    #[serde(default = "default_close_to_tray")]
+    close_to_tray: bool,
+}
+
+impl Default for WindowSettings {
     fn default() -> Self {
         Self {
-            sync: SyncSettings::default(),
-            developer: DeveloperSettings::default(),
+            close_to_tray: default_close_to_tray(),
         }
     }
+}
+
+fn default_close_to_tray() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +75,17 @@ pub fn save_sync_download_concurrency(value: usize) -> Result<usize, String> {
     settings.sync.download_concurrency = normalized;
     save_app_settings(&settings)?;
     Ok(normalized)
+}
+
+pub fn load_close_to_tray() -> Result<bool, String> {
+    let settings = load_or_create_app_settings()?;
+    Ok(settings.window.close_to_tray)
+}
+
+pub fn save_close_to_tray(enabled: bool) -> Result<(), String> {
+    let mut settings = load_or_create_app_settings()?;
+    settings.window.close_to_tray = enabled;
+    save_app_settings(&settings)
 }
 
 pub fn load_raw_logger_mode() -> Result<bool, String> {
@@ -132,4 +156,17 @@ fn app_settings_path() -> Result<PathBuf, String> {
     let config_dir =
         dirs::config_dir().ok_or_else(|| "Could not resolve config directory".to_string())?;
     Ok(config_dir.join("somedrive").join("app_settings.json"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AppSettingsFile;
+
+    #[test]
+    fn close_to_tray_defaults_on_for_new_and_existing_settings() {
+        assert!(AppSettingsFile::default().window.close_to_tray);
+        let existing: AppSettingsFile =
+            serde_json::from_str(r#"{"sync":{"downloadConcurrency":12}}"#).unwrap();
+        assert!(existing.window.close_to_tray);
+    }
 }

@@ -6,6 +6,8 @@ pub mod bootstrap;
 pub mod commands;
 pub mod log_context;
 pub mod session_log;
+pub mod shutdown;
 pub mod state;
 pub mod sync_engine;
 pub mod sync_runtime;
+pub mod tray;
