@@ -3,7 +3,7 @@ mod launch;
 mod platform;
 
 #[cfg(target_os = "linux")]
-pub use platform::linux::wayland::env::configure_linux_app_identity;
+pub use platform::linux::wayland::env::configure_linux_session_environment;
 
 use app::commands::*;
 pub use launch::{parse_launch_options, LaunchOptions};
