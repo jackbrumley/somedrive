@@ -1,5 +1,5 @@
-use chrono::Local;
 use crate::app::sync_engine::build_authoritative_runtime_status;
+use chrono::Local;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -478,7 +478,13 @@ pub fn set_remote_download_counters(
     retry_waiting: usize,
 ) {
     let status = ensure_account_status(runtime_map, profile_id);
-    let _ = (planned_total, completed_total, failed_total, in_flight, retry_waiting);
+    let _ = (
+        planned_total,
+        completed_total,
+        failed_total,
+        in_flight,
+        retry_waiting,
+    );
     status.updated_at = now_rfc3339();
     bump_runtime_revision();
     emit_status_event_for_account(runtime_map, profile_id, StatusEventEmitMode::Throttled);
@@ -671,7 +677,10 @@ fn emit_status_event_for_account(
     }
 
     if let Ok(mut last_emit_map) = SYNC_STATUS_LAST_EMIT_MS_BY_ACCOUNT.lock() {
-        last_emit_map.insert(profile_id.to_string(), chrono::Utc::now().timestamp_millis());
+        last_emit_map.insert(
+            profile_id.to_string(),
+            chrono::Utc::now().timestamp_millis(),
+        );
     }
     if let Some(status) = runtime_map.get(profile_id) {
         match build_authoritative_runtime_status(profile_id, status.auth_ready) {
@@ -1024,7 +1033,10 @@ mod tests {
 
         recompute_authority_fields(&mut status);
 
-        assert!(has_violation(&status, "in_flight_counter_without_active_rows"));
+        assert!(has_violation(
+            &status,
+            "in_flight_counter_without_active_rows"
+        ));
         assert!(!status.consistency.ok);
     }
 }

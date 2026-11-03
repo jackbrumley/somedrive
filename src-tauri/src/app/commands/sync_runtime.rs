@@ -31,7 +31,12 @@ fn build_authoritative_sync_runtime_snapshot(
         let auth_ready = profile_auth_by_id
             .get(&account.profile_id)
             .copied()
-            .unwrap_or_else(|| runtime_auth_by_id.get(&account.profile_id).copied().unwrap_or(false));
+            .unwrap_or_else(|| {
+                runtime_auth_by_id
+                    .get(&account.profile_id)
+                    .copied()
+                    .unwrap_or(false)
+            });
         let authoritative = build_authoritative_runtime_status(&account.profile_id, auth_ready)?;
         authoritative_accounts.push(authoritative);
     }
