@@ -1,135 +1,221 @@
-# SomeDrive Agent Manifesto & Guidelines
+# SomeDrive Agent Guidelines
 
-This document serves as a constitution for all agentic coding entities (and humans) operating within this repository. Integrity, cleanliness, and architectural soundness are our primary metrics of success.
+SomeDrive is a Linux-first Microsoft OneDrive sync client (Tauri 2, Rust,
+Preact + TypeScript). It follows two shared standards, which together are
+the core reference for every app (Voquill, Rusty G6, SomeDrive, Yambuck):
 
----
+- [App Standard](https://github.com/jackbrumley/jackbrumley.github.io/blob/main/APP_STANDARD.md):
+  window, Linux start-up environment, logging, diagnostics, settings storage
+  and layout, CI and repository conventions.
+- [Release and Update Standard](https://github.com/jackbrumley/jackbrumley.github.io/blob/main/RELEASE_STANDARD.md):
+  releases, installers, in-app updates, app identity and the app shell.
 
-## 🏛️ The Project Philosophy
-
-### 1. Integrity Over Expediency
-We do not value "quick hacks" that work today but create technical debt for tomorrow. If a feature or fix cannot be implemented cleanly, it should not be implemented until a proper architectural solution is found. 
-- **No Shortcuts:** "Temporary" workarounds are forbidden. If a platform (like Wayland) restricts an action, we find the compliant API (like XDG Portals) instead of forcing a legacy hack.
-- **No Half-Efforts:** Features must be substantially complete and polished. This includes proper error handling, logging, and UI feedback.
-- **Clean Over Functional:** We would rather have a clean, well-organized codebase that is missing a feature than a messy one that has it.
-
-### 2. Neatness, Tidiness, and OCD-Standard Code
-Code is for humans to read, and only secondarily for machines to execute.
-- **Semantic Clarity:** Variable names must be descriptive and intentional. Avoid abbreviations like `amt` for `amount` or `idx` for `index`.
-- **Single Responsibility:** Functions and modules must do one thing and do it well. Large functions should be decomposed into logical units.
-- **Formatting:** Strict adherence to `cargo fmt` and `npm run typecheck`.
-- **Proactive Cleanup:** If you see messy code, redundant nesting, or illogical organization, you are expected to suggest a cleanup or fix it immediately (after confirming with the user).
-
-### 3. Linux Display Server Support
-Linux support targets both Wayland and X11, with clear platform boundaries.
-- **Wayland Path:** Use **XDG Portals** (via `ashpd`) for hardware access (Microphone, Shortcuts, Input Emulation).
-- **X11 Path:** Use native X11-compatible backends for shortcuts/input while keeping behavior aligned with Wayland as closely as possible.
-- **Compositor Awareness:** Recognize that Wayland compositors (GNOME, KDE, Hyprland) have strict security models; keep those integrations explicit and future-proof.
-- **Primary Delivery:** Prefer distro-native Linux packages (`.deb` / `.rpm`) where possible, and treat AppImage as the cross-distro fallback.
-
-### 4. Root Cause First
-We solve problems at their origin. If data is messy, redundant, or incorrect, do not "clean it up" at the consumer level (e.g., in the UI or intermediate wrappers). Trace the data back to its absolute source of truth and fix the generation/fetching logic there. A workaround is technical debt; a root-cause fix is engineering.
-
-### 5. Lean, Durable Architecture (No Bloat)
-We design for long-term maintainability as a solo-developed project. Architecture must remain clean and scalable without over-engineering.
-- **Capability-Driven, Not Distro-Driven:** Organize by platform and protocol capabilities, not by distro names. Prefer runtime capability detection over hardcoded Fedora/GNOME/KDE branching.
-- **One Owner Per Concern:** Session lifecycle, portal API integration, state transitions, and UI mapping should each have a clear single owner.
-- **No Abstraction Without Payoff:** New modules or traits must reduce duplication, simplify reasoning, or improve reliability. Avoid "future-proof" layers that are unused.
-- **Small, Localized Change Surface:** Future platform changes (portal updates, new compositor behavior) should require minor edits in capability/adapter modules, not architectural rewrites.
-- **State Machines Over Ad-Hoc Flags:** For non-trivial flows (permissions, hotkeys, portal sessions), prefer explicit state transitions over scattered booleans.
-
-### 6. Platform Adaptation Pattern
-When implementing platform-sensitive features, follow this structure:
-1. **Platform Boundary First:** Keep OS/display boundaries (`linux/wayland`, `linux/x11`, `windows`) as top-level separations.
-2. **Provider Layer Second:** Within a platform, isolate backend/provider behavior (e.g., portal capabilities and session handling).
-3. **Quirks Last:** Only add DE/provider-specific quirk modules when a real incompatibility is confirmed and cannot be solved generically.
-
-This pattern keeps the codebase clean as new distros, compositor versions, or portal changes appear.
-
-### 7. Development-Phase Data Policy (Clean Slate)
-This project is currently in active development and testing. We optimize for speed of iteration and clarity, not backward compatibility.
-- **No Backward Compatibility Requirement:** Local config/state formats can change directly when needed.
-- **No Legacy Layers:** Do not add migration code, compatibility shims, fallback adapters, or legacy parsing paths.
-- **Direct Schema Evolution:** If storage/schema changes, update the active model and related code paths directly.
-- **Fresh-State Testing Expected:** During testing, it is valid and expected to remove local app data/accounts and re-run setup from a clean install.
-- **Pre-Release Reassessment:** Compatibility policy can be revisited when moving toward beta/public release readiness.
-
-### 8. State Authority & Activity Pipeline (Required)
-All user-visible runtime state (sync phase, current activity, progress, blockers, counters) must have one authority and one write path.
-- **Single Source of Truth:** SQLite-backed lifecycle/runtime state is authoritative by default.
-- **One Writer API:** All activity/phase/progress updates must flow through one centralized backend writer that updates runtime + persistence together.
-- **No Direct Side Writes:** Any code path that mutates the same state outside the central writer is a defect.
-- **No Dual Authority:** UI-local inferred state must not compete with persisted lifecycle/runtime state.
-- **Structured Activity Contract:** Represent activity as structured fields (`stage`, `progress_mode`, `current`, `total`, `unit`, `detail`, `updated_at`, `cycle_id`) instead of scattered free-form strings.
-- **UI as Renderer:** Frontend renders authoritative activity state; it must not fabricate status from heuristics.
-- **Pause/Resume Invariant:** Pause/resume/cancel transitions must be immediately reflected in authoritative state and stay consistent across hydration/reload.
-
-### 9. Consistency, Single Responsibility, and Duplication Guardrails
-- **One Owner Per Concern:** Lifecycle transitions, queue state, planner state, and UI mapping must each have a clear owner.
-- **No Duplicate Decision Paths:** If the same business rule appears in multiple places, centralize it.
-- **No Band-Aids:** Do not patch UI symptoms to hide backend state drift. Fix the source logic.
-- **Naming Must Match Responsibility:** Module/class/function names must reflect actual responsibility. Rename stale legacy names.
-- **No Silent Divergence:** If two paths can produce conflicting truth for the same data, treat it as a blocker, not a follow-up.
-
-### 10. Proactive Integrity Review Duty (Mandatory)
-Agents are expected to proactively detect and escalate architectural drift, even outside the immediate task.
-- **Detect While Working:** Look for nearby violations (duplicate logic, split authority, stale/dead paths, inconsistent ownership, UI inference over source data).
-- **Report Immediately:** If found, explicitly state what is inconsistent, why it is risky, and what root-cause fix is recommended.
-- **Ask to Fold In:** If outside scope, ask whether to include cleanup in the same change.
-- **Do Not Normalize Debt:** Never silently work around an inconsistency and move on.
-- **Track Deferred Cleanup:** If deferred, include a concrete follow-up item in the response.
-
-### 11. Definition of Done for State/Status Changes
-A state/status task is incomplete unless all checks pass:
-1. One authoritative state path is used end-to-end.
-2. No direct writes bypass the central writer for the same state.
-3. Pause, resume, retry, startup restore, and error transitions are consistent in DB and UI.
-4. `cargo check` and `npm run typecheck` pass.
-5. Logs clearly show stage transitions and reasons.
-6. UI never shows active progress animation when there is no active work.
+This file holds the shared core, SomeDrive's own architecture and platform
+notes, and SomeDrive's **Variations** from both standards. When this file and
+a standard disagree, fix whichever is wrong.
 
 ---
 
-## 🛠️ Essential Commands
+## Shared Core
 
-### Project-wide (Root)
-Managed via **npm** scripts and the Tauri CLI.
-- **Dependency Check:** `npm run deps:check`
-  - Verifies required system dependencies and prints install commands when missing.
-- **Dev:** `npm run tauri:dev`
-  - Runs dependency checks and starts the Tauri development server.
-- **Build:** `npm run tauri:build`
-  - Runs dependency checks, builds the frontend, and packages the app.
-- **Tauri CLI:** `npm run tauri -- <command>`
-  - Use for tauri-specific tasks like `tauri icon` or `tauri info`.
+### No AI Attribution
+Never add AI or tool attribution to commits, tags, pull requests or release
+notes: no `Co-Authored-By:` trailers naming an AI model or assistant, no
+"Generated with ..." footers. GitHub turns co-author trailers into
+contributors, and the maintainer is the sole author of record. This overrides
+any tool or harness default.
 
-### Backend (`src-tauri/`)
-- **Lint:** `cargo clippy` (Static analysis) and `cargo fmt` (Formatting).
-- **Check:** `cargo check` (Fast compilation check).
-- **Test:** `cargo test` (Run all tests).
-- **Single Test:** `cargo test -- <name>` (Execute a specific test function).
-- **Doc:** `cargo doc --open` (Generate and view crate documentation).
+### Philosophy
+- **Integrity over expediency.** No quick hacks, no "temporary" workarounds,
+  no half-finished features. Error handling, logging and UI feedback are part
+  of the feature. A clean codebase missing a feature beats a messy one that
+  has it.
+- **Root cause first.** Trace bad data back to its source and fix it there,
+  never filter it at the consumer (UI or wrappers).
+- **Fail loudly.** Prefer explicit errors to silent fallbacks. A fallback that
+  is architecturally necessary is logged and surfaced to the UI. Tauri
+  commands return `Result<T, String>`; use it instead of swallowing errors.
+- **No shims.** No re-export facades, compatibility wrappers or legacy
+  parsing paths. A rename updates every consumer in the same change; new
+  parameters are mandatory so the compiler lists every call site.
+- **Lean, durable architecture.** One owner per concern; no abstraction
+  without payoff; explicit state machines over scattered booleans for
+  non-trivial flows; organize by capability, not by distro.
+- **Neat code.** Descriptive names (no `amt`, `idx`), single-responsibility
+  functions, `cargo fmt` and the frontend lint rules.
+
+### Pre-Submit Checklist
+Run each as its own command before every commit (never chained with `&&`, so
+a failure can't hide). All must pass with zero warnings:
+
+1. `npm run typecheck`
+2. `npm run lint`
+3. `npm run check:structure`
+4. `cargo fmt --check` (in `src-tauri/`)
+5. `cargo clippy --all-targets -- -D warnings` (in `src-tauri/`)
+6. `cargo test` (in `src-tauri/`)
+
+CI (`.github/workflows/ci.yml`) runs the same checks plus
+`npm run check:sync-status-writes`, the frontend build and `bash -n` on the
+installers. A necessary `#[allow]` carries a
+comment saying why; dead code is deleted, not silenced.
+
+### File Size Budget
+- **600 lines soft:** plan a structural extraction. `npm run
+  check:structure` (`scripts/check-file-lines.mjs`) reports these.
+- **1000 lines hard:** `check:structure` fails. A file being split may sit on
+  the script's commented allowlist.
+- Extract by domain (state, effects and handlers that change together), one
+  concern per file, named by responsibility; never numeric shards
+  (`part1`, `part2`) and never compressing code to hit a count.
+
+### Common Pitfalls
+- **Blocking the UI:** no expensive work or blocking I/O on the main thread.
+- **Paths:** only `src-tauri/src/paths.rs` calls `dirs::`.
+- **Settings files:** only `app::json_store` reads and writes the JSON
+  settings and state files (atomic writes, quarantine of damaged files).
+- **Silent failures:** log every error and, when relevant, tell the user
+  (toast or sync status).
+- **Naming:** Rust `snake_case`, TypeScript `camelCase`; never mixed.
+- **Documentation:** never document commands or files that don't exist.
+
+### Working in This Repo
+- Work happens on `dev`; `main` only moves by release promotion. Commits are
+  Conventional Commits.
+- Don't commit without the maintainer's approval; never push, tag, release
+  or promote unless asked. Releases follow `docs/RELEASE.md` exactly.
+- Plans and known bugs live in `docs/TODO.md` (Now / Next / Ideas).
+- Changes you didn't make (the maintainer or another agent) are intentional
+  unless you're told otherwise; never roll them back.
+- Look for nearby mess and offer to tidy it; correct a false premise rather
+  than follow it; ask before structural moves or renames.
+
+---
+
+## SomeDrive Architecture
+
+### Backend (`src-tauri/src/`)
+- `main.rs` is bootstrap only: panic hook, Linux session environment
+  (`platform::linux::wayland::env`), command-line options (`launch.rs`),
+  then `lib.rs::run`.
+- `lib.rs` composes plugins, the setup hook (`app::bootstrap::run_setup`),
+  the `RunEvent::Exit` shutdown owner and the command list. Command
+  implementations live in `app/commands/`; domain logic in focused `app/`
+  modules.
+- `paths.rs` owns every on-disk location (all under `~/.config/somedrive`;
+  synced files default to `~/SomeDrive/<account>`).
+- `app/json_store.rs` owns JSON settings and state: `app_settings.json`,
+  `accounts/profiles.json`, each account's `auth.json` (refresh tokens,
+  written 0600) and `activity/events.json`.
+- `app/session_log.rs` is the `log` backend (see Variations for the log
+  files); `app/system_info.rs` builds the log header and the System info
+  block.
+- `app/sync_engine.rs` assembles the sync engine from the files in
+  `app/sync_engine/` (`include!`d into one module): cycle orchestration,
+  remote delta pipeline, download/upload lanes, planner and job queue, all
+  backed by each account's SQLite `sync_jobs.db`.
+- `app/sync_runtime.rs` holds the live per-account status the UI renders,
+  emitted as `sync-status` events.
+- `app/tray/` and `app/shutdown.rs` are the app shell and the single exit
+  path (see Variations).
+
+### State Authority and the Activity Pipeline (required)
+All user-visible runtime state (sync phase, current activity, progress,
+blockers, counters) has one authority and one write path.
+- **SQLite is the source of truth.** Lifecycle and runtime state persists in
+  the account's `sync_jobs.db`.
+- **One writer.** Activity, phase and progress updates go through the
+  central writer (`sync_engine/lifecycle_writer.rs`), which updates runtime
+  and persistence together. A side write to the same state is a defect;
+  `npm run check:sync-status-writes` guards the runtime status fields.
+- **Structured activity contract:** `stage`, `progress_mode`, `current`,
+  `total`, `unit`, `detail`, `updated_at`, `cycle_id`, never free-form
+  strings.
+- **The UI renders, it doesn't infer.** No UI-local state may compete with
+  the persisted lifecycle/runtime state, and the UI never shows progress
+  animation without active work.
+- **Pause, resume, retry, startup restore and error transitions** are
+  reflected immediately in the authoritative state and stay consistent
+  across reloads.
+- A state or status change is done only when one authoritative path is used
+  end to end, the transitions above stay consistent in DB and UI, and the
+  logs show each stage transition and its reason.
+
+### Development-Phase Data Policy
+SomeDrive is pre-1.0. Local config and state formats may change directly:
+no migration code or legacy parsing paths, and testing from a clean
+`~/.config/somedrive` is expected. Revisit before a stable release.
 
 ### Frontend (`src/`)
-- **Type Check:** `npm run typecheck`
-  - Essential for verifying TypeScript integrity.
-- **Lint:** `npm run lint`
-  - Uses ESLint to enforce project styling rules.
-- **Dev Server:** `npm run dev`
-  - Starts the Vite dev server for UI-only iteration.
-- **Preview:** `npm run preview`
-  - Previews the production build of the UI.
+- Strict TypeScript (no `any`), functional components, logic in hooks under
+  `src/hooks/` (`useAppRuntime` orchestrates; `useUpdates`, `useToastManager`,
+  `useWindowControls` own their concerns).
+- `main.tsx` is entry wiring only; `App.tsx` composes shell, layout and hooks.
+- `src/styles.css` only imports the focused files in `src/styles/`.
+- **UI consistency contract:** shared layout primitives (`.page`,
+  `.page-header`, cards, header actions) are defined once and reused; back
+  control left, title centred, actions right; operational telemetry on
+  operational pages, account settings pages configuration-only; replacing a
+  pattern removes the old one in the same change.
+
+### Commands
+- `npm run tauri:dev` / `npm run tauri:build`: run or build the app.
+- `npm run dev` / `npm run build` / `npm run preview`: the frontend alone
+  (`build` typechecks first).
+- `npm run typecheck`, `npm run lint`, `npm run check:structure`,
+  `npm run check:sync-status-writes`.
+- `npm run icons:generate`: regenerate the app icons from `docs/logo.svg`.
+- `npm run release:linux|prepare|notes|verify|promote`: see `docs/RELEASE.md`.
+- In `src-tauri/`: `cargo fmt`, `cargo check`, `cargo clippy --all-targets`,
+  `cargo test` (`cargo test -- <name>` for one test).
 
 ---
 
-## 🚀 Releases and Updates
+## Platform Notes
 
-Follow the
-[Release and Update Standard](https://github.com/jackbrumley/jackbrumley.github.io/blob/main/RELEASE_STANDARD.md)
-(shared with Voquill, Rusty G6 and Yambuck). The step-by-step procedure is
-`docs/RELEASE.md`. Never run `npm run release:promote` unless the maintainer
-asks.
+- **Linux only.** Wayland and X11 are both supported; the session
+  environment is set before Tauri starts (App Standard section 2).
+- **Packages first:** `.deb` and `.rpm` are the primary delivery, the
+  AppImage the cross-distro fallback (`docs/install.sh`).
+- **Tray:** a StatusNotifierItem. Stock GNOME needs the AppIndicator
+  extension; without a tray, closing parks the window in the taskbar.
+- **Sign-in** runs in an in-app webview window against Microsoft's login
+  pages; tokens are stored by SomeDrive in `auth.json`, not in the webview.
 
-SomeDrive's variations from the standard:
+---
+
+## Variations
+
+### From the App Standard
+- **Window:** minimum 640 x 480. The corner resize handles in
+  `AppShell.tsx` / `shell.css` / `useWindowControls.ts` are the standard's
+  reference implementation.
+- **Logging:** `debug/session.log` follows the standard (rotated to
+  `last-session.log` at start-up, system info header, RFC 3339 timestamps,
+  level in Settings -> Debug, panic hook). SomeDrive adds:
+  - `debug/profiles/<account>.log`: each account's detailed sync trace,
+    size-rotated (20 MB x 5). Only that account's warnings, errors and cycle
+    milestones also reach the session log, which keeps it readable with
+    several busy accounts.
+  - `debug/raw/raw-<time>.log`: everything combined, only while the
+    developer option "Raw logger mode" is on (last 10 kept).
+  - Because SomeDrive runs for weeks, a session log over 20 MB rolls over to
+    `session.log.1` mid-session.
+- **Diagnostics:** the Logs block (Copy log, Open log, Open log folder,
+  System info with copy, log level) is in Settings -> Debug, with raw logger
+  mode. The Debug Tools page behind it holds UI Lab, the session log preview,
+  per-account logs and the runtime snapshot.
+- **Settings storage:** `migrate_legacy_fields` is not needed yet (no field
+  has been renamed). An unreadable `app_settings.json` or `profiles.json`
+  stops start-up; an unreadable or damaged `auth.json` means that account
+  must sign in again.
+- **Settings order:** General, Updates, Sync Performance, Debug.
+- **CI:** Linux only, and it also runs `npm run check:sync-status-writes`.
+
+### From the Release and Update Standard
+The step-by-step procedure is `docs/RELEASE.md`. Never run
+`npm run release:promote` unless the maintainer asks.
+
 - **Platforms:** Linux only. Three assets (`somedrive-X.Y.Z-linux-x64.deb`,
   `.rpm`, `.AppImage`), named only by `scripts/release-assets.mjs`. No
   Windows installer scripts and no Windows build or install-test job.
@@ -189,113 +275,3 @@ SomeDrive's variations from the standard:
   `xdg-open`) on top of the standard WebKitGTK set, in
   `src-tauri/packaging/linux/Containerfile`. No OpenSSL (reqwest uses
   rustls) and no tray library.
-
----
-
-## 🏗️ Architecture & Patterns
-
-### 1. Backend (Rust)
-- **Async Flow:** Use `tokio` or `tauri::async_runtime` for all I/O, network, and audio operations. Never block the main thread.
-- **Error Handling:** Use `anyhow` for internal propagation to maintain context.
-- **Command Safety:** Return `Result<T, String>` for all `#[tauri::command]` functions. The error string is what the frontend `Promise.reject` receives.
-- **State Management:** Use `AppState` (managed by Tauri) to hold shared resources like `Config`, `AudioStream`, or `RecordingState`.
-- **Modularity:** Keep hardware-specific logic isolated in modules (e.g., `audio.rs`, `typing.rs`, `hotkey.rs`).
-
-### 2. Frontend (Preact)
-- **Strict TypeScript:** No `any`. Explicit interfaces for all data structures (API responses, State slices).
-- **Hooks over Classes:** Use functional components and custom hooks (in `src/hooks/`) for logic isolation.
-- **Styles:** Keep `src/styles.css` as an import aggregator only. Split style concerns into focused files under `src/styles/` (shell, pages, accounts, forms, sync, toast, etc.).
-- **Component Styling:** Prefer local style ownership by concern; avoid adding new rules to a giant catch-all stylesheet.
-- **Tauri Core:** Use `@tauri-apps/api` for communication with the backend.
-
-#### UI Consistency Contract (Required)
-- **Define Once, Reuse Everywhere:** Shared page layout primitives (`.page`, `.page-header`, `.page-subtitle`, card spacing, header action zones) are global contracts. Do not recreate them per page.
-- **No Duplicate Patterns:** If multiple pages share a pattern, they must use the same component/classes. Avoid one-off spacing/alignment overrides unless there is a confirmed exception.
-- **Header Contract:** Back control left, title centered to viewport, actions right. Keep one canonical implementation and avoid transform-based control centering that causes soft/blurry rendering.
-- **Operational vs Settings Separation:** Runtime/synchronization telemetry belongs on operational pages; account settings pages must remain configuration-only.
-- **Naming Must Match Reality:** Component/class names must reflect actual role (`Panel`, `Page`, `Section`). Do not keep legacy names like `Popover` when content is page-embedded.
-- **Refactor Completion Rule:** When replacing a UI pattern, remove dead pages/components/styles in the same change (or immediately after) so the codebase has one source of truth.
-- **Acceptance Check (UI Work):** Before marking complete, verify consistent spacing/header behavior across active pages and run `npm run typecheck` + `cargo check`.
-
-### 3. Structure Contracts (Enforced)
-- **File Size Ceiling:** No `.rs`, `.ts`, `.tsx`, or `.css` source file may exceed **1000 lines**.
-- **Soft Size Target:** Most files should stay below 400-600 lines unless there is a clear, justified reason.
-- **Semantic Splits Only:** Never split files into numeric shards (for example `part1`, `part2`, etc.). New files must be named by responsibility and grouped by domain concern.
-- **Main Wiring Only (Rust):** `src-tauri/src/main.rs` is bootstrap-only and must contain no domain/business logic.
-- **Main Wiring Only (Frontend Entry):** `src/main.tsx` is entry wiring only.
-- **App Composition Only:** `src/App.tsx` composes shell/layout/hooks and should not hold feature/business logic.
-- **Backend Composition Point:** Register Tauri commands in `src-tauri/src/lib.rs`; keep command implementations in `src-tauri/src/app/commands/` and domain logic in focused app modules.
-
----
-
-## 📋 Platform Compatibility & Requirements
-
-| Platform | Display Server | Audio Backend | Hardware Access |
-| :--- | :--- | :--- | :--- |
-| **Linux** | Wayland, X11 | ALSA / PulseAudio | Wayland: XDG Portals (`ashpd`), X11: native X11 backends |
-| **Windows** | Desktop | WASAPI | CoreAudio API |
-
-### Linux Permission Setup
-On Wayland, the app should trigger standard XDG Portal prompts for microphone, global shortcuts, and remote desktop (input simulation). On X11, equivalent capabilities use native X11 backends and should still surface clear setup/readiness state in the UI.
-
----
-
-## 🔄 Development Workflow for New Features
-
-When adding a new feature, follow this sequence:
-1.  **Analyze Environment:** Check for platform-specific constraints (Wayland and X11 where relevant).
-2.  **Scaffold Backend:** Implement the logic in a new or existing Rust module.
-3.  **Expose Command:** Create a `#[tauri::command]` in `src-tauri/src/app/commands/` and register it in `src-tauri/src/lib.rs`.
-4.  **Implement UI:** Create the Preact component and hook it up to the command using `invoke`.
-5.  **Verify Integrity:** Run `cargo clippy`, `npm run typecheck`, and `npm run lint`.
-6.  **Test Platform Parity:** Verify the feature works on Linux (Wayland and X11) and Windows.
-
----
-
-## 🚧 High-Priority Architectural Fixes (Current Debt)
-
-Any agent working on this repo should prioritize the following cleanups:
-1.  **Large Backend Module Split:** Break down `src-tauri/src/app/sync_engine.rs` into focused modules (worker, cycle, graph client, remote/local apply, runtime updates, state persistence).
-2.  **Large Stylesheet Split:** Keep `src/styles.css` as an import-only entry and move rules into focused style files under `src/styles/`.
-3.  **Runtime Hook Decomposition:** Keep `src/hooks/useAppRuntime.ts` as an orchestrator facade while moving concerns into focused hooks/modules.
-
----
-
-## 🤖 Interaction Guidelines for Agents
-- **Look for Improvement:** Don't just implement the request. Analyze the surrounding code for "mess" and offer to tidy it up.
-- **Correct Inaccuracies Proactively:** If a user statement is technically incorrect or based on a false assumption, explicitly correct it and proceed with the correct approach. Do not silently follow an incorrect premise.
-- **Ask, Don't Assume:** If a cleanup involves structural changes (like moving folders or renaming modules), always explain *why* it's cleaner and ask for approval.
-- **Trace the Data:** Before proposing a fix for any data-related issue, trace the information back to its origin. Propose a fix for the source logic rather than a filter for the consumer.
-- **Status Updates:** Use the centralized `emit_status_update` in Rust as the single source of truth for UI state. Avoid emitting ad-hoc events for standard states.
-- **Platform Parity:** When adding a feature, ensure it is considered for Windows and Linux (Wayland and X11). If a platform requires specific logic, isolate it in a platform-specific module.
-- **UI Consistency First:** Keep the UI behavior, structure, and interaction flow identical across systems whenever possible. Only diverge at the exact point where an OS/backend capability requires it (for example, system-managed shortcut configuration vs in-app configuration).
-- **Documentation:** Proactively update `AGENTS.md` or other docs if you introduce a new architectural pattern or a major dependency.
-- **Self-Verification:** Always run `cargo check` and `npm run typecheck` before declaring a task complete.
-- **Git Commits:** Do not perform git commits without explicit user approval. Always ask for confirmation before running `git commit`.
-
-### Solo-Scale Guardrails
-- **Prefer Simplicity by Default:** Use the simplest clean solution that meets current requirements and known near-term needs.
-- **Delay Splits Until Needed:** Do not create DE-specific files/folders until at least one concrete, recurring incompatibility exists.
-- **Keep Files Focused:** A file should answer one question clearly. Split only when readability materially improves.
-- **No Silent Failure Paths:** Always surface actionable errors in logs and, when relevant, to UI status.
-- **Diagnostics Before Guesswork:** Add clear capability/version/runtime diagnostics before introducing conditional behavior.
-
-### CodePerfect Mindset (Solo Operator Standard)
-- **One Debug Lane Per Concern:** For each user-visible state (especially sync), there must be one authoritative source and one render path.
-- **No Split Authority Debt:** If a UI decision reads from two competing sources, treat that as a defect and resolve it immediately.
-- **Canonical Actions Required:** If UI shows a blocker (for example auth required), backend payload must include the concrete action set needed to recover.
-- **Recovery Path Is Not Authority:** Snapshot/recovery fetches are transport safety only; ongoing truth must come from the authoritative pipeline.
-- **Determinism Required:** For identical authoritative state and event sequence, backend payload and UI output must be identical; heuristic fallbacks that can produce alternate states are not allowed.
-
----
-
-## ⚠️ Common Pitfalls to Avoid
-- **Blocking the UI:** Never run expensive calculations or blocking I/O on the main thread.
-- **Hardcoding Paths:** Always use the Tauri `PathResolver` or standard `dirs` crate to locate configuration and data directories.
-- **Silent Failures:** Always log errors and, if relevant, notify the user via a Toast or Status update.
-- **Inconsistent Naming:** Do not mix `camelCase` and `snake_case` in the same context. Follow the established patterns (Rust: `snake_case`, TS: `camelCase`).
-- **Over-Engineering:** Prefer simple, readable code over complex "clever" solutions. If a function is hard to explain, it needs to be simplified.
-- **Ignoring Warnings:** Treat compiler warnings as errors. Clean code means zero warnings.
-
----
-*Clean code is a requirement, not a feature.*
