@@ -5,14 +5,17 @@ import { SettingsPage } from "../pages/SettingsPage";
 import { DebugPage } from "../pages/DebugPage";
 import { UiLabPage } from "../pages/UiLabPage";
 import type { useAppRuntime } from "../hooks/useAppRuntime";
+import type { useUpdates } from "../hooks/useUpdates";
 
 type AppRuntime = ReturnType<typeof useAppRuntime>;
+type AppUpdates = ReturnType<typeof useUpdates>;
 
 interface AppWorkspaceProps {
   runtime: AppRuntime;
+  updates: AppUpdates;
 }
 
-export function AppWorkspace({ runtime }: AppWorkspaceProps) {
+export function AppWorkspace({ runtime, updates }: AppWorkspaceProps) {
   const selectedAccount = runtime.routeState.accountId
     ? runtime.status.accounts.find((account) => account.id === runtime.routeState.accountId) ?? null
     : null;
@@ -69,6 +72,11 @@ export function AppWorkspace({ runtime }: AppWorkspaceProps) {
           onToggleRawLoggerMode={runtime.toggleRawLoggerMode}
           syncDownloadConcurrency={runtime.syncDownloadConcurrency}
           onChangeSyncDownloadConcurrency={runtime.updateSyncDownloadConcurrency}
+          appVersion={runtime.status.appVersion}
+          checkingUpdates={updates.checkingUpdates}
+          lastCheckedAt={updates.lastCheckedAt}
+          updateError={updates.updateError}
+          onCheckForUpdates={() => void updates.checkForUpdates(true)}
           onGoDebug={runtime.goDebug}
           onBack={runtime.goHome}
         />

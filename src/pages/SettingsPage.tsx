@@ -8,6 +8,11 @@ interface SettingsPageProps {
   onToggleRawLoggerMode: (enabled: boolean) => Promise<void>;
   syncDownloadConcurrency: number;
   onChangeSyncDownloadConcurrency: (value: number) => Promise<void>;
+  appVersion: string;
+  checkingUpdates: boolean;
+  lastCheckedAt: number | null;
+  updateError: string | null;
+  onCheckForUpdates: () => void;
   onGoDebug: () => void;
   onBack: () => void;
 }
@@ -19,6 +24,11 @@ export function SettingsPage({
   onToggleRawLoggerMode,
   syncDownloadConcurrency,
   onChangeSyncDownloadConcurrency,
+  appVersion,
+  checkingUpdates,
+  lastCheckedAt,
+  updateError,
+  onCheckForUpdates,
   onGoDebug,
   onBack,
 }: SettingsPageProps) {
@@ -32,6 +42,7 @@ export function SettingsPage({
         (downloadConcurrencyMax - downloadConcurrencyMin)
     )
   );
+  const lastCheckedLabel = lastCheckedAt === null ? "Not yet" : new Date(lastCheckedAt).toLocaleString();
 
   return (
     <section class="page">
@@ -64,6 +75,20 @@ export function SettingsPage({
               checked={autostartEnabled}
               onChange={onToggleAutostart}
             />
+          </div>
+        </article>
+
+        <article class="card">
+          <h3>Updates</h3>
+          <p>
+            You are running SomeDrive v{appVersion}. Updates install in place and sync resumes after the restart.
+          </p>
+          <p class="settings-update-meta">Last checked: {lastCheckedLabel}</p>
+          {updateError && <p class="settings-update-meta error">Last check failed: {updateError}</p>}
+          <div class="button-row">
+            <button onClick={onCheckForUpdates} disabled={checkingUpdates}>
+              {checkingUpdates ? "Checking…" : "Check for Updates"}
+            </button>
           </div>
         </article>
 

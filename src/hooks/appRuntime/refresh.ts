@@ -4,7 +4,6 @@ import type {
   AppStatusSnapshot,
   SyncRuntimeSnapshot,
   ToastType,
-  UpdateCheckResult,
 } from "../../types/somedrive";
 
 interface RefreshFactoryParams {
@@ -12,10 +11,6 @@ interface RefreshFactoryParams {
   setStatus: (value: AppStatusSnapshot) => void;
   setActivityEvents: (value: ActivityEvent[]) => void;
   setSyncRuntime: (value: SyncRuntimeSnapshot | ((current: SyncRuntimeSnapshot) => SyncRuntimeSnapshot)) => void;
-  setCheckingUpdates: (value: boolean) => void;
-  setUpdateResult: (value: UpdateCheckResult | null) => void;
-  setUpdateError: (value: string | null) => void;
-  setLastCheckedAt: (value: number | null) => void;
 }
 
 export function createRefreshActions({
@@ -23,10 +18,6 @@ export function createRefreshActions({
   setStatus,
   setActivityEvents,
   setSyncRuntime,
-  setCheckingUpdates,
-  setUpdateResult,
-  setUpdateError,
-  setLastCheckedAt,
 }: RefreshFactoryParams) {
   const snapshotTime = (value: string): number => {
     const parsed = Date.parse(value);
@@ -71,32 +62,9 @@ export function createRefreshActions({
     }
   };
 
-  const checkForUpdates = async () => {
-    setCheckingUpdates(true);
-    setUpdateError(null);
-    try {
-      const result = await invoke<UpdateCheckResult>("check_for_updates");
-      setUpdateResult(result);
-      setLastCheckedAt(Date.now());
-      if (result.updateAvailable) {
-        showToast(`Update available: v${result.latestVersion}`, "info", 3400);
-      } else {
-        showToast("You are on the latest version.", "success", 2200);
-      }
-    } catch (error) {
-      const message = String(error);
-      setUpdateError(message);
-      setLastCheckedAt(Date.now());
-      showToast(`Update check failed: ${message}`, "error", 4200);
-    } finally {
-      setCheckingUpdates(false);
-    }
-  };
-
   return {
     refreshStatus,
     refreshActivity,
     refreshSyncRuntime,
-    checkForUpdates,
   };
 }

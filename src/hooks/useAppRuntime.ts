@@ -9,7 +9,6 @@ import type {
   SyncRuntimeAccountStatus,
   SyncRuntimeSnapshot,
   ToastType,
-  UpdateCheckResult,
 } from "../types/somedrive";
 import { computeEffectiveSyncState } from "../components/accounts/syncStateSelectors";
 import { createAccountActions } from "./appRuntime/accountActions";
@@ -41,10 +40,6 @@ const initialSyncRuntime: SyncRuntimeSnapshot = {
 export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
   const [routeState, setRouteState] = useState<AppRouteState>(routeStateFromHash(window.location.hash));
   const [status, setStatus] = useState<AppStatusSnapshot>(initialStatus);
-  const [checkingUpdates, setCheckingUpdates] = useState(false);
-  const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
-  const [updateError, setUpdateError] = useState<string | null>(null);
-  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const [syncRuntime, setSyncRuntime] = useState<SyncRuntimeSnapshot>(initialSyncRuntime);
   const syncStatusSeqByAccountRef = useRef<Record<string, number>>({});
@@ -61,10 +56,6 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
         setStatus,
         setActivityEvents,
         setSyncRuntime,
-        setCheckingUpdates,
-        setUpdateResult,
-        setUpdateError,
-        setLastCheckedAt,
       }),
     [showToast]
   );
@@ -223,10 +214,6 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
   return {
     routeState,
     status,
-    checkingUpdates,
-    updateResult,
-    updateError,
-    lastCheckedAt,
     activityEvents,
     syncRuntime,
     syncingCount: syncCounts.syncing,
@@ -241,7 +228,6 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
     refreshStatus: refreshActions.refreshStatus,
     refreshActivity: refreshActions.refreshActivity,
     refreshSyncRuntime: refreshActions.refreshSyncRuntime,
-    checkForUpdates: refreshActions.checkForUpdates,
     createAccountProfile: accountActions.createAccountProfile,
     renameAccountProfile: accountActions.renameAccountProfile,
     removeAccountProfile: accountActions.removeAccountProfile,

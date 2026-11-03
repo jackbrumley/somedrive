@@ -1,0 +1,37 @@
+.update-modal > * + * {
+  margin-top: var(--space-3);
+}
+
+.update-modal p {
+  margin-bottom: 0;
+}
+
+.update-modal-versions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 0;
+  font-size: 1.05rem;
+  color: var(--text-muted);
+}
+
+.update-modal-versions strong {
+  color: var(--titlebar-solid);
+}
+
+.update-modal-status {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--control-selected-border);
+  background: var(--bg-elevated);
+  color: var(--text-main);
+}
+
+.settings-update-meta {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.settings-update-meta.error {
+  color: #c73f61;
+}

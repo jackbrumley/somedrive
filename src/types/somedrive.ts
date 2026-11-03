@@ -74,7 +74,12 @@ export interface UpdateCheckResult {
   latestVersion: string;
   updateAvailable: boolean;
   releaseUrl: string;
+  notesUrl: string | null;
 }
+
+// "finishing_sync": the backend is draining sync before the installer starts.
+// "starting": the installer is running and SomeDrive is about to exit.
+export type UpdateInstallStage = "idle" | "finishing_sync" | "starting";
 
 export interface SyncRuntimeTransfer {
   id: string;
