@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "somedrive",
   "version": "0.1.0",
-  "identifier": "org.somedrive.app",
+  "identifier": "info.brumley.somedrive",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -49,10 +49,21 @@
     "targets": "all",
     "linux": {
       "deb": {
-        "desktopTemplate": "packaging/linux/somedrive.desktop"
+        "desktopTemplate": "packaging/bundler-stub.desktop.hbs",
+        "files": {
+          "/usr/share/applications/info.brumley.somedrive.desktop": "packaging/info.brumley.somedrive.desktop"
+        }
       },
       "rpm": {
-        "desktopTemplate": "packaging/linux/somedrive.desktop"
+        "desktopTemplate": "packaging/bundler-stub.desktop.hbs",
+        "files": {
+          "/usr/share/applications/info.brumley.somedrive.desktop": "packaging/info.brumley.somedrive.desktop"
+        }
+      },
+      "appimage": {
+        "files": {
+          "/usr/share/applications/somedrive.desktop": "packaging/info.brumley.somedrive.desktop"
+        }
       }
     },
     "icon": [

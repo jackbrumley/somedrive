@@ -16,6 +16,10 @@ struct Cli {
 }
 
 fn main() {
+    // Before anything touches GTK, so the Wayland app_id is the app ID.
+    #[cfg(target_os = "linux")]
+    somedrive_lib::configure_linux_app_identity();
+
     let cli = Cli::parse();
     somedrive_lib::run(somedrive_lib::LaunchOptions {
         update_failed: cli.update_failed,

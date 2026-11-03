@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SomeDrive
+Comment=Linux-first desktop client for Microsoft OneDrive
+Exec=somedrive
+Icon=somedrive
+Terminal=false
+Categories=Network;FileTransfer;
+StartupWMClass=info.brumley.somedrive

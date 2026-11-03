@@ -3796,6 +3796,7 @@ dependencies = [
  "clap",
  "dirs 5.0.1",
  "futures-util",
+ "gtk",
  "libc",
  "log",
  "reqwest 0.12.28",

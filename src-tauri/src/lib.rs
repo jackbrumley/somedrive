@@ -1,4 +1,8 @@
 mod app;
+mod platform;
+
+#[cfg(target_os = "linux")]
+pub use platform::linux::wayland::env::configure_linux_app_identity;
 
 use app::commands::*;
 use tauri::Manager;
