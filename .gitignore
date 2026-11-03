@@ -6,3 +6,6 @@ reference-systems/
 
 # Release packaging output
 release-artifacts/
+
+# Scratch files
+temp/
