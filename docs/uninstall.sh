@@ -4,8 +4,10 @@ set -euo pipefail
 # SomeDrive uninstaller for Linux.
 #   curl -sf https://brumley.info/somedrive/uninstall.sh | bash
 
-# The binary, the deb/rpm package, the desktop file and the icon all use this name.
+# The binary, the deb/rpm package, the icon and the autostart entry use this name.
 BIN_NAME="somedrive"
+# App ID (Release and Update Standard, section 10): the launcher is <APP_ID>.desktop.
+APP_ID="info.brumley.somedrive"
 USER_DATA_DIR="${HOME}/.config/somedrive"
 
 usage() {
@@ -85,12 +87,16 @@ if optional_cmd dpkg && dpkg -s "$BIN_NAME" 2>/dev/null | grep -q "Status: insta
   run_as_root apt-get remove -y "$BIN_NAME" 2>/dev/null || run_as_root dpkg -r "$BIN_NAME"
 fi
 
-# User-local AppImage install.
+# User-local AppImage install, plus launchers and autostart entries left by
+# builds before the app ID (legacy names somedrive/SomeDrive).
 for path in \
   "${HOME}/.local/bin/${BIN_NAME}" \
-  "${HOME}/.local/share/applications/${BIN_NAME}.desktop" \
+  "${HOME}/.local/share/applications/${APP_ID}.desktop" \
   "${HOME}/.local/share/icons/hicolor/256x256/apps/${BIN_NAME}.png" \
-  "${HOME}/.config/autostart/${BIN_NAME}.desktop"; do
+  "${HOME}/.config/autostart/${BIN_NAME}.desktop" \
+  "${HOME}/.local/share/applications/somedrive.desktop" \
+  "${HOME}/.local/share/applications/SomeDrive.desktop" \
+  "${HOME}/.config/autostart/SomeDrive.desktop"; do
   if [[ -e "$path" || -L "$path" ]]; then
     log "Removing ${path}"
     rm -f "$path"

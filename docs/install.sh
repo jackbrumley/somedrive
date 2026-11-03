@@ -6,8 +6,16 @@ set -euo pipefail
 # The in-app updater re-runs this same script, so keep its options stable.
 
 REPO="jackbrumley/somedrive"
-# The binary, the deb/rpm package, the desktop file and the icon all use this name.
+# The binary, the deb/rpm package and the icon use this name.
 BIN_NAME="somedrive"
+# App ID (Release and Update Standard, section 10): the launcher is <APP_ID>.desktop.
+APP_ID="info.brumley.somedrive"
+# User launchers written by builds before the app ID existed.
+LEGACY_LAUNCHER_NAMES=("somedrive" "SomeDrive")
+# The autostart entry is named after productName (somedrive); builds whose
+# productName was "SomeDrive" wrote SomeDrive.desktop.
+AUTOSTART_DIR="${HOME}/.config/autostart"
+LEGACY_AUTOSTART_NAMES=("SomeDrive")
 INSTALL_BASE_URL="https://brumley.info/somedrive"
 
 # GitHub API request headers. SOMEDRIVE_GITHUB_TOKEN is optional: anonymous
@@ -185,11 +193,39 @@ for asset in json.load(sys.stdin).get("assets", []):
 
 remove_user_appimage() {
   local user_binary="${HOME}/.local/bin/${BIN_NAME}"
-  local user_desktop="${HOME}/.local/share/applications/${BIN_NAME}.desktop"
+  local user_desktop="${HOME}/.local/share/applications/${APP_ID}.desktop"
   for path in "$user_binary" "$user_desktop"; do
     if [[ -e "$path" || -L "$path" ]]; then
       log "Removing previous user install: ${path}"
       rm -f "$path"
+    fi
+  done
+}
+
+# Launchers left by earlier app IDs would show as a second, broken entry.
+remove_legacy_launchers() {
+  local name path
+  for name in "${LEGACY_LAUNCHER_NAMES[@]}"; do
+    path="${HOME}/.local/share/applications/${name}.desktop"
+    if [[ -e "$path" || -L "$path" ]]; then
+      log "Removing legacy launcher: ${path}"
+      rm -f "$path"
+    fi
+  done
+}
+
+# Keeps "start at login" working across the autostart entry's rename.
+migrate_legacy_autostart() {
+  local name path
+  for name in "${LEGACY_AUTOSTART_NAMES[@]}"; do
+    path="${AUTOSTART_DIR}/${name}.desktop"
+    [[ -e "$path" || -L "$path" ]] || continue
+    if [[ -e "${AUTOSTART_DIR}/${BIN_NAME}.desktop" ]]; then
+      log "Removing legacy autostart entry: ${path}"
+      rm -f "$path"
+    else
+      log "Renaming legacy autostart entry to ${BIN_NAME}.desktop"
+      mv -f "$path" "${AUTOSTART_DIR}/${BIN_NAME}.desktop"
     fi
   done
 }
@@ -298,6 +334,8 @@ else
 fi
 
 stop_running_process
+remove_legacy_launchers
+migrate_legacy_autostart
 
 if [[ "$install_system" == true ]]; then
   # A user-local AppImage would shadow the system package, so remove it.
@@ -333,7 +371,7 @@ else
     fi
   fi
 
-  cat > "${desktop_dir}/${BIN_NAME}.desktop" <<EOF
+  cat > "${desktop_dir}/${APP_ID}.desktop" <<EOF
 [Desktop Entry]
 Name=SomeDrive
 Comment=Linux-first desktop client for Microsoft OneDrive
@@ -342,7 +380,7 @@ Icon=${BIN_NAME}
 Terminal=false
 Type=Application
 Categories=Network;FileTransfer;
-StartupWMClass=${BIN_NAME}
+StartupWMClass=${APP_ID}
 StartupNotify=true
 EOF
   log "Desktop launcher created"
