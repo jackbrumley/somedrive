@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # SomeDrive one-line installer for Linux.
-#   curl -sf https://brumley.info/somedrive/install.sh | bash
+#   curl --proto '=https' --tlsv1.2 -sSf https://brumley.info/somedrive/install.sh | bash
 # The in-app updater re-runs this same script, so keep its options stable.
 
 REPO="jackbrumley/somedrive"
@@ -49,8 +49,8 @@ Environment:
   SOMEDRIVE_NO_RELAUNCH   Set to 1 to not start SomeDrive after installing
 
 Examples:
-  curl -sf ${INSTALL_BASE_URL}/install.sh | bash
-  curl -sf ${INSTALL_BASE_URL}/install.sh | bash -s -- --appimage
+  curl --proto '=https' --tlsv1.2 -sSf ${INSTALL_BASE_URL}/install.sh | bash
+  curl --proto '=https' --tlsv1.2 -sSf ${INSTALL_BASE_URL}/install.sh | bash -s -- --appimage
 EOF
 }
 

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # SomeDrive uninstaller for Linux.
-#   curl -sf https://brumley.info/somedrive/uninstall.sh | bash
+#   curl --proto '=https' --tlsv1.2 -sSf https://brumley.info/somedrive/uninstall.sh | bash
 
 # The binary, the deb/rpm package, the icon and the autostart entry use this name.
 BIN_NAME="somedrive"

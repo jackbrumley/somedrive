@@ -82,7 +82,7 @@ the in-app updater and the one-line installers serve the new version.
 
 - An older installed version offers the update and **Update Now** finishes
   in-flight transfers, installs and relaunches it, and syncing accounts resume.
-- `curl -sf https://brumley.info/somedrive/install.sh | bash` installs the new
+- `curl --proto '=https' --tlsv1.2 -sSf https://brumley.info/somedrive/install.sh | bash` installs the new
   version.
 
 ## When Something Fails

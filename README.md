@@ -25,10 +25,10 @@ It exists because most Linux OneDrive tools are still command-line-heavy or awkw
 Open a terminal and run:
 
 ```bash
-curl -sf https://brumley.info/somedrive/install.sh | bash
+curl --proto '=https' --tlsv1.2 -sSf https://brumley.info/somedrive/install.sh | bash
 ```
 
-This installs the `.deb` (Debian, Ubuntu, Mint) or `.rpm` (Fedora) and asks for your password. For a user-only AppImage install on any distro, use `curl -sf https://brumley.info/somedrive/install.sh | bash -s -- --appimage`. To remove SomeDrive: `curl -sf https://brumley.info/somedrive/uninstall.sh | bash`.
+This installs the `.deb` (Debian, Ubuntu, Mint) or `.rpm` (Fedora) and asks for your password. For a user-only AppImage install on any distro, use `curl --proto '=https' --tlsv1.2 -sSf https://brumley.info/somedrive/install.sh | bash -s -- --appimage`. To remove SomeDrive: `curl --proto '=https' --tlsv1.2 -sSf https://brumley.info/somedrive/uninstall.sh | bash`.
 
 SomeDrive updates itself from **Settings → Check for Updates**. Packages are also on the [releases page](https://github.com/jackbrumley/somedrive/releases/latest).
 
