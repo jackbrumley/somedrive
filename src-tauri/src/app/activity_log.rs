@@ -79,9 +79,7 @@ fn save_all_events(events: &[ActivityEvent]) -> Result<(), String> {
 }
 
 fn events_dir_path() -> Result<PathBuf, String> {
-    let config_dir =
-        dirs::config_dir().ok_or_else(|| "Could not resolve config directory".to_string())?;
-    Ok(config_dir.join("somedrive").join("activity"))
+    crate::paths::activity_dir()
 }
 
 fn events_file_path() -> Result<PathBuf, String> {

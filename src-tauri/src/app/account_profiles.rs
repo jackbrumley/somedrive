@@ -176,9 +176,7 @@ pub fn set_agent_state(input: SetAccountAgentStateInput) -> Result<AccountProfil
 }
 
 fn storage_dir_path() -> Result<PathBuf, String> {
-    let config_dir =
-        dirs::config_dir().ok_or_else(|| "Could not resolve config directory".to_string())?;
-    Ok(config_dir.join("somedrive").join("accounts"))
+    crate::paths::accounts_dir()
 }
 
 fn storage_file_path() -> Result<PathBuf, String> {
@@ -186,9 +184,7 @@ fn storage_file_path() -> Result<PathBuf, String> {
 }
 
 fn default_sync_root(slug: &str) -> Result<PathBuf, String> {
-    let home_dir =
-        dirs::home_dir().ok_or_else(|| "Could not resolve home directory".to_string())?;
-    Ok(home_dir.join("SomeDrive").join(slug))
+    Ok(crate::paths::default_sync_roots_dir()?.join(slug))
 }
 
 fn build_unique_slug(display_name: &str, profiles: &[AccountProfile]) -> String {

@@ -107,13 +107,7 @@ async fn fetch_account_email(access_token: &str) -> Result<String, String> {
 }
 
 fn auth_session_file_path(profile_id: &str) -> Result<PathBuf, String> {
-    let config_dir =
-        dirs::config_dir().ok_or_else(|| "Could not resolve config directory".to_string())?;
-    Ok(config_dir
-        .join("somedrive")
-        .join("accounts")
-        .join(profile_id)
-        .join("auth.json"))
+    Ok(crate::paths::account_dir(profile_id)?.join("auth.json"))
 }
 
 fn write_auth_session(profile_id: &str, session: StoredAuthSession) -> Result<(), String> {

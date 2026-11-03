@@ -10,4 +10,5 @@ pub mod shutdown;
 pub mod state;
 pub mod sync_engine;
 pub mod sync_runtime;
+pub mod system_info;
 pub mod tray;

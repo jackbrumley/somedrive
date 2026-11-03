@@ -1,11 +1,13 @@
 mod app;
 mod launch;
+mod paths;
 mod platform;
 
 #[cfg(target_os = "linux")]
 pub use platform::linux::wayland::env::configure_linux_session_environment;
 
 use app::commands::*;
+pub use app::session_log::install_panic_hook;
 pub use launch::{parse_launch_options, LaunchOptions};
 
 pub fn run(launch: LaunchOptions) {
@@ -61,7 +63,11 @@ pub fn run(launch: LaunchOptions) {
             clear_account_auth,
             app::session_log::log_ui_event,
             app::session_log::get_session_log_text,
-            app::session_log::copy_session_log_to_clipboard,
+            app::session_log::copy_session_log,
+            app::session_log::open_log_folder,
+            app::session_log::get_log_level,
+            app::session_log::set_log_level,
+            app::system_info::get_system_info,
             app::session_log::open_session_log,
             app::session_log::open_profile_log,
             app::session_log::get_raw_logger_mode,

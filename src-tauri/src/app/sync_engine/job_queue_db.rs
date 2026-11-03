@@ -2,13 +2,7 @@ use chrono::{Local, TimeZone};
 use rusqlite::{params, Connection, OptionalExtension};
 
 fn sync_jobs_db_path(profile_id: &str) -> Result<PathBuf, String> {
-    let config_dir =
-        dirs::config_dir().ok_or_else(|| "Could not resolve config directory".to_string())?;
-    Ok(config_dir
-        .join("somedrive")
-        .join("accounts")
-        .join(profile_id)
-        .join("sync_jobs.db"))
+    Ok(crate::paths::account_dir(profile_id)?.join("sync_jobs.db"))
 }
 
 fn open_sync_jobs_connection(profile_id: &str) -> Result<Connection, String> {

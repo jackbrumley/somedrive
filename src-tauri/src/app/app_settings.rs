@@ -51,11 +51,27 @@ impl Default for SyncSettings {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DeveloperSettings {
     #[serde(default)]
     raw_logger_mode: bool,
+    /// One of `session_log::LOG_LEVELS`.
+    #[serde(default = "default_log_level")]
+    log_level: String,
+}
+
+impl Default for DeveloperSettings {
+    fn default() -> Self {
+        Self {
+            raw_logger_mode: false,
+            log_level: default_log_level(),
+        }
+    }
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
 }
 
 fn default_download_concurrency() -> usize {
@@ -96,6 +112,17 @@ pub fn load_raw_logger_mode() -> Result<bool, String> {
 pub fn save_raw_logger_mode(enabled: bool) -> Result<(), String> {
     let mut settings = load_or_create_app_settings()?;
     settings.developer.raw_logger_mode = enabled;
+    save_app_settings(&settings)
+}
+
+pub fn load_log_level() -> Result<String, String> {
+    let settings = load_or_create_app_settings()?;
+    Ok(settings.developer.log_level)
+}
+
+pub fn save_log_level(level: &str) -> Result<(), String> {
+    let mut settings = load_or_create_app_settings()?;
+    settings.developer.log_level = level.to_string();
     save_app_settings(&settings)
 }
 
@@ -153,9 +180,7 @@ fn save_app_settings(settings: &AppSettingsFile) -> Result<(), String> {
 }
 
 fn app_settings_path() -> Result<PathBuf, String> {
-    let config_dir =
-        dirs::config_dir().ok_or_else(|| "Could not resolve config directory".to_string())?;
-    Ok(config_dir.join("somedrive").join("app_settings.json"))
+    crate::paths::app_settings_file()
 }
 
 #[cfg(test)]

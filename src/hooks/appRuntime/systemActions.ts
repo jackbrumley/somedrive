@@ -46,7 +46,7 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
 
   const copySessionLog = async () => {
     try {
-      await invoke("copy_session_log_to_clipboard");
+      await invoke("copy_session_log");
       showToast("Session log copied to clipboard.", "success", 2600);
     } catch (error) {
       showToast(`Failed to copy session log: ${error}`, "error", 4200);
