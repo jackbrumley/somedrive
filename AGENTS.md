@@ -149,25 +149,42 @@ SomeDrive's variations from the standard:
   (`~/.local/share/<id>`) holds only Microsoft's login-page cookies, so the
   ID change needs no migration (at worst the sign-in page asks for the
   password again).
-- **Pre-update hook:** `install_update` never exits mid-transfer. Before it
-  starts the installer, `sync_engine::drain_sync_for_update`
-  (`src-tauri/src/app/sync_engine/update_shutdown.rs`) runs an explicit
-  shutdown state machine:
+- **Pre-update hook and graceful exit:** SomeDrive never exits mid-transfer.
+  Every exit drains sync first through one state machine,
+  `src-tauri/src/app/sync_engine/sync_shutdown.rs`:
   1. *FinishingTransfers*: no new sync cycle, download or upload starts;
-     transfers already running finish, for up to 30 seconds. Anything still
-     running then is cancelled exactly as Pause does (downloads write to a
-     temp file that is discarded; the job is requeued).
+     transfers already running finish. Anything still running at the
+     deadline is cancelled exactly as Pause does (downloads write to a temp
+     file that is discarded; the job is requeued).
   2. *StoppingWorkers*: every sync worker is cancelled and must fully exit,
-     including its download worker tasks, within 20 seconds.
+     including its download worker tasks.
   3. *Stopped*: claimed/running jobs are returned to the queue. Everything
      else is already committed to the per-account SQLite DB, which is the
      sync authority.
 
-  The saved agent state of each account is not changed, so syncing accounts
-  resume when the new version starts. If sync does not stop in time or the
-  installer cannot be started, the update is abandoned: sync resumes and the
-  update modal shows the error. The modal shows "Finishing sync before
-  updating…" while this runs.
+  Budgets (`SyncShutdownReason`): **Update** 30 s + 20 s, **Exit** 10 s +
+  10 s. The saved agent state of each account is not changed, so syncing
+  accounts resume on the next start.
+  - *Update:* `install_update` drains before starting the installer. If sync
+    does not stop in time or the installer cannot be started, the update is
+    abandoned: sync resumes and the update modal shows the error ("Finishing
+    sync before updating…" is shown while it runs).
+  - *Exit:* tray Quit, closing with close-to-tray off and SIGTERM/SIGINT/SIGHUP
+    (`app::shutdown::exit_on_termination_signals`) all call `exit()`, and
+    `RunEvent::Exit` runs `app::shutdown::finish_before_exit`. Only one
+    shutdown ever runs: if one already started (an update), the exit path
+    waits for it instead of draining twice. A session logout that kills the
+    display without a signal cannot be intercepted; startup requeues any
+    job left claimed.
+  - *Installers:* `install.sh` and `uninstall.sh` give SomeDrive up to 25 s
+    after SIGTERM ("Waiting for SomeDrive to finish syncing...") before
+    SIGKILL, instead of the standard 1 s.
+- **App shell:** tray menu Open SomeDrive, Pause all syncing, Resume all
+  syncing, Quit (`src-tauri/src/app/tray/`, StatusNotifierItem only, as SomeDrive
+  is Linux-only). The tray's pause/resume emits `accounts-updated` so the UI
+  refreshes. "Start SomeDrive when I log in" registers
+  `~/.config/autostart/somedrive.desktop` with `--start-hidden`, and an
+  enabled entry is rewritten at startup so older entries gain the flag.
 - **Build dependencies:** `libdbus-1-dev` (tao) and `xdg-utils` (bundled
   `xdg-open`) on top of the standard WebKitGTK set, in
   `src-tauri/packaging/linux/Containerfile`. No OpenSSL (reqwest uses
