@@ -51,7 +51,7 @@ export function AppShell({
         <div class="resize-corner resize-corner-se" data-no-drag="true" onMouseDown={(event) => void handleResizeMouseDown("SouthEast")(event)} />
       </div>
 
-      <header class="title-bar" onMouseDown={handleTitleBarMouseDown} onDblClick={handleTitleBarDoubleClick}>
+      <header class="title-bar" data-tauri-drag-region onMouseDown={handleTitleBarMouseDown} onDblClick={handleTitleBarDoubleClick}>
         <div class="title-block">
           <h1>SomeDrive</h1>
         </div>
