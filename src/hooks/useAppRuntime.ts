@@ -46,6 +46,7 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
   const hasReceivedSyncStatusRef = useRef(false);
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [rawLoggerMode, setRawLoggerMode] = useState(false);
+  const [closeToTray, setCloseToTray] = useState(true);
   const [syncDownloadConcurrency, setSyncDownloadConcurrency] = useState(12);
 
   const navigation = useMemo(() => createNavigationActions({ setRouteState }), [setRouteState]);
@@ -76,6 +77,13 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
     let isDisposed = false;
     let bootstrapTimerId: number | null = null;
     const unlistenAuthUpdatePromise = listen("account-auth-updated", () => {
+      if (!isDisposed) {
+        void Promise.all([refreshActions.refreshStatus(), refreshActions.refreshActivity()]);
+      }
+    });
+
+    // The tray's Pause/Resume all syncing changes account state outside the UI.
+    const unlistenAccountsUpdatedPromise = listen("accounts-updated", () => {
       if (!isDisposed) {
         void Promise.all([refreshActions.refreshStatus(), refreshActions.refreshActivity()]);
       }
@@ -150,11 +158,17 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
       });
     void systemActions.getAutostartEnabled().then(setAutostartEnabled);
     void systemActions.fetchRawLoggerMode().then(setRawLoggerMode);
+    void systemActions.fetchCloseToTray().then(setCloseToTray);
     void systemActions.fetchSyncDownloadConcurrency().then(setSyncDownloadConcurrency);
     return () => {
       isDisposed = true;
       window.removeEventListener("hashchange", syncRoute);
       unlistenAuthUpdatePromise
+        .then((unlisten) => unlisten())
+        .catch(() => {
+          // no-op
+        });
+      unlistenAccountsUpdatedPromise
         .then((unlisten) => unlisten())
         .catch(() => {
           // no-op
@@ -194,6 +208,13 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
     const updated = await systemActions.setAutostartEnabled(enabled);
     if (typeof updated === "boolean") {
       setAutostartEnabled(updated);
+    }
+  };
+
+  const toggleCloseToTray = async (enabled: boolean) => {
+    const updated = await systemActions.setCloseToTray(enabled);
+    if (typeof updated === "boolean") {
+      setCloseToTray(updated);
     }
   };
 
@@ -246,6 +267,8 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
     exportAccountLargeDeletePreview: accountActions.exportAccountLargeDeletePreview,
     autostartEnabled,
     toggleAutostart,
+    closeToTray,
+    toggleCloseToTray,
     rawLoggerMode,
     toggleRawLoggerMode,
     syncDownloadConcurrency,

@@ -69,6 +69,26 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
     }
   };
 
+  const fetchCloseToTray = async () => {
+    try {
+      return await invoke<boolean>("get_close_to_tray");
+    } catch (error) {
+      showToast(`Failed to read close-to-tray setting: ${error}`, "error", 4200);
+      return true;
+    }
+  };
+
+  const setCloseToTray = async (enabled: boolean) => {
+    try {
+      const updated = await invoke<boolean>("set_close_to_tray", { enabled });
+      showToast(`Close to tray ${updated ? "enabled" : "disabled"}.`, "success", 2600);
+      return updated;
+    } catch (error) {
+      showToast(`Failed to update close-to-tray setting: ${error}`, "error", 4200);
+      return null;
+    }
+  };
+
   const fetchRawLoggerMode = async () => {
     try {
       return await invoke<boolean>("get_raw_logger_mode");
@@ -141,6 +161,8 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
     copySessionLog,
     openSessionLog,
     openProfileLog,
+    fetchCloseToTray,
+    setCloseToTray,
     fetchRawLoggerMode,
     setRawLoggerMode,
     fetchSyncDownloadConcurrency,

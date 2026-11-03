@@ -4,6 +4,8 @@ import { ToggleSwitch } from "../components/ui/ToggleSwitch";
 interface SettingsPageProps {
   autostartEnabled: boolean;
   onToggleAutostart: (enabled: boolean) => Promise<void>;
+  closeToTray: boolean;
+  onToggleCloseToTray: (enabled: boolean) => Promise<void>;
   rawLoggerMode: boolean;
   onToggleRawLoggerMode: (enabled: boolean) => Promise<void>;
   syncDownloadConcurrency: number;
@@ -20,6 +22,8 @@ interface SettingsPageProps {
 export function SettingsPage({
   autostartEnabled,
   onToggleAutostart,
+  closeToTray,
+  onToggleCloseToTray,
   rawLoggerMode,
   onToggleRawLoggerMode,
   syncDownloadConcurrency,
@@ -66,14 +70,21 @@ export function SettingsPage({
       <div class="page-scroll">
         <article class="card">
           <h3>General</h3>
-          <p>Set how SomeDrive starts up on this device.</p>
+          <p>Set how SomeDrive starts up and closes on this device.</p>
           <div class="settings-list">
             <ToggleSwitch
               id="autostart-toggle"
               label="Start SomeDrive when I log in"
-              description="Available on Linux, Windows, and macOS desktop builds."
+              description="Starts in the system tray and resumes syncing in the background."
               checked={autostartEnabled}
               onChange={onToggleAutostart}
+            />
+            <ToggleSwitch
+              id="close-to-tray-toggle"
+              label="Close to tray"
+              description="Closing the window keeps SomeDrive syncing in the background. Turn off to quit when the window closes."
+              checked={closeToTray}
+              onChange={onToggleCloseToTray}
             />
           </div>
         </article>

@@ -23,6 +23,7 @@ function App() {
         pausedCount={runtime.pausedCount}
         onPauseAll={runtime.pauseAllAccounts}
         onResumeAll={runtime.resumeAllAccounts}
+        showToast={showToast}
       >
         <AppWorkspace runtime={runtime} updates={updates} />
         {updates.showUpdateModal && updates.updateResult && (

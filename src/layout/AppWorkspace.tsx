@@ -68,6 +68,8 @@ export function AppWorkspace({ runtime, updates }: AppWorkspaceProps) {
         <SettingsPage
           autostartEnabled={runtime.autostartEnabled}
           onToggleAutostart={runtime.toggleAutostart}
+          closeToTray={runtime.closeToTray}
+          onToggleCloseToTray={runtime.toggleCloseToTray}
           rawLoggerMode={runtime.rawLoggerMode}
           onToggleRawLoggerMode={runtime.toggleRawLoggerMode}
           syncDownloadConcurrency={runtime.syncDownloadConcurrency}

@@ -1,6 +1,7 @@
 import type { ComponentChildren } from "preact";
 import { IconSettings } from "@tabler/icons-preact";
 import type { AppPage } from "../../routes/appRoutes";
+import type { ToastType } from "../../types/somedrive";
 import { useWindowControls } from "../../hooks/useWindowControls";
 import { SyncStateControl } from "../sync/SyncStateControl";
 import { WindowControls } from "./WindowControls";
@@ -13,6 +14,7 @@ interface AppShellProps {
   pausedCount: number;
   onPauseAll: () => Promise<void>;
   onResumeAll: () => Promise<void>;
+  showToast: (message: string, type?: ToastType, durationMs?: number) => void;
   children: ComponentChildren;
 }
 
@@ -24,6 +26,7 @@ export function AppShell({
   pausedCount,
   onPauseAll,
   onResumeAll,
+  showToast,
   children,
 }: AppShellProps) {
   const {
@@ -34,7 +37,7 @@ export function AppShell({
     handleTitleBarMouseDown,
     handleTitleBarDoubleClick,
     handleResizeMouseDown,
-  } = useWindowControls();
+  } = useWindowControls(showToast);
 
   const isSettingsArea = page === "settings" || page === "debug" || page === "uiLab";
   const hasSyncAccounts = syncingCount > 0 || pausedCount > 0;
