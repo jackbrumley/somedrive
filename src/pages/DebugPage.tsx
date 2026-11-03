@@ -8,8 +8,6 @@ interface DebugPageProps {
   onNavigateUiLab: () => void;
   onRefreshStatus: () => Promise<void>;
   onFetchSessionLogText: () => Promise<string>;
-  onCopySessionLog: () => Promise<void>;
-  onOpenSessionLog: () => Promise<void>;
   onOpenProfileLog: (profileId: string) => Promise<void>;
 }
 
@@ -19,8 +17,6 @@ export function DebugPage({
   onNavigateUiLab,
   onRefreshStatus,
   onFetchSessionLogText,
-  onCopySessionLog,
-  onOpenSessionLog,
   onOpenProfileLog,
 }: DebugPageProps) {
   const [logPreview, setLogPreview] = useState("");
@@ -56,15 +52,16 @@ export function DebugPage({
       <div class="page-scroll">
         <article class="card">
           <h3>Development Tools</h3>
-          <p>Use the UI Lab to preview account states and screen variants while tuning look and feel.</p>
+          <p>
+            Use the UI Lab to preview account states and screen variants while tuning look and feel. Copy log, Open
+            log and System info are in Settings, under Debug.
+          </p>
           <div class="button-row">
             <button onClick={onNavigateUiLab}>Open UI Lab</button>
             <button onClick={onRefreshStatus}>Refresh Runtime State</button>
             <button onClick={loadLog} disabled={loadingLog}>
               {loadingLog ? "Loading..." : "Load Session Log Preview"}
             </button>
-            <button onClick={onCopySessionLog}>Copy Session Log</button>
-            <button onClick={onOpenSessionLog}>Open Session Log File</button>
           </div>
         </article>
 

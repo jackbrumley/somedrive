@@ -4,10 +4,10 @@ import {
   enable as enableAutostart,
   isEnabled as isAutostartEnabled,
 } from "@tauri-apps/plugin-autostart";
-import type { ToastType } from "../../types/somedrive";
+import type { LogLevel, SystemInfo, ToastType } from "../../types/somedrive";
 
 interface SystemActionsFactoryParams {
-  showToast: (message: string, type?: ToastType, durationMs?: number) => void;
+  showToast: (message: string, type?: ToastType) => void;
 }
 
 export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
@@ -15,7 +15,7 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
     try {
       return await isAutostartEnabled();
     } catch (error) {
-      showToast(`Failed to read auto-start state: ${error}`, "error", 4200);
+      showToast(`Failed to read auto-start state: ${error}`, "error");
       return false;
     }
   };
@@ -27,10 +27,10 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
       } else {
         await disableAutostart();
       }
-      showToast(`Auto-start ${enabled ? "enabled" : "disabled"}.`, "success", 2600);
+      showToast(`Auto-start ${enabled ? "enabled" : "disabled"}.`, "success");
       return enabled;
     } catch (error) {
-      showToast(`Failed to update auto-start: ${error}`, "error", 4200);
+      showToast(`Failed to update auto-start: ${error}`, "error");
       return null;
     }
   };
@@ -39,7 +39,7 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
     try {
       return await invoke<string>("get_session_log_text");
     } catch (error) {
-      showToast(`Failed to read session log: ${error}`, "error", 4200);
+      showToast(`Failed to read session log: ${error}`, "error");
       return "";
     }
   };
@@ -47,9 +47,9 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
   const copySessionLog = async () => {
     try {
       await invoke("copy_session_log");
-      showToast("Session log copied to clipboard.", "success", 2600);
+      showToast("Session log copied to clipboard.", "success");
     } catch (error) {
-      showToast(`Failed to copy session log: ${error}`, "error", 4200);
+      showToast(`Failed to copy session log: ${error}`, "error");
     }
   };
 
@@ -57,7 +57,53 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
     try {
       await invoke("open_session_log");
     } catch (error) {
-      showToast(`Failed to open session log: ${error}`, "error", 4200);
+      showToast(`Failed to open session log: ${error}`, "error");
+    }
+  };
+
+  const openLogFolder = async () => {
+    try {
+      await invoke("open_log_folder");
+    } catch (error) {
+      showToast(`Failed to open log folder: ${error}`, "error");
+    }
+  };
+
+  const fetchSystemInfo = async () => {
+    try {
+      return await invoke<SystemInfo>("get_system_info");
+    } catch (error) {
+      showToast(`Failed to read system info: ${error}`, "error");
+      return null;
+    }
+  };
+
+  const copySystemInfo = async () => {
+    try {
+      await invoke("copy_system_info");
+      showToast("System info copied to clipboard.", "success");
+    } catch (error) {
+      showToast(`Failed to copy system info: ${error}`, "error");
+    }
+  };
+
+  const fetchLogLevel = async () => {
+    try {
+      return await invoke<LogLevel>("get_log_level");
+    } catch (error) {
+      showToast(`Failed to read log level: ${error}`, "error");
+      return "info" as LogLevel;
+    }
+  };
+
+  const setLogLevel = async (level: LogLevel) => {
+    try {
+      const updated = await invoke<LogLevel>("set_log_level", { level });
+      showToast(`Log level set to ${updated}.`, "success");
+      return updated;
+    } catch (error) {
+      showToast(`Failed to update log level: ${error}`, "error");
+      return null;
     }
   };
 
@@ -65,7 +111,7 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
     try {
       await invoke("open_profile_log", { profileId });
     } catch (error) {
-      showToast(`Failed to open profile log: ${error}`, "error", 4200);
+      showToast(`Failed to open profile log: ${error}`, "error");
     }
   };
 
@@ -73,7 +119,7 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
     try {
       return await invoke<boolean>("get_close_to_tray");
     } catch (error) {
-      showToast(`Failed to read close-to-tray setting: ${error}`, "error", 4200);
+      showToast(`Failed to read close-to-tray setting: ${error}`, "error");
       return true;
     }
   };
@@ -81,10 +127,10 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
   const setCloseToTray = async (enabled: boolean) => {
     try {
       const updated = await invoke<boolean>("set_close_to_tray", { enabled });
-      showToast(`Close to tray ${updated ? "enabled" : "disabled"}.`, "success", 2600);
+      showToast(`Close to tray ${updated ? "enabled" : "disabled"}.`, "success");
       return updated;
     } catch (error) {
-      showToast(`Failed to update close-to-tray setting: ${error}`, "error", 4200);
+      showToast(`Failed to update close-to-tray setting: ${error}`, "error");
       return null;
     }
   };
@@ -93,7 +139,7 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
     try {
       return await invoke<boolean>("get_raw_logger_mode");
     } catch (error) {
-      showToast(`Failed to read raw logger mode: ${error}`, "error", 4200);
+      showToast(`Failed to read raw logger mode: ${error}`, "error");
       return false;
     }
   };
@@ -101,10 +147,10 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
   const setRawLoggerMode = async (enabled: boolean) => {
     try {
       await invoke("set_raw_logger_mode", { enabled });
-      showToast(`Raw logger mode ${enabled ? "enabled" : "disabled"}.`, "success", 2600);
+      showToast(`Raw logger mode ${enabled ? "enabled" : "disabled"}.`, "success");
       return enabled;
     } catch (error) {
-      showToast(`Failed to update raw logger mode: ${error}`, "error", 4200);
+      showToast(`Failed to update raw logger mode: ${error}`, "error");
       return null;
     }
   };
@@ -118,7 +164,7 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
         },
       });
     } catch (error) {
-      showToast(`Failed to open folder: ${error}`, "error", 3200);
+      showToast(`Failed to open folder: ${error}`, "error");
     }
   };
 
@@ -128,7 +174,7 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
         profileId,
       });
     } catch (error) {
-      showToast(`Failed to open folder: ${error}`, "error", 3200);
+      showToast(`Failed to open folder: ${error}`, "error");
     }
   };
 
@@ -136,7 +182,7 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
     try {
       return await invoke<number>("get_sync_download_concurrency");
     } catch (error) {
-      showToast(`Failed to read download concurrency setting: ${error}`, "error", 4200);
+      showToast(`Failed to read download concurrency setting: ${error}`, "error");
       return 12;
     }
   };
@@ -146,10 +192,10 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
       const updated = await invoke<number>("set_sync_download_concurrency", {
         value,
       });
-      showToast(`Download concurrency set to ${updated}.`, "success", 2200);
+      showToast(`Download concurrency set to ${updated}.`, "success");
       return updated;
     } catch (error) {
-      showToast(`Failed to update download concurrency: ${error}`, "error", 4200);
+      showToast(`Failed to update download concurrency: ${error}`, "error");
       return null;
     }
   };
@@ -161,6 +207,11 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
     copySessionLog,
     openSessionLog,
     openProfileLog,
+    openLogFolder,
+    fetchSystemInfo,
+    copySystemInfo,
+    fetchLogLevel,
+    setLogLevel,
     fetchCloseToTray,
     setCloseToTray,
     fetchRawLoggerMode,

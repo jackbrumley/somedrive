@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { ToastType, UpdateCheckResult, UpdateInstallStage } from "../types/somedrive";
 
 interface UseUpdatesProps {
-  showToast: (message: string, type?: ToastType, durationMs?: number) => void;
+  showToast: (message: string, type?: ToastType) => void;
 }
 
 const logUpdateEvent = (message: string) => {
@@ -40,13 +40,13 @@ export function useUpdates({ showToast }: UseUpdatesProps) {
         setInstallError(null);
         setShowUpdateModal(true);
       } else if (manual) {
-        showToast("You are already on the latest version.", "success", 2600);
+        showToast("You are already on the latest version.", "success");
       }
     } catch (error) {
       const message = String(error);
       setUpdateError(message);
       if (manual) {
-        showToast(`Update check failed: ${message}`, "error", 4200);
+        showToast(`Update check failed: ${message}`, "error");
       } else {
         logUpdateEvent(`Startup update check failed: ${message}`);
       }
@@ -82,7 +82,7 @@ export function useUpdates({ showToast }: UseUpdatesProps) {
       return;
     }
     void openUrl(updateResult.releaseUrl).catch((error) => {
-      showToast(`Failed to open release notes: ${error}`, "error", 4200);
+      showToast(`Failed to open release notes: ${error}`, "error");
     });
   };
 

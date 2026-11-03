@@ -8,6 +8,8 @@ import type {
   SyncStatusEvent,
   SyncRuntimeAccountStatus,
   SyncRuntimeSnapshot,
+  LogLevel,
+  SystemInfo,
   ToastType,
 } from "../types/somedrive";
 import { computeEffectiveSyncState } from "../components/accounts/syncStateSelectors";
@@ -17,7 +19,7 @@ import { createRefreshActions } from "./appRuntime/refresh";
 import { createSystemActions } from "./appRuntime/systemActions";
 
 interface UseAppRuntimeProps {
-  showToast: (message: string, type?: ToastType, durationMs?: number) => void;
+  showToast: (message: string, type?: ToastType) => void;
 }
 
 const initialStatus: AppStatusSnapshot = {
@@ -47,6 +49,8 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [rawLoggerMode, setRawLoggerMode] = useState(false);
   const [closeToTray, setCloseToTray] = useState(true);
+  const [logLevel, setLogLevel] = useState<LogLevel>("info");
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [syncDownloadConcurrency, setSyncDownloadConcurrency] = useState(12);
 
   const navigation = useMemo(() => createNavigationActions({ setRouteState }), [setRouteState]);
@@ -153,12 +157,14 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
       })
       .catch(() => {
         if (!isDisposed) {
-          showToast("Failed to bootstrap authoritative sync status snapshot.", "error", 4200);
+          showToast("Failed to bootstrap authoritative sync status snapshot.", "error");
         }
       });
     void systemActions.getAutostartEnabled().then(setAutostartEnabled);
     void systemActions.fetchRawLoggerMode().then(setRawLoggerMode);
     void systemActions.fetchCloseToTray().then(setCloseToTray);
+    void systemActions.fetchLogLevel().then(setLogLevel);
+    void systemActions.fetchSystemInfo().then(setSystemInfo);
     void systemActions.fetchSyncDownloadConcurrency().then(setSyncDownloadConcurrency);
     return () => {
       isDisposed = true;
@@ -218,6 +224,13 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
     }
   };
 
+  const changeLogLevel = async (level: LogLevel) => {
+    const updated = await systemActions.setLogLevel(level);
+    if (updated) {
+      setLogLevel(updated);
+    }
+  };
+
   const toggleRawLoggerMode = async (enabled: boolean) => {
     const updated = await systemActions.setRawLoggerMode(enabled);
     if (typeof updated === "boolean") {
@@ -271,6 +284,11 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
     toggleCloseToTray,
     rawLoggerMode,
     toggleRawLoggerMode,
+    logLevel,
+    changeLogLevel,
+    systemInfo,
+    openLogFolder: systemActions.openLogFolder,
+    copySystemInfo: systemActions.copySystemInfo,
     syncDownloadConcurrency,
     updateSyncDownloadConcurrency,
     fetchSessionLogText: systemActions.fetchSessionLogText,

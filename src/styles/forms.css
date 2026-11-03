@@ -474,3 +474,24 @@ input::placeholder {
   max-height: 280px;
   overflow: auto;
 }
+
+.modal-shell:focus {
+  outline: none;
+}
+
+.system-info {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.system-info dt {
+  color: var(--text-muted);
+}
+
+.system-info dd {
+  margin: 0;
+  word-break: break-word;
+}

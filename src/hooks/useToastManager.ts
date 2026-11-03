@@ -2,6 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ToastMessage, ToastType } from "../types/somedrive";
 
+const toastDurationMs: Record<ToastType, number> = {
+  info: 3000,
+  success: 3000,
+  error: 10000,
+};
+
 export function useToastManager() {
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const timeoutRef = useRef<number | null>(null);
@@ -39,7 +45,10 @@ export function useToastManager() {
     });
   };
 
-  const showToast = (message: string, type: ToastType = "info", durationMs = 2800) => {
+  // Durations follow the App Standard: errors stay long enough to read and
+  // act on, confirmations get out of the way.
+  const showToast = (message: string, type: ToastType = "info") => {
+    const durationMs = toastDurationMs[type];
     setToast({
       id: Date.now(),
       message,

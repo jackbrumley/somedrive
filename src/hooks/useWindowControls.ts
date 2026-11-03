@@ -8,14 +8,14 @@ type ResizeDirection = "East" | "North" | "NorthEast" | "NorthWest" | "South" | 
 /// Where the backend parked the main window (`tray::WindowParking`).
 type WindowParking = "tray" | "taskbar";
 
-export function useWindowControls(showToast: (message: string, type?: ToastType, durationMs?: number) => void) {
+export function useWindowControls(showToast: (message: string, type?: ToastType) => void) {
   const [isMaximized, setIsMaximized] = useState(false);
   const trayFallbackNotifiedRef = useRef(false);
 
   const notifyIfParkedInTaskbar = (parking: WindowParking | null) => {
     if (parking === "taskbar" && !trayFallbackNotifiedRef.current) {
       trayFallbackNotifiedRef.current = true;
-      showToast("System tray is unavailable on this desktop. Minimized to taskbar instead.", "info", 4200);
+      showToast("System tray is unavailable on this desktop. Minimized to taskbar instead.", "info");
     }
   };
 

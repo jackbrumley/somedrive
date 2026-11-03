@@ -7,7 +7,7 @@ import type {
 } from "../../types/somedrive";
 
 interface RefreshFactoryParams {
-  showToast: (message: string, type?: ToastType, durationMs?: number) => void;
+  showToast: (message: string, type?: ToastType) => void;
   setStatus: (value: AppStatusSnapshot) => void;
   setActivityEvents: (value: ActivityEvent[]) => void;
   setSyncRuntime: (value: SyncRuntimeSnapshot | ((current: SyncRuntimeSnapshot) => SyncRuntimeSnapshot)) => void;
@@ -57,7 +57,7 @@ export function createRefreshActions({
       const snapshot = await invoke<SyncRuntimeSnapshot>("get_sync_runtime_snapshot");
       setSyncRuntime((current) => (shouldReplaceSnapshot(current, snapshot) ? snapshot : current));
     } catch (error) {
-      showToast(`Failed to load sync runtime: ${error}`, "error", 4200);
+      showToast(`Failed to load sync runtime: ${error}`, "error");
       throw error;
     }
   };

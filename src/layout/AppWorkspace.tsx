@@ -79,6 +79,13 @@ export function AppWorkspace({ runtime, updates }: AppWorkspaceProps) {
           lastCheckedAt={updates.lastCheckedAt}
           updateError={updates.updateError}
           onCheckForUpdates={() => void updates.checkForUpdates(true)}
+          systemInfo={runtime.systemInfo}
+          logLevel={runtime.logLevel}
+          onChangeLogLevel={runtime.changeLogLevel}
+          onCopyLog={runtime.copySessionLog}
+          onOpenLog={runtime.openSessionLog}
+          onOpenLogFolder={runtime.openLogFolder}
+          onCopySystemInfo={runtime.copySystemInfo}
           onGoDebug={runtime.goDebug}
           onBack={runtime.goHome}
         />
@@ -90,8 +97,6 @@ export function AppWorkspace({ runtime, updates }: AppWorkspaceProps) {
           onNavigateUiLab={runtime.goUiLab}
           onRefreshStatus={runtime.refreshStatus}
           onFetchSessionLogText={runtime.fetchSessionLogText}
-          onCopySessionLog={runtime.copySessionLog}
-          onOpenSessionLog={runtime.openSessionLog}
           onOpenProfileLog={runtime.openProfileLog}
         />
       )}

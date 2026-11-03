@@ -192,6 +192,21 @@ export interface SyncStatusEvent {
 
 export type ToastType = "success" | "error" | "info";
 
+// Mirrors `app::system_info::SystemInfo`.
+export interface SystemInfo {
+  appName: string;
+  appVersion: string;
+  buildProfile: string;
+  executable: string;
+  os: string;
+  distribution: string;
+  architecture: string;
+  desktop: string;
+  sessionType: string;
+}
+
+export type LogLevel = "error" | "warn" | "info" | "debug" | "trace";
+
 export interface ToastMessage {
   id: number;
   message: string;

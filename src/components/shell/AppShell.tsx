@@ -14,7 +14,7 @@ interface AppShellProps {
   pausedCount: number;
   onPauseAll: () => Promise<void>;
   onResumeAll: () => Promise<void>;
-  showToast: (message: string, type?: ToastType, durationMs?: number) => void;
+  showToast: (message: string, type?: ToastType) => void;
   children: ComponentChildren;
 }
 

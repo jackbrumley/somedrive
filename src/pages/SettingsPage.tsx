@@ -1,5 +1,7 @@
 import { IconChevronLeft } from "@tabler/icons-preact";
+import { DebugSettingsCard } from "../components/settings/DebugSettingsCard";
 import { ToggleSwitch } from "../components/ui/ToggleSwitch";
+import type { LogLevel, SystemInfo } from "../types/somedrive";
 
 interface SettingsPageProps {
   autostartEnabled: boolean;
@@ -15,6 +17,13 @@ interface SettingsPageProps {
   lastCheckedAt: number | null;
   updateError: string | null;
   onCheckForUpdates: () => void;
+  systemInfo: SystemInfo | null;
+  logLevel: LogLevel;
+  onChangeLogLevel: (level: LogLevel) => Promise<void>;
+  onCopyLog: () => Promise<void>;
+  onOpenLog: () => Promise<void>;
+  onOpenLogFolder: () => Promise<void>;
+  onCopySystemInfo: () => Promise<void>;
   onGoDebug: () => void;
   onBack: () => void;
 }
@@ -33,6 +42,13 @@ export function SettingsPage({
   lastCheckedAt,
   updateError,
   onCheckForUpdates,
+  systemInfo,
+  logLevel,
+  onChangeLogLevel,
+  onCopyLog,
+  onOpenLog,
+  onOpenLogFolder,
+  onCopySystemInfo,
   onGoDebug,
   onBack,
 }: SettingsPageProps) {
@@ -134,23 +150,19 @@ export function SettingsPage({
           </div>
         </article>
 
-        <article class="card">
-          <h3>Developer</h3>
-          <p>Debug and diagnostics tools are grouped separately from regular settings.</p>
-          <div class="settings-list">
-            <ToggleSwitch
-              id="raw-logger-mode-toggle"
-              label="Raw logger mode"
-              description="Write an additional full combined session log for deep troubleshooting."
-              checked={rawLoggerMode}
-              onChange={onToggleRawLoggerMode}
-            />
-          </div>
-          <div class="button-row">
-            <button onClick={onGoDebug}>Open Debug Tools</button>
-          </div>
-        </article>
-        </div>
+        <DebugSettingsCard
+          systemInfo={systemInfo}
+          logLevel={logLevel}
+          onChangeLogLevel={onChangeLogLevel}
+          rawLoggerMode={rawLoggerMode}
+          onToggleRawLoggerMode={onToggleRawLoggerMode}
+          onCopyLog={onCopyLog}
+          onOpenLog={onOpenLog}
+          onOpenLogFolder={onOpenLogFolder}
+          onCopySystemInfo={onCopySystemInfo}
+          onGoDebug={onGoDebug}
+        />
+      </div>
     </section>
   );
 }
