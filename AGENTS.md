@@ -135,11 +135,20 @@ SomeDrive's variations from the standard:
   Windows installer scripts and no Windows build or install-test job.
 - **Install site:** `https://brumley.info/somedrive` (GitHub Pages from
   `main:/docs`).
-- **Names:** `productName` is `somedrive` so the binary, the deb/rpm package,
-  the desktop file, the icon and the autostart entry all share that one name
-  (Tauri derives the package name from `productName`). The window title and
-  the desktop entry (`src-tauri/packaging/linux/somedrive.desktop`) show
-  "SomeDrive". User data lives in `~/.config/somedrive`.
+- **Identity:** app ID `info.brumley.somedrive` (standard section 10): Tauri
+  `identifier`, `APP_ID` / GTK prgname (`src-tauri/src/platform/linux/wayland/env.rs`),
+  and the launcher `src-tauri/packaging/info.brumley.somedrive.desktop`
+  (Tauri's own `somedrive.desktop` is the Hidden stub from
+  `bundler-stub.desktop.hbs`). `productName` is `somedrive`, so the binary,
+  the deb/rpm package, the icon and the autostart entry
+  (`~/.config/autostart/somedrive.desktop`) use that name; the window title
+  and launcher show "SomeDrive". Earlier dev builds used `org.somedrive.app`
+  and the `somedrive.desktop` / `SomeDrive.desktop` launcher and autostart
+  names; `install.sh` and `uninstall.sh` clean those up. User data and
+  sign-in tokens live in `~/.config/somedrive`; the webview data dir
+  (`~/.local/share/<id>`) holds only Microsoft's login-page cookies, so the
+  ID change needs no migration (at worst the sign-in page asks for the
+  password again).
 - **Pre-update hook:** `install_update` never exits mid-transfer. Before it
   starts the installer, `sync_engine::drain_sync_for_update`
   (`src-tauri/src/app/sync_engine/update_shutdown.rs`) runs an explicit
