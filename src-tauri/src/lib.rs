@@ -3,8 +3,13 @@ mod app;
 use app::commands::*;
 use tauri::Manager;
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+/// Options parsed from the command line in `main.rs`.
+pub struct LaunchOptions {
+    /// The in-app updater relaunched this version because the install failed.
+    pub update_failed: bool,
+}
+
+pub fn run(launch: LaunchOptions) {
     if let Err(error) = app::session_log::initialize_session_logging() {
         eprintln!("Failed to initialize session logging: {}", error);
     }
@@ -32,7 +37,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(app::state::create_app_state())
-        .setup(app::bootstrap::configure_shell)
+        .setup(move |app| {
+            app::bootstrap::configure_shell(app)?;
+            if launch.update_failed {
+                app::commands::update::show_update_failed_dialog(app.handle());
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_status_snapshot,
             get_sync_runtime_snapshot,
@@ -40,6 +51,7 @@ pub fn run() {
             get_sync_download_concurrency,
             set_sync_download_concurrency,
             check_for_updates,
+            install_update,
             list_account_profiles,
             create_account_profile,
             rename_account_profile,

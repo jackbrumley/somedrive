@@ -1,5 +1,14 @@
 fn start_sync_worker(state: &tauri::State<'_, AppState>, profile_id: &str) -> Result<(), String> {
     let account_prefix = log_context::account_prefix(profile_id);
+    if !sync_accepts_new_work() {
+        // The saved agent state already says "syncing", so the updated
+        // version starts this worker when it launches.
+        log::info!(
+            "{} SYNC_WORKER_START_DEFERRED reason=update_in_progress",
+            account_prefix
+        );
+        return Ok(());
+    }
     let cancel_flag = set_cancel_flag(state, profile_id, false)?;
     let cycle_lock = get_or_create_cycle_lock(state, profile_id)?;
     let initial_delay = remaining_until_next_cycle(profile_id, Duration::from_secs(15));
@@ -30,7 +39,7 @@ fn start_sync_worker(state: &tauri::State<'_, AppState>, profile_id: &str) -> Re
             "Preparing next sync cycle",
         );
         runtime_clear_issue(&sync_runtime, &profile_id_owned);
-        tauri::async_runtime::spawn(async move {
+        let worker_task = tauri::async_runtime::spawn(async move {
             let mut ticker = tokio::time::interval(std::time::Duration::from_secs(15));
             if let Some(delay) = initial_delay {
                 log::info!(
@@ -70,7 +79,7 @@ fn start_sync_worker(state: &tauri::State<'_, AppState>, profile_id: &str) -> Re
                         break;
                     }
                     _ = ticker.tick() => {
-                        if cancel_flag.load(Ordering::Relaxed) {
+                        if cancel_flag.load(Ordering::Relaxed) || !sync_accepts_new_work() {
                             continue;
                         }
                         let _cycle_guard = match cycle_lock.try_lock() {
@@ -171,6 +180,11 @@ fn start_sync_worker(state: &tauri::State<'_, AppState>, profile_id: &str) -> Re
                 }
             }
         });
+        state
+            .sync_worker_tasks
+            .lock()
+            .map_err(|_| "Sync worker task lock is poisoned".to_string())?
+            .insert(profile_id.to_string(), worker_task);
     }
 
     let _ = activity_log::append_event(

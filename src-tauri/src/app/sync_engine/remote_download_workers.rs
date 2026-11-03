@@ -14,7 +14,9 @@ fn spawn_remote_download_workers(
         let worker_result_tx = download_result_tx.clone();
         let active_worker_count = Arc::clone(&active_download_workers);
         let worker_pending_download_count = Arc::clone(&pending_download_count);
+        let task_guard = DownloadWorkerTaskGuard::register();
         tauri::async_runtime::spawn(async move {
+            let _task_guard = task_guard;
             active_worker_count.fetch_add(1, Ordering::Relaxed);
             log::info!(
                 "{} [cycle:{}] DOWNLOAD_WORKER_STARTED worker_index={} active_workers={}",
@@ -39,46 +41,17 @@ fn spawn_remote_download_workers(
                     break;
                 };
 
-                let result = match download_remote_item_content(
-                    &worker_graph,
-                    Some(job.job_id),
-                    &job.item_id,
-                    &job.path,
-                    Some(job.remote_entry.size),
-                    &job.local_abs,
-                    &worker_cancel,
-                )
-                .await
-                {
-                    Ok(outcome) => RemoteDownloadResult {
+                // Jobs already queued when an update starts preparing are
+                // handed back untouched (requeued like a pause) rather than
+                // started.
+                let result = if !sync_accepts_new_work() {
+                    RemoteDownloadResult {
                         job_id: job.job_id,
                         remote_entry: job.remote_entry,
-                        status: RemoteDownloadResultStatus::Success(outcome),
-                    },
-                    Err(error) => {
-                        if error == DOWNLOAD_RETRY_DEFERRED_ERROR {
-                            RemoteDownloadResult {
-                                job_id: job.job_id,
-                                remote_entry: job.remote_entry,
-                                status: RemoteDownloadResultStatus::DeferredRetry,
-                            }
-                        } else if is_sync_cancelled_error(&error) {
-                            RemoteDownloadResult {
-                                job_id: job.job_id,
-                                remote_entry: job.remote_entry,
-                                status: RemoteDownloadResultStatus::Cancelled,
-                            }
-                        } else {
-                            RemoteDownloadResult {
-                                job_id: job.job_id,
-                                remote_entry: job.remote_entry,
-                                status: RemoteDownloadResultStatus::Failed(format!(
-                                    "Remote download failed item_id={} path={}: {}",
-                                    job.item_id, job.path, error
-                                )),
-                            }
-                        }
+                        status: RemoteDownloadResultStatus::Cancelled,
                     }
+                } else {
+                    execute_remote_download_job(&worker_graph, job, &worker_cancel).await
                 };
                 let _ = worker_pending_download_count.fetch_update(
                     Ordering::Relaxed,
@@ -123,5 +96,53 @@ fn spawn_remote_download_workers(
                 remaining
             );
         });
+    }
+}
+
+async fn execute_remote_download_job(
+    worker_graph: &GraphContext,
+    job: RemoteDownloadJob,
+    worker_cancel: &Arc<AtomicBool>,
+) -> RemoteDownloadResult {
+    match download_remote_item_content(
+        worker_graph,
+        Some(job.job_id),
+        &job.item_id,
+        &job.path,
+        Some(job.remote_entry.size),
+        &job.local_abs,
+        worker_cancel,
+    )
+    .await
+    {
+        Ok(outcome) => RemoteDownloadResult {
+            job_id: job.job_id,
+            remote_entry: job.remote_entry,
+            status: RemoteDownloadResultStatus::Success(outcome),
+        },
+        Err(error) => {
+            if error == DOWNLOAD_RETRY_DEFERRED_ERROR {
+                RemoteDownloadResult {
+                    job_id: job.job_id,
+                    remote_entry: job.remote_entry,
+                    status: RemoteDownloadResultStatus::DeferredRetry,
+                }
+            } else if is_sync_cancelled_error(&error) {
+                RemoteDownloadResult {
+                    job_id: job.job_id,
+                    remote_entry: job.remote_entry,
+                    status: RemoteDownloadResultStatus::Cancelled,
+                }
+            } else {
+                RemoteDownloadResult {
+                    job_id: job.job_id,
+                    remote_entry: job.remote_entry,
+                    status: RemoteDownloadResultStatus::Failed(format!(
+                        "Remote download failed item_id={} path={}: {}",
+                        job.item_id, job.path, error
+                    )),
+                }
+            }
+        }
     }
 }

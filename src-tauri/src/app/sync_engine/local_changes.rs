@@ -124,6 +124,9 @@ async fn apply_local_changes(
             local_entry.size,
             local_entry.modified_ts
         );
+        // An upload already under way finishes; none start once an update
+        // is being prepared.
+        ensure_accepting_new_transfers()?;
         if !claim_upload_job_path(&graph.profile_id, &path, &graph.cycle_id)? {
             log::info!(
                 "{} [cycle:{}] LOCAL_UPLOAD_SKIPPED_NOT_CLAIMED path={}",
