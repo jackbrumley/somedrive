@@ -22,4 +22,5 @@ include!("sync_engine/local_changes.rs");
 include!("sync_engine/local_changes_tests.rs");
 include!("sync_engine/upload_lane.rs");
 include!("sync_engine/graph_transfer.rs");
+include!("sync_engine/graph_download_diagnostics.rs");
 include!("sync_engine/path_state.rs");

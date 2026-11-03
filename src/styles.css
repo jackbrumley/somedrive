@@ -3,6 +3,7 @@
 @import "./styles/shell.css";
 @import "./styles/pages.css";
 @import "./styles/accounts.css";
+@import "./styles/account-detail.css";
 @import "./styles/forms.css";
 @import "./styles/toast.css";
 @import "./styles/updates.css";

@@ -1,8 +1,14 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
+// File size budget (App Standard section 8): 600 lines soft, 1000 hard.
 const ROOT = process.cwd();
 const MAX_LINES = 1000;
+const SOFT_MAX_LINES = 600;
+
+// Files allowed over the hard cap while they are being split. Each entry
+// needs a comment saying why and where the split is tracked (docs/TODO.md).
+const ALLOWLIST = new Set([]);
 const TARGET_DIRS = ["src", path.join("src-tauri", "src")];
 const SOURCE_EXTENSIONS = new Set([".rs", ".ts", ".tsx", ".css"]);
 
@@ -38,9 +44,14 @@ const run = async () => {
   }
 
   const oversized = [];
+  const overSoftBudget = [];
   for (const filePath of filePaths) {
     const count = await lineCount(filePath);
-    if (count > MAX_LINES) {
+    const relativePath = path.relative(ROOT, filePath);
+    if (count > SOFT_MAX_LINES && count <= MAX_LINES) {
+      overSoftBudget.push(relativePath);
+    }
+    if (count > MAX_LINES && !ALLOWLIST.has(relativePath)) {
       oversized.push({
         relativePath: path.relative(ROOT, filePath),
         count,
@@ -59,6 +70,9 @@ const run = async () => {
   }
 
   console.log(`Line cap check passed (${MAX_LINES} max lines).`);
+  if (overSoftBudget.length > 0) {
+    console.log(`${overSoftBudget.length} file(s) are over the ${SOFT_MAX_LINES}-line soft budget; split them when you next change them.`);
+  }
 };
 
 await run();
