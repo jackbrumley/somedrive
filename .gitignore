@@ -3,3 +3,6 @@ dist/
 src-tauri/target/
 .DS_Store
 reference-systems/
+
+# Release packaging output
+release-artifacts/

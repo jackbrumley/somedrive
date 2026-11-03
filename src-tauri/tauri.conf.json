@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "SomeDrive",
+  "productName": "somedrive",
   "version": "0.1.0",
   "identifier": "org.somedrive.app",
   "build": {
@@ -47,6 +47,14 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "linux": {
+      "deb": {
+        "desktopTemplate": "packaging/linux/somedrive.desktop"
+      },
+      "rpm": {
+        "desktopTemplate": "packaging/linux/somedrive.desktop"
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

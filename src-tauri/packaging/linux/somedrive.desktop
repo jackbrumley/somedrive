@@ -1,0 +1,9 @@
+[Desktop Entry]
+Categories=Network;FileTransfer;
+Comment={{comment}}
+Exec={{exec}}
+StartupWMClass={{exec}}
+Icon={{icon}}
+Name=SomeDrive
+Terminal=false
+Type=Application
