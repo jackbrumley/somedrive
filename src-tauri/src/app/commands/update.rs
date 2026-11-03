@@ -4,7 +4,7 @@
 //! re-runs the same one-line installer a new user runs.
 //!
 //! SomeDrive's pre-update hook: before exiting, sync is drained and stopped
-//! (`sync_engine::drain_sync_for_update`) so an update never interrupts a
+//! (`sync_engine::drain_sync`) so an update never interrupts a
 //! transfer.
 
 use std::process::Stdio;
@@ -12,7 +12,7 @@ use std::process::Stdio;
 use serde::{Deserialize, Serialize};
 
 use crate::app::state::AppState;
-use crate::app::sync_engine;
+use crate::app::sync_engine::{self, SyncShutdownReason};
 
 const GITHUB_LATEST_RELEASE_API_URL: &str =
     "https://api.github.com/repos/jackbrumley/somedrive/releases/latest";
@@ -107,13 +107,13 @@ pub async fn install_update(
 ) -> Result<(), String> {
     log::info!("Starting in-app update");
 
-    sync_engine::begin_update_shutdown()?;
-    let prepared = sync_engine::drain_sync_for_update(&state)
+    sync_engine::begin_sync_shutdown(SyncShutdownReason::Update)?;
+    let prepared = sync_engine::drain_sync(&state, SyncShutdownReason::Update)
         .await
         .and_then(|()| spawn_update_process());
     if let Err(error) = prepared {
         log::error!("In-app update did not start: {error}");
-        sync_engine::resume_sync_after_cancelled_update(&state);
+        sync_engine::resume_sync_after_cancelled_shutdown(&state);
         return Err(error);
     }
 
