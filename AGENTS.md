@@ -121,6 +121,51 @@ Managed via **npm** scripts and the Tauri CLI.
 
 ---
 
+## 🚀 Releases and Updates
+
+Follow the
+[Release and Update Standard](https://github.com/jackbrumley/jackbrumley.github.io/blob/main/RELEASE_STANDARD.md)
+(shared with Voquill, Rusty G6 and Yambuck). The step-by-step procedure is
+`docs/RELEASE.md`. Never run `npm run release:promote` unless the maintainer
+asks.
+
+SomeDrive's variations from the standard:
+- **Platforms:** Linux only. Three assets (`somedrive-X.Y.Z-linux-x64.deb`,
+  `.rpm`, `.AppImage`), named only by `scripts/release-assets.mjs`. No
+  Windows installer scripts and no Windows build or install-test job.
+- **Install site:** `https://brumley.info/somedrive` (GitHub Pages from
+  `main:/docs`).
+- **Names:** `productName` is `somedrive` so the binary, the deb/rpm package,
+  the desktop file, the icon and the autostart entry all share that one name
+  (Tauri derives the package name from `productName`). The window title and
+  the desktop entry (`src-tauri/packaging/linux/somedrive.desktop`) show
+  "SomeDrive". User data lives in `~/.config/somedrive`.
+- **Pre-update hook:** `install_update` never exits mid-transfer. Before it
+  starts the installer, `sync_engine::drain_sync_for_update`
+  (`src-tauri/src/app/sync_engine/update_shutdown.rs`) runs an explicit
+  shutdown state machine:
+  1. *FinishingTransfers*: no new sync cycle, download or upload starts;
+     transfers already running finish, for up to 30 seconds. Anything still
+     running then is cancelled exactly as Pause does (downloads write to a
+     temp file that is discarded; the job is requeued).
+  2. *StoppingWorkers*: every sync worker is cancelled and must fully exit,
+     including its download worker tasks, within 20 seconds.
+  3. *Stopped*: claimed/running jobs are returned to the queue. Everything
+     else is already committed to the per-account SQLite DB, which is the
+     sync authority.
+
+  The saved agent state of each account is not changed, so syncing accounts
+  resume when the new version starts. If sync does not stop in time or the
+  installer cannot be started, the update is abandoned: sync resumes and the
+  update modal shows the error. The modal shows "Finishing sync before
+  updating…" while this runs.
+- **Build dependencies:** `libdbus-1-dev` (tao) and `xdg-utils` (bundled
+  `xdg-open`) on top of the standard WebKitGTK set, in
+  `src-tauri/packaging/linux/Containerfile`. No OpenSSL (reqwest uses
+  rustls) and no tray library.
+
+---
+
 ## 🏗️ Architecture & Patterns
 
 ### 1. Backend (Rust)

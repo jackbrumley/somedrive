@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/jackbrumley/somedrive/releases/latest"><img src="https://img.shields.io/badge/Download-Latest%20Release-ef4444?style=for-the-badge" alt="Download Latest Release" /></a>
+  <a href="https://brumley.info/somedrive"><img src="https://img.shields.io/badge/Install-SomeDrive-1d4ed8?style=for-the-badge" alt="Install SomeDrive" /></a>
 </p>
 
 SomeDrive is a Linux-first Microsoft OneDrive desktop client with account-first controls, in-app sign-in, per-account pause/resume, and detailed sync diagnostics.
@@ -22,15 +22,15 @@ It exists because most Linux OneDrive tools are still command-line-heavy or awkw
 
 ## Install
 
-Download the latest release here:
+Open a terminal and run:
 
-- **[Download Latest Release](https://github.com/jackbrumley/somedrive/releases/latest)**
+```bash
+curl -sf https://brumley.info/somedrive/install.sh | bash
+```
 
-Planned package options:
+This installs the `.deb` (Debian, Ubuntu, Mint) or `.rpm` (Fedora) and asks for your password. For a user-only AppImage install on any distro, use `curl -sf https://brumley.info/somedrive/install.sh | bash -s -- --appimage`. To remove SomeDrive: `curl -sf https://brumley.info/somedrive/uninstall.sh | bash`.
 
-- Linux (Debian/Ubuntu): `.deb`
-- Linux (Fedora/RHEL): `.rpm`
-- Linux (Portable): `.AppImage`
+SomeDrive updates itself from **Settings → Check for Updates**. Packages are also on the [releases page](https://github.com/jackbrumley/somedrive/releases/latest).
 
 ## Getting Started
 
@@ -89,14 +89,13 @@ _Work in progress._
    - Run: `npm install`
 3. **Run development build**
    - Run: `npm run tauri:dev`
-4. **Build release packages**
-   - Run: `npm run tauri:build`
+4. **Build release packages** (needs `podman`)
+   - Run: `npm run release:linux`, then `node scripts/package-release.mjs`
 5. **Find output artifacts**
-   - `src-tauri/target/release/bundle/`
+   - `release-artifacts/` (see `docs/RELEASE.md`)
 
 ## Known Issues
 
-- Linux packaging availability depends on host tooling (`rpmbuild`, `appimagetool`) when building bundles locally.
 - Microsoft app registration/auth configuration may need project-owned tenant/app settings for all target account types.
 - Project is in active development, so UX and storage schema may continue to evolve quickly.
 
