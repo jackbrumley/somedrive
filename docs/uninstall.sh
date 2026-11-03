@@ -72,9 +72,21 @@ fi
 
 if optional_cmd pgrep && pgrep -x "$BIN_NAME" >/dev/null 2>&1; then
   log "Closing running SomeDrive"
+  # SomeDrive finishes or safely pauses in-flight transfers on SIGTERM
+  # (at most ~20 s), so give it time before SIGKILL.
   pkill -TERM -x "$BIN_NAME" >/dev/null 2>&1 || true
-  sleep 1
-  pkill -KILL -x "$BIN_NAME" >/dev/null 2>&1 || true
+  waited=0
+  while pgrep -x "$BIN_NAME" >/dev/null 2>&1 && (( waited < 25 )); do
+    if (( waited == 1 )); then
+      log "Waiting for SomeDrive to finish syncing..."
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  if pgrep -x "$BIN_NAME" >/dev/null 2>&1; then
+    log "SomeDrive did not exit within 25s; forcing it to close"
+    pkill -KILL -x "$BIN_NAME" >/dev/null 2>&1 || true
+  fi
 fi
 
 # System package.

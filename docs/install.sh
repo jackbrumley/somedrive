@@ -123,13 +123,27 @@ acquire_root() {
   fi
 }
 
+# SomeDrive handles SIGTERM by finishing or safely pausing in-flight
+# transfers before it exits (at most ~20 s), so give it time before SIGKILL.
+STOP_GRACE_SECONDS=25
+
 stop_running_process() {
   if optional_cmd pgrep && pgrep -x "$BIN_NAME" >/dev/null 2>&1; then
     log "Closing running SomeDrive"
     if optional_cmd pkill; then
       pkill -TERM -x "$BIN_NAME" >/dev/null 2>&1 || true
-      sleep 1
-      pkill -KILL -x "$BIN_NAME" >/dev/null 2>&1 || true
+      local waited=0
+      while pgrep -x "$BIN_NAME" >/dev/null 2>&1 && (( waited < STOP_GRACE_SECONDS )); do
+        if (( waited == 1 )); then
+          log "Waiting for SomeDrive to finish syncing..."
+        fi
+        sleep 1
+        waited=$((waited + 1))
+      done
+      if pgrep -x "$BIN_NAME" >/dev/null 2>&1; then
+        warn "SomeDrive did not exit within ${STOP_GRACE_SECONDS}s; forcing it to close"
+        pkill -KILL -x "$BIN_NAME" >/dev/null 2>&1 || true
+      fi
     fi
   fi
 }
