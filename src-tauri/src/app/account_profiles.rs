@@ -1,3 +1,4 @@
+use crate::app::json_store;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -55,14 +56,10 @@ struct AccountProfileStore {
 }
 
 pub fn load_profiles() -> Result<Vec<AccountProfile>, String> {
-    let storage_path = storage_file_path()?;
-    if !storage_path.exists() {
+    let Some(mut store) = json_store::read_json::<AccountProfileStore>(&storage_file_path()?)?
+    else {
         return Ok(Vec::new());
-    }
-
-    let text = fs::read_to_string(storage_path).map_err(|error| error.to_string())?;
-    let mut store: AccountProfileStore =
-        serde_json::from_str(&text).map_err(|error| error.to_string())?;
+    };
     for profile in &mut store.profiles {
         match read_sync_lifecycle_profile_metadata(&profile.id) {
             Ok(Some((agent_state, last_sync_at))) => {
@@ -83,15 +80,10 @@ pub fn load_profiles() -> Result<Vec<AccountProfile>, String> {
 }
 
 pub fn save_profiles(profiles: &[AccountProfile]) -> Result<(), String> {
-    let storage_dir = storage_dir_path()?;
-    fs::create_dir_all(&storage_dir).map_err(|error| error.to_string())?;
-
-    let storage_path = storage_dir.join("profiles.json");
     let payload = AccountProfileStore {
         profiles: profiles.to_vec(),
     };
-    let text = serde_json::to_string_pretty(&payload).map_err(|error| error.to_string())?;
-    fs::write(storage_path, text).map_err(|error| error.to_string())
+    json_store::write_json(&storage_file_path()?, &payload)
 }
 
 pub fn create_profile(input: CreateAccountProfileInput) -> Result<AccountProfile, String> {
@@ -179,7 +171,7 @@ fn storage_dir_path() -> Result<PathBuf, String> {
     crate::paths::accounts_dir()
 }
 
-fn storage_file_path() -> Result<PathBuf, String> {
+pub fn storage_file_path() -> Result<PathBuf, String> {
     Ok(storage_dir_path()?.join("profiles.json"))
 }
 

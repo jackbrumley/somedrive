@@ -1,4 +1,6 @@
-use crate::app::account_profiles::load_profiles;
+use crate::app::account_profiles::{self, load_profiles};
+use crate::app::app_settings;
+use crate::app::json_store;
 use crate::app::commands::update;
 use crate::app::log_context;
 use crate::app::session_log;
@@ -29,6 +31,13 @@ pub fn run_setup(
         launch.start_hidden
     );
 
+    json_store::enable_recovery_notices(app.handle());
+    if let Err(error) = ensure_settings_readable() {
+        log::error!("SETTINGS_UNREADABLE {error}");
+        exit_with_settings_error(app.handle(), &error);
+        return Ok(());
+    }
+
     configure_shell(app)?;
     refresh_autostart_registration(app);
 
@@ -50,6 +59,27 @@ pub fn run_setup(
         update::show_update_failed_dialog(app.handle());
     }
     Ok(())
+}
+
+/// A settings file that exists but cannot be read (permissions, I/O) must
+/// stop start-up: carrying on would replace it with defaults.
+fn ensure_settings_readable() -> Result<(), String> {
+    json_store::ensure_readable(&app_settings::app_settings_path()?)?;
+    json_store::ensure_readable(&account_profiles::storage_file_path()?)
+}
+
+fn exit_with_settings_error(app_handle: &tauri::AppHandle, error: &str) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+
+    let exit_handle = app_handle.clone();
+    app_handle
+        .dialog()
+        .message(format!(
+            "{error}\n\nSomeDrive has not changed this file. Fix its permissions (it must be readable by you) and start SomeDrive again."
+        ))
+        .title("SomeDrive cannot read its settings")
+        .kind(MessageDialogKind::Error)
+        .show(move |_| exit_handle.exit(1));
 }
 
 /// Rewrites an enabled autostart entry (`~/.config/autostart/somedrive.desktop`)

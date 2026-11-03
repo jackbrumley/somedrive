@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use crate::app::json_store;
 use std::path::PathBuf;
 
 const DEFAULT_DOWNLOAD_CONCURRENCY: usize = 12;
@@ -132,54 +133,26 @@ pub fn clamp_download_concurrency(value: usize) -> usize {
 
 fn load_or_create_app_settings() -> Result<AppSettingsFile, String> {
     let path = app_settings_path()?;
-    if !path.exists() {
-        let settings = AppSettingsFile::default();
-        save_app_settings(&settings)?;
-        return Ok(settings);
+    match json_store::read_json::<AppSettingsFile>(&path)? {
+        Some(mut parsed) => {
+            parsed.sync.download_concurrency =
+                clamp_download_concurrency(parsed.sync.download_concurrency);
+            Ok(parsed)
+        }
+        // Missing, or unparseable and moved aside: start from defaults.
+        None => {
+            let settings = AppSettingsFile::default();
+            save_app_settings(&settings)?;
+            Ok(settings)
+        }
     }
-
-    let text = std::fs::read_to_string(&path).map_err(|error| {
-        format!(
-            "Failed reading app settings '{}': {}",
-            path.display(),
-            error
-        )
-    })?;
-    let mut parsed: AppSettingsFile = serde_json::from_str(&text).map_err(|error| {
-        format!(
-            "Failed decoding app settings '{}': {}",
-            path.display(),
-            error
-        )
-    })?;
-    parsed.sync.download_concurrency = clamp_download_concurrency(parsed.sync.download_concurrency);
-    Ok(parsed)
 }
 
 fn save_app_settings(settings: &AppSettingsFile) -> Result<(), String> {
-    let path = app_settings_path()?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "Failed creating app settings directory '{}': {}",
-                parent.display(),
-                error
-            )
-        })?;
-    }
-
-    let text = serde_json::to_string_pretty(settings)
-        .map_err(|error| format!("Failed encoding app settings JSON: {error}"))?;
-    std::fs::write(&path, text).map_err(|error| {
-        format!(
-            "Failed writing app settings '{}': {}",
-            path.display(),
-            error
-        )
-    })
+    json_store::write_json(&app_settings_path()?, settings)
 }
 
-fn app_settings_path() -> Result<PathBuf, String> {
+pub fn app_settings_path() -> Result<PathBuf, String> {
     crate::paths::app_settings_file()
 }
 

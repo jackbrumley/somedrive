@@ -1,3 +1,4 @@
+use crate::app::json_store;
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -58,24 +59,16 @@ pub fn append_event(
 }
 
 fn load_all_events() -> Result<Vec<ActivityEvent>, String> {
-    let path = events_file_path()?;
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    let store: ActivityStore = serde_json::from_str(&text).map_err(|error| error.to_string())?;
-    Ok(store.events)
+    Ok(json_store::read_json::<ActivityStore>(&events_file_path()?)?
+        .map(|store| store.events)
+        .unwrap_or_default())
 }
 
 fn save_all_events(events: &[ActivityEvent]) -> Result<(), String> {
-    let dir = events_dir_path()?;
-    fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
-    let path = dir.join("events.json");
     let store = ActivityStore {
         events: events.to_vec(),
     };
-    let text = serde_json::to_string_pretty(&store).map_err(|error| error.to_string())?;
-    fs::write(path, text).map_err(|error| error.to_string())
+    json_store::write_json(&events_file_path()?, &store)
 }
 
 fn events_dir_path() -> Result<PathBuf, String> {

@@ -111,22 +111,15 @@ fn auth_session_file_path(profile_id: &str) -> Result<PathBuf, String> {
 }
 
 fn write_auth_session(profile_id: &str, session: StoredAuthSession) -> Result<(), String> {
-    let file_path = auth_session_file_path(profile_id)?;
-    if let Some(parent) = file_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    let text = serde_json::to_string_pretty(&session).map_err(|error| error.to_string())?;
-    fs::write(file_path, text).map_err(|error| error.to_string())
+    // Atomic and owner-only: this file holds the account's refresh token.
+    crate::app::json_store::write_json(&auth_session_file_path(profile_id)?, &session)
 }
 
 pub fn load_auth_session(profile_id: &str) -> Result<AuthSessionSnapshot, String> {
-    let file_path = auth_session_file_path(profile_id)?;
-    if !file_path.exists() {
-        return Err("Account auth session not found".to_string());
-    }
-    let text = fs::read_to_string(file_path).map_err(|error| error.to_string())?;
+    // Missing, or unparseable and moved aside: the account must sign in again.
     let session: StoredAuthSession =
-        serde_json::from_str(&text).map_err(|error| error.to_string())?;
+        crate::app::json_store::read_json(&auth_session_file_path(profile_id)?)?
+            .ok_or_else(|| "Account auth session not found".to_string())?;
     Ok(AuthSessionSnapshot {
         access_token: session.access_token,
         refresh_token: session.refresh_token,
