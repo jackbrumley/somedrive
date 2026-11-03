@@ -21,15 +21,20 @@ pub fn configure_linux_session_environment() {
     std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     std::env::set_var("WEBKIT_DISABLE_GPU_SANDBOX", "1");
 
-    if is_wayland_session() {
+    if should_force_wayland_backend() {
         // Native Wayland, rather than XWayland, on Wayland sessions.
         std::env::set_var("GDK_BACKEND", "wayland");
     }
 }
 
-fn is_wayland_session() -> bool {
-    std::env::var_os("WAYLAND_DISPLAY").is_some()
-        || std::env::var("XDG_SESSION_TYPE").is_ok_and(|session| session == "wayland")
+/// Force GTK's native Wayland backend only on a real Wayland session with a
+/// reachable display, and never over a `GDK_BACKEND` the user chose
+/// (APP_STANDARD.md §2).
+fn should_force_wayland_backend() -> bool {
+    std::env::var_os("GDK_BACKEND").is_none()
+        && std::env::var("XDG_SESSION_TYPE")
+            .is_ok_and(|value| value.eq_ignore_ascii_case("wayland"))
+        && std::env::var_os("WAYLAND_DISPLAY").is_some_and(|value| !value.is_empty())
 }
 
 #[cfg(test)]
