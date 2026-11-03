@@ -95,6 +95,8 @@ mod job_queue_tests {
             .expect("insert download job with state");
     }
 
+    // a test fixture that writes one sync_jobs row column by column.
+    #[allow(clippy::too_many_arguments)]
     fn insert_job_with_state_and_lease(
         profile_id: &str,
         direction: &str,

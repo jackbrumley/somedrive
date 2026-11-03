@@ -370,7 +370,6 @@ mod path_state_tests {
                     modified_ts: 1,
                 },
             )]),
-            ..PersistedSyncState::default()
         };
         save_sync_state(&profile_id, &dirty_state).expect("seed stale state cache");
 

@@ -101,6 +101,8 @@ fn runtime_set_local_scan_progress(
     }
 }
 
+// the structured activity contract (stage, progress_mode, current, total, unit, detail, cycle_id) is passed field by field; bundling it into one struct is tracked in docs/TODO.md.
+#[allow(clippy::too_many_arguments)]
 fn runtime_set_current_activity(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,

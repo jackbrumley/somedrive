@@ -613,8 +613,7 @@ pub fn retry_all_failed_download_jobs(
                 DOWNLOAD_JOB_STATE_FAILED_TERMINAL,
             ],
         )
-        .map_err(|error| format!("Failed retrying failed download jobs: {error}"))?
-        as usize;
+        .map_err(|error| format!("Failed retrying failed download jobs: {error}"))?;
 
     let already_retrying = failed_total.saturating_sub(retried);
 

@@ -240,7 +240,7 @@ fn rebuild_sync_file_index(
             ])
             .map_err(|error| format!("Failed upserting remote sync file row: {error}"))?;
         processed_entries = processed_entries.saturating_add(1);
-        if processed_entries % 250 == 0 || last_progress_emit_at.elapsed() >= Duration::from_millis(600) {
+        if processed_entries.is_multiple_of(250) || last_progress_emit_at.elapsed() >= Duration::from_millis(600) {
             runtime_set_current_activity(
                 sync_runtime,
                 profile_id,
@@ -287,7 +287,7 @@ fn rebuild_sync_file_index(
             ])
             .map_err(|error| format!("Failed upserting local sync file row: {error}"))?;
         processed_entries = processed_entries.saturating_add(1);
-        if processed_entries % 250 == 0 || last_progress_emit_at.elapsed() >= Duration::from_millis(600) {
+        if processed_entries.is_multiple_of(250) || last_progress_emit_at.elapsed() >= Duration::from_millis(600) {
             runtime_set_current_activity(
                 sync_runtime,
                 profile_id,

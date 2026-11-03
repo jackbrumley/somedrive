@@ -19,6 +19,8 @@ mod planner_tests {
             .expect("clear sync_jobs");
     }
 
+    // a test fixture that writes one sync_files row column by column.
+    #[allow(clippy::too_many_arguments)]
     fn insert_sync_file_row(
         profile_id: &str,
         path: &str,

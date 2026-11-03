@@ -386,8 +386,8 @@ async fn download_remote_item_content(
             );
             return Err(DOWNLOAD_RETRY_DEFERRED_ERROR.to_string());
         }
-        if status.is_server_error() {
-            if attempt < MAX_DOWNLOAD_RETRIES {
+        if status.is_server_error()
+            && attempt < MAX_DOWNLOAD_RETRIES {
                 let delay = parse_retry_after_delay(response.headers())
                     .unwrap_or_else(|| exponential_backoff_delay(attempt));
                 if let Some(active_job_id) = job_id {
@@ -419,7 +419,6 @@ async fn download_remote_item_content(
                 sleep_with_cancellation(cancel_flag, delay).await?;
                 continue;
             }
-        }
         if !status.is_success() {
             if status == StatusCode::NOT_FOUND || status == StatusCode::GONE {
                 if let Some(active_transfer_id) = &transfer_id {

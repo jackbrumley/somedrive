@@ -5,7 +5,7 @@ fn spawn_delta_page_producer(
     page_tx: mpsc::Sender<Result<DeltaPageWorkItem, String>>,
     producer_alive_flag: Arc<AtomicBool>,
 ) {
-    let mut producer_graph = graph.clone();
+    let producer_graph = graph.clone();
     tauri::async_runtime::spawn(async move {
         producer_alive_flag.store(true, Ordering::Relaxed);
         log::info!(
@@ -32,7 +32,7 @@ fn spawn_delta_page_producer(
                 producer_graph.cycle_id,
                 current_url
             );
-            let response_text = match graph_get_text(&mut producer_graph, &current_url, &cancel_flag).await {
+            let response_text = match graph_get_text(&producer_graph, &current_url, &cancel_flag).await {
                 Ok(text) => text,
                 Err(error) => {
                     producer_alive_flag.store(false, Ordering::Relaxed);

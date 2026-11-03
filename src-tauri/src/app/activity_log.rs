@@ -59,9 +59,11 @@ pub fn append_event(
 }
 
 fn load_all_events() -> Result<Vec<ActivityEvent>, String> {
-    Ok(json_store::read_json::<ActivityStore>(&events_file_path()?)?
-        .map(|store| store.events)
-        .unwrap_or_default())
+    Ok(
+        json_store::read_json::<ActivityStore>(&events_file_path()?)?
+            .map(|store| store.events)
+            .unwrap_or_default(),
+    )
 }
 
 fn save_all_events(events: &[ActivityEvent]) -> Result<(), String> {

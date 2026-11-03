@@ -53,7 +53,7 @@ fn spawn_remote_download_workers(
                 } else {
                     execute_remote_download_job(&worker_graph, job, &worker_cancel).await
                 };
-                let _ = worker_pending_download_count.fetch_update(
+                let _ = worker_pending_download_count.try_update(
                     Ordering::Relaxed,
                     Ordering::Relaxed,
                     |current| Some(current.saturating_sub(1)),

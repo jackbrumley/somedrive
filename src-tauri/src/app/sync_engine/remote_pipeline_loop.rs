@@ -3,6 +3,8 @@ struct RemotePipelineLoopOutcome {
     remote_applied_paths: HashSet<String>,
 }
 
+// the pipeline loop owns the cycle's channels and shared counters explicitly; a pipeline context struct is tracked in docs/TODO.md.
+#[allow(clippy::too_many_arguments)]
 async fn run_remote_pipeline_loop(
     graph: &mut GraphContext,
     sync_root: &Path,

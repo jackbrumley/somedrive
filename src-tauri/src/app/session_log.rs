@@ -387,7 +387,11 @@ fn resolve_profile_log_path_by_account_key(account_key: &str) -> Result<PathBuf,
     let dir = PROFILE_LOG_DIR
         .get()
         .cloned()
-        .or_else(|| crate::paths::debug_dir().ok().map(|path| path.join("profiles")))
+        .or_else(|| {
+            crate::paths::debug_dir()
+                .ok()
+                .map(|path| path.join("profiles"))
+        })
         .ok_or_else(|| "Profile log directory unavailable".to_string())?;
     fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
     let safe_key = sanitize_path_component(account_key);

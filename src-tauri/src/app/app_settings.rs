@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::app::json_store;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 const DEFAULT_DOWNLOAD_CONCURRENCY: usize = 12;

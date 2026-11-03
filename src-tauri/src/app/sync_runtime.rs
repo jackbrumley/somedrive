@@ -350,6 +350,8 @@ pub fn set_local_scan_progress(
     emit_status_event_for_account(runtime_map, profile_id, StatusEventEmitMode::Throttled);
 }
 
+// the structured activity contract (stage, progress_mode, current, total, unit, detail, cycle_id) is passed field by field; bundling it into one struct is tracked in docs/TODO.md.
+#[allow(clippy::too_many_arguments)]
 pub fn set_current_activity(
     runtime_map: &mut SyncRuntimeMap,
     profile_id: &str,

@@ -84,7 +84,7 @@ fn resolve_download_concurrency() -> usize {
     std::env::var("SOMEDRIVE_SYNC_DOWNLOAD_CONCURRENCY")
         .ok()
         .and_then(|value| value.trim().parse::<usize>().ok())
-        .map(|value| crate::app::app_settings::clamp_download_concurrency(value))
+        .map(crate::app::app_settings::clamp_download_concurrency)
         .or_else(|| crate::app::app_settings::load_sync_download_concurrency().ok())
         .unwrap_or(DEFAULT_DOWNLOAD_CONCURRENCY)
 }
@@ -254,10 +254,9 @@ fn parse_retry_after_seconds_from_json_body(body: &str) -> Option<Duration> {
 
     let seconds = if let Some(number) = value.as_u64() {
         number
-    } else if let Some(text) = value.as_str() {
-        text.trim().parse::<u64>().ok()?
     } else {
-        return None;
+        let text = value.as_str()?;
+        text.trim().parse::<u64>().ok()?
     };
     Some(Duration::from_secs(seconds.clamp(1, 3600)))
 }
@@ -345,6 +344,8 @@ fn build_unique_download_temp_path(
     parent.join(format!(".somedrive-part-{suffix}.tmp"))
 }
 
+// the retry decision needs the job, transfer and cycle identifiers explicitly; a cycle context struct is tracked in docs/TODO.md.
+#[allow(clippy::too_many_arguments)]
 async fn handle_download_retry(
     graph: &GraphContext,
     job_id: Option<i64>,

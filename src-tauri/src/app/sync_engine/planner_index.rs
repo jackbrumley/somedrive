@@ -1,33 +1,21 @@
 fn read_sync_file_planner_counters(profile_id: &str) -> Result<SyncFilePlannerCounters, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
-    let mut counters = SyncFilePlannerCounters::default();
-
-    counters.cloud_discovered_total = connection
-        .query_row(
-            "SELECT COUNT(1) FROM sync_files WHERE profile_id = ?1 AND remote_present = 1",
-            params![profile_id],
-            |row| row.get::<_, i64>(0),
-        )
-        .map_err(|error| format!("Failed reading cloud discovered counter: {error}"))?
-        .max(0) as usize;
-
-    counters.local_discovered_total = connection
-        .query_row(
-            "SELECT COUNT(1) FROM sync_files WHERE profile_id = ?1 AND local_present = 1",
-            params![profile_id],
-            |row| row.get::<_, i64>(0),
-        )
-        .map_err(|error| format!("Failed reading local discovered counter: {error}"))?
-        .max(0) as usize;
-
-    counters.shared_reference_total = connection
-        .query_row(
-            "SELECT COUNT(1) FROM sync_files WHERE profile_id = ?1 AND is_shared_reference = 1",
-            params![profile_id],
-            |row| row.get::<_, i64>(0),
-        )
-        .map_err(|error| format!("Failed reading shared reference counter: {error}"))?
-        .max(0) as usize;
+    let count_sync_files = |condition: &str, label: &str| -> Result<usize, String> {
+        connection
+            .query_row(
+                &format!("SELECT COUNT(1) FROM sync_files WHERE profile_id = ?1 AND {condition}"),
+                params![profile_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|count| count.max(0) as usize)
+            .map_err(|error| format!("Failed reading {label} counter: {error}"))
+    };
+    let mut counters = SyncFilePlannerCounters {
+        cloud_discovered_total: count_sync_files("remote_present = 1", "cloud discovered")?,
+        local_discovered_total: count_sync_files("local_present = 1", "local discovered")?,
+        shared_reference_total: count_sync_files("is_shared_reference = 1", "shared reference")?,
+        ..SyncFilePlannerCounters::default()
+    };
 
     let mut statement = connection
         .prepare(

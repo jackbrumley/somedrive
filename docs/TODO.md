@@ -43,6 +43,14 @@ SomeDrive must not ship with a third-party client ID.
 - [ ] Final regression of add-account, auth completion, log copy/open and the
   account settings UX.
 
+### Sync engine parameter bundling
+- [ ] Bundle the structured activity contract (stage, progress_mode, current,
+  total, unit, detail, cycle_id) into one struct passed through
+  `runtime_set_current_activity`, `sync_runtime::set_current_activity` and
+  the lifecycle store, and give the remote pipeline loop, local-change
+  application and download retry a cycle context struct. Removes the
+  commented `#[allow(clippy::too_many_arguments)]` markers.
+
 ## Ideas
 
 - Show only the relevant tray item (Pause all or Resume all syncing) by

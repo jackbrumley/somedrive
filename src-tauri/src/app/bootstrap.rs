@@ -1,7 +1,7 @@
 use crate::app::account_profiles::{self, load_profiles};
 use crate::app::app_settings;
-use crate::app::json_store;
 use crate::app::commands::update;
+use crate::app::json_store;
 use crate::app::log_context;
 use crate::app::session_log;
 use crate::app::shutdown;

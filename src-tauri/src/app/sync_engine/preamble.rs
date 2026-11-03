@@ -262,7 +262,6 @@ mod preamble_tests {
                     modified_ts: 1,
                 },
             )]),
-            ..PersistedSyncState::default()
         };
         save_sync_state(&profile_id, &stale_state).expect("write stale sync state");
 

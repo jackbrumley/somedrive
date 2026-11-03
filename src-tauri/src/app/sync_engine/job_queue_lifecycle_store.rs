@@ -193,6 +193,8 @@ fn persist_sync_lifecycle_remote_scan_complete(profile_id: &str, complete: bool)
     upsert_sync_lifecycle_row(profile_id, &row)
 }
 
+// the structured activity contract (stage, progress_mode, current, total, unit, detail, cycle_id) is passed field by field; bundling it into one struct is tracked in docs/TODO.md.
+#[allow(clippy::too_many_arguments)]
 fn persist_sync_lifecycle_activity(
     profile_id: &str,
     stage: &str,
@@ -225,6 +227,8 @@ fn persist_sync_lifecycle_activity(
     upsert_sync_lifecycle_row(profile_id, &row)
 }
 
+// the structured activity contract (stage, progress_mode, current, total, unit, detail, cycle_id) is passed field by field; bundling it into one struct is tracked in docs/TODO.md.
+#[allow(clippy::too_many_arguments)]
 fn validate_sync_lifecycle_activity_write(
     profile_id: &str,
     phase: &str,

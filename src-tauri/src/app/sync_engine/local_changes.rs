@@ -1,3 +1,5 @@
+// each planned action list is passed explicitly; a cycle context struct is tracked in docs/TODO.md.
+#[allow(clippy::too_many_arguments)]
 async fn apply_local_changes(
     graph: &mut GraphContext,
     sync_root: &Path,
@@ -41,7 +43,7 @@ async fn apply_local_changes(
         ensure_not_cancelled(cancel_flag)?;
         local_paths_seen += 1;
 
-        if last_activity_emit_at.elapsed() >= ACTIVITY_EMIT_INTERVAL || local_paths_seen % 200 == 0 {
+        if last_activity_emit_at.elapsed() >= ACTIVITY_EMIT_INTERVAL || local_paths_seen.is_multiple_of(200) {
             runtime_set_current_activity(
                 &graph.sync_runtime,
                 &graph.profile_id,
@@ -252,7 +254,7 @@ async fn apply_local_changes(
         deleted_paths_seen += 1;
         mark_action_job_running(&graph.profile_id, DELETE_REMOTE_JOB_DIRECTION, &deleted_path)?;
 
-        if last_activity_emit_at.elapsed() >= ACTIVITY_EMIT_INTERVAL || deleted_paths_seen % 100 == 0 {
+        if last_activity_emit_at.elapsed() >= ACTIVITY_EMIT_INTERVAL || deleted_paths_seen.is_multiple_of(100) {
             runtime_set_current_activity(
                 &graph.sync_runtime,
                 &graph.profile_id,
@@ -341,7 +343,7 @@ async fn apply_local_changes(
         ensure_not_cancelled(cancel_flag)?;
         local_delete_paths_seen = local_delete_paths_seen.saturating_add(1);
         mark_action_job_running(&graph.profile_id, DELETE_LOCAL_JOB_DIRECTION, &local_delete_path)?;
-        if last_activity_emit_at.elapsed() >= ACTIVITY_EMIT_INTERVAL || local_delete_paths_seen % 100 == 0 {
+        if last_activity_emit_at.elapsed() >= ACTIVITY_EMIT_INTERVAL || local_delete_paths_seen.is_multiple_of(100) {
             runtime_set_current_activity(
                 &graph.sync_runtime,
                 &graph.profile_id,
@@ -428,7 +430,7 @@ async fn apply_local_changes(
             ensure_not_cancelled(cancel_flag)?;
             conflict_paths_seen = conflict_paths_seen.saturating_add(1);
             mark_action_job_running(&graph.profile_id, CONFLICT_JOB_DIRECTION, &conflict_path)?;
-            if last_activity_emit_at.elapsed() >= ACTIVITY_EMIT_INTERVAL || conflict_paths_seen % 100 == 0 {
+            if last_activity_emit_at.elapsed() >= ACTIVITY_EMIT_INTERVAL || conflict_paths_seen.is_multiple_of(100) {
                 runtime_set_current_activity(
                     &graph.sync_runtime,
                     &graph.profile_id,
@@ -513,7 +515,7 @@ async fn reconcile_bootstrap_local_snapshot(
     for remote_item in remote_items {
         ensure_not_cancelled(cancel_flag)?;
         remote_items_seen = remote_items_seen.saturating_add(1);
-        if last_activity_emit_at.elapsed() >= Duration::from_millis(500) || remote_items_seen % 100 == 0 {
+        if last_activity_emit_at.elapsed() >= Duration::from_millis(500) || remote_items_seen.is_multiple_of(100) {
             runtime_set_current_activity(
                 &graph.sync_runtime,
                 &graph.profile_id,
