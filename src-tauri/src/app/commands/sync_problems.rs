@@ -1,9 +1,9 @@
-use crate::app::sync_engine::{self, SyncProblem};
+use crate::app::sync_engine::{self, SyncProblemsView};
 
-/// The account's sync problems: held conflicts, items SomeDrive cannot sync,
-/// and downloads that failed.
+/// The account's sync problems (held conflicts, items SomeDrive cannot sync,
+/// failed downloads) and the items it skips by design, with the reasons.
 #[tauri::command]
-pub fn list_sync_problems(profile_id: String) -> Result<Vec<SyncProblem>, String> {
+pub fn list_sync_problems(profile_id: String) -> Result<SyncProblemsView, String> {
     sync_engine::list_sync_problems(&profile_id)
 }
 

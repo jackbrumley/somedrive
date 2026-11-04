@@ -1,4 +1,5 @@
-import type { ConflictResolution, SyncProblem, SyncRuntimeAccountStatus } from "../../types/somedrive";
+import type { ConflictResolution, SyncProblemsView, SyncRuntimeAccountStatus } from "../../types/somedrive";
+import { AccountNotSynced } from "./AccountNotSynced";
 import { useSyncProblems } from "../../hooks/useSyncProblems";
 import { AccountSyncProblems } from "./AccountSyncProblems";
 import { useTransferRates } from "../../hooks/useTransferRates";
@@ -25,7 +26,7 @@ interface AccountSyncActivityPanelProps {
   onKeepCloudFiles: () => Promise<void>;
   largeDeletePreviewPaths: string[];
   onExportLargeDeletePreview: () => Promise<void>;
-  onFetchSyncProblems: (accountId: string) => Promise<SyncProblem[]>;
+  onFetchSyncProblems: (accountId: string) => Promise<SyncProblemsView>;
   onResolveSyncConflicts: (accountId: string, paths: string[], resolution: ConflictResolution) => Promise<void>;
 }
 
@@ -57,7 +58,7 @@ export function AccountSyncActivityPanel({
   onResolveSyncConflicts,
 }: AccountSyncActivityPanelProps) {
   const rates = useTransferRates(runtimeStatus);
-  const { problems, resolve } = useSyncProblems(accountId, runtimeStatus?.updatedAt, {
+  const { problems, notSynced, resolve } = useSyncProblems(accountId, runtimeStatus?.updatedAt, {
     fetchProblems: onFetchSyncProblems,
     resolveConflicts: onResolveSyncConflicts,
   });
@@ -90,6 +91,8 @@ export function AccountSyncActivityPanel({
         <AccountSyncActivityList
           runtimeStatus={runtimeStatus}
           problemCount={problems.length}
+          notSyncedCount={notSynced.length}
+          notSynced={<AccountNotSynced items={notSynced} onOpenItemFolder={onOpenItemFolder} />}
           problems={
             <AccountSyncProblems
               problems={problems}

@@ -238,5 +238,20 @@ export interface SyncProblem {
   retryId: string | null;
 }
 
+/** Mirrors `sync_engine::NotSyncedItem`: an item skipped by design. */
+export interface NotSyncedItem {
+  path: string;
+  reasonCode: "onenote_notebook" | "excluded_by_rule" | "malware_detected" | "shared_with_you" | string;
+  reason: string;
+  isFolder: boolean;
+  contained: number;
+}
+
+/** Mirrors `sync_engine::SyncProblemsView`. */
+export interface SyncProblemsView {
+  problems: SyncProblem[];
+  notSynced: NotSyncedItem[];
+}
+
 /** Mirrors `app_settings::ConflictPolicy`. */
 export type ConflictPolicy = "ask" | "keep_newest";

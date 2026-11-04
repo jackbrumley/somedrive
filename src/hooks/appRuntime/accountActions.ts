@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import type {
   ConflictResolution,
-  SyncProblem,
+  SyncProblemsView,
   AccountKind,
   AccountProfile,
   CreateAccountProfileInput,
@@ -162,12 +162,12 @@ export function createAccountActions({
     }
   };
 
-  const fetchSyncProblems = async (profileId: string): Promise<SyncProblem[]> => {
+  const fetchSyncProblems = async (profileId: string): Promise<SyncProblemsView> => {
     try {
-      return await invoke<SyncProblem[]>("list_sync_problems", { profileId });
+      return await invoke<SyncProblemsView>("list_sync_problems", { profileId });
     } catch (error) {
       showToast(`Failed to read sync problems: ${error}`, "error");
-      return [];
+      return { problems: [], notSynced: [] };
     }
   };
 
