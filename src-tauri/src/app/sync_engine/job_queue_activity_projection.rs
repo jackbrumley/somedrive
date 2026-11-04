@@ -352,6 +352,7 @@ pub fn hydrate_runtime_status_from_db(
     status.phase = lifecycle.phase;
     status.phase_message = lifecycle.phase_message;
     status.remote_scan_complete = lifecycle.remote_scan_complete;
+    status.last_sync_at = lifecycle.last_sync_at.clone();
     if lifecycle.activity_stage.trim().is_empty() {
         return Err(format!(
             "Missing lifecycle activity stage for profile '{}'.",

@@ -167,6 +167,7 @@ export interface SyncRuntimeAccountStatus {
   uploadThrottleTotal?: number;
   uploadThrottleLastMinute?: number;
   remoteScanComplete?: boolean;
+  lastSyncAt?: string | null;
   localScanScannedCount?: number;
   localScanEstimatedTotal?: number | null;
   localScanCurrentPath?: string | null;

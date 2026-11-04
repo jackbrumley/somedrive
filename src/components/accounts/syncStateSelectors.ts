@@ -44,6 +44,15 @@ export function computeEffectiveSyncState(
 }
 
 /** The first sync is done once the account has completed a sync cycle. */
-export function computeHasCompletedInitialSync(account: AccountProfile): boolean {
-  return account.lastSyncAt !== null;
+/**
+ * Whether the account's first sync has finished. The live status carries the
+ * engine's last completed cycle; the profile's copy (read at load) is used
+ * only before the first status arrives.
+ */
+export function computeHasCompletedInitialSync(
+  account: AccountProfile,
+  runtimeStatus: SyncRuntimeAccountStatus | null
+): boolean {
+  const lastSyncAt = runtimeStatus ? runtimeStatus.lastSyncAt ?? null : account.lastSyncAt;
+  return lastSyncAt !== null && lastSyncAt !== undefined;
 }
