@@ -39,7 +39,7 @@ pub(crate) async fn download_remote_item_content(
     let mut direct_url = direct_url.map(ToString::to_string);
     loop {
         ensure_not_cancelled(cancel_flag)?;
-        graph.wait_for_throttle_window(cancel_flag).await?;
+        let request_started_at = graph.wait_for_throttle_window(cancel_flag).await?;
         attempt += 1;
         if let Some(active_job_id) = job_id {
             let _ = mark_download_job_running(&graph.profile_id, active_job_id);
@@ -201,7 +201,7 @@ pub(crate) async fn download_remote_item_content(
             let delay = parse_retry_after_delay(&response_headers)
                 .or_else(|| parse_retry_after_seconds_from_json_body(&response_text))
                 .unwrap_or_else(|| exponential_backoff_delay(attempt));
-            graph.extend_throttle_window(delay)?;
+            graph.extend_throttle_window(delay, request_started_at)?;
             if let Some(active_job_id) = job_id {
                 let retry_reason = format!("Download retry scheduled for HTTP status {status}");
                 if let Err(error) = mark_download_job_retry_wait(

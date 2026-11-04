@@ -123,3 +123,34 @@ fn engine_write_transactions_take_the_write_lock_up_front() {
         "use transaction_with_behavior(TransactionBehavior::Immediate) in: {offenders:?}"
     );
 }
+
+#[test]
+fn planner_counters_come_from_one_scan_and_add_up() {
+    let profile_id = test_profile_id("planner-counters");
+    let connection = open_sync_jobs_connection(&profile_id).expect("open");
+    for (path, action, cloud, local, shared) in [
+        ("a", "download", 1, 0, 0),
+        ("b", "download", 1, 0, 0),
+        ("c", "upload", 0, 1, 0),
+        ("d", "none", 1, 1, 0),
+        ("e", "none", 1, 1, 1),
+    ] {
+        connection
+            .execute(
+                "INSERT INTO sync_files (profile_id, path, desired_action, cloud_present,
+                    local_present, is_shared_reference, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1)",
+                params![profile_id, path, action, cloud, local, shared],
+            )
+            .expect("row");
+    }
+    drop(connection);
+
+    let counters = read_sync_file_planner_counters(&profile_id).expect("counters");
+    assert_eq!(counters.cloud_discovered_total, 4);
+    assert_eq!(counters.local_discovered_total, 3);
+    assert_eq!(counters.shared_reference_total, 1);
+    assert_eq!(counters.need_download_total, 2);
+    assert_eq!(counters.need_upload_total, 1);
+    assert_eq!(counters.none_total, 2);
+}

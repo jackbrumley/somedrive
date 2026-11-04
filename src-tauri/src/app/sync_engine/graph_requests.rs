@@ -45,7 +45,7 @@ pub(crate) async fn graph_get(
     let mut attempt: u32 = 0;
     loop {
         ensure_not_cancelled(cancel_flag)?;
-        graph.wait_for_throttle_window(cancel_flag).await?;
+        let request_started_at = graph.wait_for_throttle_window(cancel_flag).await?;
         attempt += 1;
         let access_token = graph.current_access_token().await;
         let response = tokio::select! {
@@ -88,6 +88,7 @@ pub(crate) async fn graph_get(
                 graph.extend_throttle_window(
                     parse_retry_after_delay(response.headers())
                         .unwrap_or_else(|| exponential_backoff_delay(attempt)),
+                    request_started_at,
                 )?;
             }
             if attempt < MAX_DOWNLOAD_RETRIES {
