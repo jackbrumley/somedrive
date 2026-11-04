@@ -52,6 +52,7 @@ pub fn on_agent_state_changed(
         );
     }
     if agent_state == "syncing" {
+        clear_sync_retry(profile_id);
         runtime_set_engine_state(&state.sync_runtime, profile_id, "running");
         let _ = set_cancel_flag(state, profile_id, false)?;
         runtime_clear_issue(&state.sync_runtime, profile_id);

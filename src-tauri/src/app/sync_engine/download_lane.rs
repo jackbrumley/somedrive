@@ -144,6 +144,25 @@ fn apply_remote_download_result(
                 result.item_id
             );
         }
+        RemoteDownloadResultStatus::Failed(error_text)
+            if !runtime_profile_auth_ready(&graph.sync_runtime, &graph.profile_id) =>
+        {
+            // The sign-in expired mid-download: not the file's fault. It
+            // runs again once the account is signed in.
+            mark_download_job_retry_wait(
+                &graph.profile_id,
+                result.job_id,
+                "Waiting for sign-in",
+                Duration::from_secs(1),
+            )?;
+            log::info!(
+                "{} [cycle:{}] REMOTE_DOWNLOAD_REQUEUED_FOR_SIGN_IN path={} error={}",
+                graph.account_prefix,
+                graph.cycle_id,
+                result.path,
+                error_text
+            );
+        }
         RemoteDownloadResultStatus::Failed(error_text) => {
             mark_download_job_failed(&graph.profile_id, result.job_id, &error_text)?;
             runtime_record_remote_download_failed(&graph.sync_runtime, &graph.profile_id, &result.item_id);

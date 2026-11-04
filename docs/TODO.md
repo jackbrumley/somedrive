@@ -17,7 +17,7 @@ review, 2026-11-04). Design: `docs/sync-engine.md`. Built on branch
 3. [x] Hold conflicts instead of copying them; a Sync problems tab where the
    user keeps this device's version, OneDrive's version, or both (one file
    or many at once).
-4. [ ] Robustness: an expired delta token (410 / `resyncRequired`) starts a
+4. [x] Robustness: an expired delta token (410 / `resyncRequired`) starts a
    fresh enumeration; sign-in expiring mid-download requeues the download
    instead of failing it; a failed cycle retries automatically with backoff.
 5. [ ] True local rename for cloud folder renames (today a cloud rename

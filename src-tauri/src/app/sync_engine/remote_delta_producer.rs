@@ -32,8 +32,23 @@ fn spawn_delta_page_producer(
                 producer_graph.cycle_id,
                 current_url
             );
-            let response_text = match graph_get_text(&producer_graph, &current_url, &cancel_flag).await {
-                Ok(text) => text,
+            let response_text = match graph_get_delta_page(&producer_graph, &current_url, &cancel_flag).await {
+                Ok(Some(text)) => text,
+                Ok(None) => {
+                    // The delta link expired: enumerate the whole drive again.
+                    if let Err(error) = begin_delta_resync(&producer_graph.profile_id) {
+                        producer_alive_flag.store(false, Ordering::Relaxed);
+                        let _ = page_tx.send(Err(error)).await;
+                        return;
+                    }
+                    log::warn!(
+                        "{} [cycle:{}] DELTA_RESYNC_REQUIRED action=full_enumeration",
+                        producer_graph.account_prefix,
+                        producer_graph.cycle_id
+                    );
+                    current_url = format!("{GRAPH_ROOT}/me/drive/root/delta");
+                    continue;
+                }
                 Err(error) => {
                     producer_alive_flag.store(false, Ordering::Relaxed);
                     log::warn!(

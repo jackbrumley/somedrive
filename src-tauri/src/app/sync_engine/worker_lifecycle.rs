@@ -1,3 +1,37 @@
+/// When each account's next automatic retry after a failed cycle may run.
+/// Cleared when the user resumes or retries sync.
+static SYNC_RETRY_NOT_BEFORE: std::sync::LazyLock<std::sync::Mutex<HashMap<String, std::time::Instant>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
+const SYNC_RETRY_FIRST_DELAY: Duration = Duration::from_secs(30);
+const SYNC_RETRY_MAX_DELAY: Duration = Duration::from_secs(15 * 60);
+
+/// 30 s, 1 min, 2 min, ... up to 15 min for consecutive failed cycles.
+fn sync_retry_delay(consecutive_failures: u32) -> Duration {
+    let doublings = consecutive_failures.saturating_sub(1).min(10);
+    (SYNC_RETRY_FIRST_DELAY * 2_u32.pow(doublings)).min(SYNC_RETRY_MAX_DELAY)
+}
+
+fn schedule_sync_retry(profile_id: &str, delay: Duration) {
+    if let Ok(mut retries) = SYNC_RETRY_NOT_BEFORE.lock() {
+        retries.insert(profile_id.to_string(), std::time::Instant::now() + delay);
+    }
+}
+
+fn sync_retry_pending(profile_id: &str) -> bool {
+    SYNC_RETRY_NOT_BEFORE
+        .lock()
+        .ok()
+        .and_then(|retries| retries.get(profile_id).copied())
+        .is_some_and(|not_before| std::time::Instant::now() < not_before)
+}
+
+fn clear_sync_retry(profile_id: &str) {
+    if let Ok(mut retries) = SYNC_RETRY_NOT_BEFORE.lock() {
+        retries.remove(profile_id);
+    }
+}
+
 const SIGN_IN_REQUIRED_MESSAGE: &str =
     "Your Microsoft sign-in has expired. Sign in again to resume syncing.";
 
@@ -44,6 +78,7 @@ fn start_sync_worker(state: &tauri::State<'_, AppState>, profile_id: &str) -> Re
         runtime_clear_issue(&sync_runtime, &profile_id_owned);
         let worker_task = tauri::async_runtime::spawn(async move {
             let mut ticker = tokio::time::interval(std::time::Duration::from_secs(15));
+            let mut consecutive_failures: u32 = 0;
             if let Some(delay) = initial_delay {
                 log::info!(
                     "{} SYNC_WORKER_RESUME_DELAY wait_ms={}",
@@ -82,7 +117,10 @@ fn start_sync_worker(state: &tauri::State<'_, AppState>, profile_id: &str) -> Re
                         break;
                     }
                     _ = ticker.tick() => {
-                        if cancel_flag.load(Ordering::Relaxed) || !sync_accepts_new_work() {
+                        if cancel_flag.load(Ordering::Relaxed)
+                            || !sync_accepts_new_work()
+                            || sync_retry_pending(&profile_id_owned)
+                        {
                             continue;
                         }
                         let _cycle_guard = match cycle_lock.try_lock() {
@@ -111,6 +149,11 @@ fn start_sync_worker(state: &tauri::State<'_, AppState>, profile_id: &str) -> Re
                         log::info!("{} SYNC_TICK", log_context::account_prefix(&profile_id_owned));
                         match tick_sync_cycle(&profiles_lock, &sync_runtime, &profile_id_owned, &cancel_flag).await {
                             Ok(stats) => {
+                                if consecutive_failures > 0 {
+                                    consecutive_failures = 0;
+                                    clear_sync_retry(&profile_id_owned);
+                                    runtime_clear_issue(&sync_runtime, &profile_id_owned);
+                                }
                                 log::info!(
                                     "{} [cycle:{}] SYNC_CYCLE_COMPLETE downloaded={} uploaded={} upload_failures={} matched={} baseline_refreshes={} conflict_copies={} local_deleted={} remote_deleted={} local_folders={} remote_folders={} remote_pages={} remote_items={} remote_unresolved={} local_items={} name_issues={}",
                                     stats.account_prefix,
@@ -148,28 +191,54 @@ fn start_sync_worker(state: &tauri::State<'_, AppState>, profile_id: &str) -> Re
                                     runtime_reset_transfer_activity(&sync_runtime, &profile_id_owned);
                                     continue;
                                 }
+                                // Claimed jobs go back to the queue on every failure.
+                                if let Err(drain_error) = reset_running_sync_jobs_for_pause(&profile_id_owned) {
+                                    log::warn!(
+                                        "{} SYNC_FAILURE_DRAIN_FAILED error={}",
+                                        log_context::account_prefix(&profile_id_owned),
+                                        drain_error
+                                    );
+                                }
                                 let sign_in_required =
                                     !runtime_profile_auth_ready(&sync_runtime, &profile_id_owned);
-                                let (issue_code, issue_actions, issue_message, phase_message) =
-                                    if sign_in_required {
-                                        (
-                                            "auth_required",
-                                            &["reauthenticate"][..],
-                                            SIGN_IN_REQUIRED_MESSAGE.to_string(),
-                                            "Sign-in required".to_string(),
-                                        )
-                                    } else {
-                                        let (issue_code, issue_actions) = classify_sync_issue(&error);
-                                        (issue_code, issue_actions, error.clone(), format!("Sync error: {}", error))
-                                    };
                                 log::error!(
                                     "{} SYNC_CYCLE_FAILED {}",
                                     log_context::account_prefix(&profile_id_owned),
                                     error
                                 );
-                                cancel_flag.store(true, Ordering::Relaxed);
                                 runtime_reset_transfer_activity(&sync_runtime, &profile_id_owned);
-                                runtime_set_engine_state(&sync_runtime, &profile_id_owned, "blocked");
+                                let (issue_code, issue_actions, issue_message, phase_message) = if sign_in_required {
+                                    // Only signing in again can fix this: stop until the user does.
+                                    cancel_flag.store(true, Ordering::Relaxed);
+                                    runtime_set_engine_state(&sync_runtime, &profile_id_owned, "blocked");
+                                    (
+                                        "auth_required",
+                                        &["reauthenticate"][..],
+                                        SIGN_IN_REQUIRED_MESSAGE.to_string(),
+                                        "Sign-in required".to_string(),
+                                    )
+                                } else {
+                                    // Anything else (network, OneDrive errors, an unmounted
+                                    // folder) can clear by itself: retry with backoff.
+                                    consecutive_failures = consecutive_failures.saturating_add(1);
+                                    let delay = sync_retry_delay(consecutive_failures);
+                                    schedule_sync_retry(&profile_id_owned, delay);
+                                    let retry_at = chrono::Local::now()
+                                        + chrono::Duration::from_std(delay).unwrap_or_default();
+                                    log::warn!(
+                                        "{} SYNC_CYCLE_RETRY_SCHEDULED attempt={} delay_s={}",
+                                        log_context::account_prefix(&profile_id_owned),
+                                        consecutive_failures,
+                                        delay.as_secs()
+                                    );
+                                    let (issue_code, issue_actions) = classify_sync_issue(&error);
+                                    (
+                                        issue_code,
+                                        issue_actions,
+                                        format!("{error} SomeDrive tries again at {}.", retry_at.format("%H:%M")),
+                                        format!("Sync error - retrying at {}", retry_at.format("%H:%M")),
+                                    )
+                                };
                                 runtime_set_phase(
                                     &sync_runtime,
                                     &profile_id_owned,

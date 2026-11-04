@@ -368,6 +368,49 @@ mod planner_tests {
     }
 
     #[test]
+    fn failed_cycles_back_off_up_to_fifteen_minutes() {
+        assert_eq!(sync_retry_delay(1), Duration::from_secs(30));
+        assert_eq!(sync_retry_delay(2), Duration::from_secs(60));
+        assert_eq!(sync_retry_delay(3), Duration::from_secs(120));
+        assert_eq!(sync_retry_delay(20), Duration::from_secs(15 * 60));
+    }
+
+    #[test]
+    fn a_delta_resync_lists_items_the_fresh_enumeration_did_not_return() {
+        let profile_id = test_profile_id("resync");
+        let mut root = graph_item("root", "root", None, true);
+        root.root = Some(serde_json::json!({}));
+        apply_delta_page(
+            &profile_id,
+            "test",
+            &[root, graph_item("x1", "kept.txt", Some("root"), false), graph_item("x2", "gone.txt", Some("root"), false)],
+            Some("https://example.test/next"),
+        )
+        .expect("seed");
+        // Make the seeded rows look older than the resync.
+        open_sync_jobs_connection(&profile_id)
+            .expect("db")
+            .execute("UPDATE sync_files SET cloud_seen_at = 1 WHERE profile_id = ?1", params![profile_id])
+            .expect("age rows");
+
+        let started = begin_delta_resync(&profile_id).expect("begin");
+        assert_eq!(read_delta_resync_started_at(&profile_id).expect("marker"), Some(started));
+        assert_eq!(read_sync_lifecycle_operational_state(&profile_id).expect("state").active_delta_next_link, None);
+
+        let mut root = graph_item("root", "root", None, true);
+        root.root = Some(serde_json::json!({}));
+        apply_delta_page(&profile_id, "test", &[root, graph_item("x1", "kept.txt", Some("root"), false)], None)
+            .expect("fresh enumeration");
+        let unseen = list_cloud_items_unseen_since(&profile_id, started).expect("unseen");
+        assert_eq!(unseen, vec![("gone.txt".to_string(), "x2".to_string())]);
+
+        record_cloud_item_deleted(&profile_id, "x2").expect("confirm deleted");
+        finish_delta_resync(&profile_id).expect("finish");
+        assert_eq!(cloud_path_of(&profile_id, "x2"), None);
+        assert_eq!(read_delta_resync_started_at(&profile_id).expect("marker"), None);
+    }
+
+    #[test]
     fn local_names_onedrive_rejects_become_issues() {
         assert!(invalid_onedrive_name_reason("report:final.docx").is_some());
         assert!(invalid_onedrive_name_reason("trailing.").is_some());

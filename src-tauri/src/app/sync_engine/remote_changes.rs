@@ -123,6 +123,7 @@ async fn fetch_and_apply_delta_changes(
     }
     lifecycle_state.active_delta_next_link = None;
     persist_lifecycle_operational_state(&graph.profile_id, &lifecycle_state)?;
+    confirm_items_missing_after_resync(graph, cancel_flag).await?;
     let _ = sync_download_counters_from_db(graph)?;
     runtime_set_remote_scan_complete(&graph.sync_runtime, &graph.profile_id, true);
     log::info!(
@@ -136,5 +137,41 @@ async fn fetch_and_apply_delta_changes(
         active_download_workers.load(Ordering::Relaxed)
     );
 
+    Ok(())
+}
+
+/// After a fresh enumeration (expired delta link), items it did not return
+/// are not taken as deleted: each is read directly, and only an item
+/// OneDrive no longer has is recorded as deleted.
+async fn confirm_items_missing_after_resync(
+    graph: &GraphContext,
+    cancel_flag: &Arc<AtomicBool>,
+) -> Result<(), String> {
+    let Some(started_at) = read_delta_resync_started_at(&graph.profile_id)? else {
+        return Ok(());
+    };
+    let unseen = list_cloud_items_unseen_since(&graph.profile_id, started_at)?;
+    let mut confirmed_deleted = 0;
+    for (path, item_id) in &unseen {
+        ensure_not_cancelled(cancel_flag)?;
+        if fetch_remote_item(graph, item_id, cancel_flag).await?.is_none() {
+            record_cloud_item_deleted(&graph.profile_id, item_id)?;
+            confirmed_deleted += 1;
+            log::info!(
+                "{} [cycle:{}] DELTA_RESYNC_CONFIRMED_DELETED path={}",
+                graph.account_prefix,
+                graph.cycle_id,
+                path
+            );
+        }
+    }
+    finish_delta_resync(&graph.profile_id)?;
+    log::info!(
+        "{} [cycle:{}] DELTA_RESYNC_COMPLETE unseen={} confirmed_deleted={}",
+        graph.account_prefix,
+        graph.cycle_id,
+        unseen.len(),
+        confirmed_deleted
+    );
     Ok(())
 }

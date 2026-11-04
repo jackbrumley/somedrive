@@ -7,14 +7,11 @@ fn graph_http_client_no_redirect() -> Result<reqwest::Client, String> {
         .map_err(|error| format!("Failed creating no-redirect Graph HTTP client: {error}"))
 }
 
-async fn graph_get_text(
-    graph: &GraphContext,
-    url: &str,
-    cancel_flag: &Arc<AtomicBool>,
-) -> Result<String, String> {
-    graph_get(graph, url, cancel_flag, false)
-        .await?
-        .ok_or_else(|| format!("Graph GET {url} returned no content"))
+/// The body of a successful GET, or the one status the caller asked to
+/// handle itself (each caller handles a single status).
+enum GraphGetOutcome {
+    Body(String),
+    HandledStatus,
 }
 
 /// Like `graph_get_text`, but a 404 is an answer (`None`), not an error.
@@ -23,15 +20,31 @@ async fn graph_get_text_if_exists(
     url: &str,
     cancel_flag: &Arc<AtomicBool>,
 ) -> Result<Option<String>, String> {
-    graph_get(graph, url, cancel_flag, true).await
+    match graph_get(graph, url, cancel_flag, &[StatusCode::NOT_FOUND]).await? {
+        GraphGetOutcome::Body(text) => Ok(Some(text)),
+        GraphGetOutcome::HandledStatus => Ok(None),
+    }
+}
+
+/// A delta page, or `None` when OneDrive says the delta link has expired
+/// (410 Gone, `resyncRequired`) and the drive must be enumerated again.
+async fn graph_get_delta_page(
+    graph: &GraphContext,
+    url: &str,
+    cancel_flag: &Arc<AtomicBool>,
+) -> Result<Option<String>, String> {
+    match graph_get(graph, url, cancel_flag, &[StatusCode::GONE]).await? {
+        GraphGetOutcome::Body(text) => Ok(Some(text)),
+        GraphGetOutcome::HandledStatus => Ok(None),
+    }
 }
 
 async fn graph_get(
     graph: &GraphContext,
     url: &str,
     cancel_flag: &Arc<AtomicBool>,
-    not_found_is_none: bool,
-) -> Result<Option<String>, String> {
+    handled_statuses: &[StatusCode],
+) -> Result<GraphGetOutcome, String> {
     let client = graph_http_client()?;
     let mut refreshed = false;
     let mut attempt: u32 = 0;
@@ -134,8 +147,8 @@ async fn graph_get(
             continue;
         }
 
-        if not_found_is_none && status == StatusCode::NOT_FOUND {
-            return Ok(None);
+        if handled_statuses.contains(&status) {
+            return Ok(GraphGetOutcome::HandledStatus);
         }
         if !status.is_success() {
             let snippet: String = text.chars().take(400).collect();
@@ -144,7 +157,7 @@ async fn graph_get(
                 url, status, snippet
             ));
         }
-        return Ok(Some(text));
+        return Ok(GraphGetOutcome::Body(text));
     }
 }
 

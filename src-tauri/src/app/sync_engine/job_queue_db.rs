@@ -62,6 +62,7 @@ const SYNC_SCHEMA_SQL: &str = "
         cloud_etag TEXT,
         cloud_ctag TEXT,
         cloud_hash TEXT,
+        cloud_seen_at INTEGER NOT NULL DEFAULT 0,
         local_present INTEGER NOT NULL DEFAULT 0,
         local_size INTEGER NOT NULL DEFAULT 0,
         local_mtime_ns INTEGER NOT NULL DEFAULT 0,
@@ -120,6 +121,7 @@ const SYNC_SCHEMA_SQL: &str = "
         activity_updated_at INTEGER NOT NULL DEFAULT 0,
         large_delete_guard_approved INTEGER NOT NULL DEFAULT 0,
         large_delete_pending_paths_json TEXT NOT NULL DEFAULT '[]',
+        resync_started_at INTEGER,
         agent_state TEXT NOT NULL DEFAULT 'idle',
         last_sync_at TEXT,
         updated_at INTEGER NOT NULL
