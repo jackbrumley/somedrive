@@ -1,46 +1,43 @@
 use super::*;
 
+/// The planner counters the UI shows, from one index-only scan
+/// (`idx_sync_files_plan`).
 pub(crate) fn read_sync_file_planner_counters(
     profile_id: &str,
 ) -> Result<SyncFilePlannerCounters, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
-    let count_sync_files = |condition: &str, label: &str| -> Result<usize, String> {
-        connection
-            .query_row(
-                &format!("SELECT COUNT(1) FROM sync_files WHERE profile_id = ?1 AND {condition}"),
-                params![profile_id],
-                |row| row.get::<_, i64>(0),
-            )
-            .map(|count| count.max(0) as usize)
-            .map_err(|error| format!("Failed reading {label} counter: {error}"))
-    };
-    let mut counters = SyncFilePlannerCounters {
-        cloud_discovered_total: count_sync_files("cloud_present = 1", "cloud discovered")?,
-        local_discovered_total: count_sync_files("local_present = 1", "local discovered")?,
-        shared_reference_total: count_sync_files("is_shared_reference = 1", "shared reference")?,
-        ..SyncFilePlannerCounters::default()
-    };
-
     let mut statement = connection
         .prepare(
-            "SELECT desired_action, COUNT(1)
+            "SELECT desired_action,
+                    COUNT(1),
+                    COALESCE(SUM(cloud_present = 1), 0),
+                    COALESCE(SUM(local_present = 1), 0),
+                    COALESCE(SUM(is_shared_reference = 1), 0)
              FROM sync_files
              WHERE profile_id = ?1
              GROUP BY desired_action",
         )
-        .map_err(|error| format!("Failed preparing sync file action counters query: {error}"))?;
-
+        .map_err(|error| format!("Failed preparing sync file counters query: {error}"))?;
     let rows = statement
         .query_map(params![profile_id], |row| {
-            let action: String = row.get(0)?;
-            let count: i64 = row.get(1)?;
-            Ok((action, count.max(0) as usize))
+            let as_count = |value: i64| value.max(0) as usize;
+            Ok((
+                row.get::<_, String>(0)?,
+                as_count(row.get(1)?),
+                as_count(row.get(2)?),
+                as_count(row.get(3)?),
+                as_count(row.get(4)?),
+            ))
         })
-        .map_err(|error| format!("Failed querying sync file action counters: {error}"))?;
+        .map_err(|error| format!("Failed querying sync file counters: {error}"))?;
 
+    let mut counters = SyncFilePlannerCounters::default();
     for row in rows {
-        let (action, count) =
-            row.map_err(|error| format!("Failed reading sync file action counters: {error}"))?;
+        let (action, count, cloud, local, shared) =
+            row.map_err(|error| format!("Failed reading sync file counters: {error}"))?;
+        counters.cloud_discovered_total += cloud;
+        counters.local_discovered_total += local;
+        counters.shared_reference_total += shared;
         match action.as_str() {
             PLANNER_ACTION_NONE => counters.none_total = count,
             PLANNER_ACTION_DOWNLOAD => counters.need_download_total = count,
@@ -51,7 +48,6 @@ pub(crate) fn read_sync_file_planner_counters(
             _ => {}
         }
     }
-
     Ok(counters)
 }
 
