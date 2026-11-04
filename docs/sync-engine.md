@@ -256,16 +256,18 @@ setup work:
   - Down: on a 429 both drop to three quarters. A 429 only counts when its
     request started after the last cut; answers to requests sent at the old
     rate are ignored, so one burst of 429s is one cut, not a cascade.
-  - After a "wait N seconds" answer, the requests held are released over
-    about 3 seconds, and new starts are paced by the start rate, so the
-    release does not trip the limit again.
+  - After a "wait N seconds" answer, one request goes first as a probe;
+    every other request holds 2 more seconds. If the probe is refused, a new
+    wait starts and nothing else was sent; otherwise the held requests are
+    released over about 3 seconds.
   - Logged as `DOWNLOAD_LIMIT_RAISED` / `DOWNLOAD_LIMIT_LOWERED` with both
     values.
   - Transfers have no total deadline; they fail only when no data arrives
     for 60 seconds.
-  - After a 429 the limits climb back at the normal pace only to 90% of the
-    level Microsoft refused, then probe above it one small step a minute,
-    so the rate settles instead of repeatedly paying a 30-second stop.
+  - After a 429 the limits climb back one step a minute, only to 80% of
+    the level Microsoft refused, then probe above it one small step a
+    minute, so the rate settles instead of repeatedly paying a 30-second
+    stop.
 - **Big files in ranges, resumable:** Microsoft's file server limits each
   connection to a couple of MB/s, so files of 64 MB or more download in
   16 MB ranges, 8 at a time, into a pre-sized partial file

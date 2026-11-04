@@ -25,11 +25,11 @@ const START_RATE_CEILING: f64 = 40.0;
 /// Microsoft keeps refusing for a moment after the wait, so without it each
 /// request released after the wait would count as a new cut.
 const CUT_GRACE: Duration = Duration::from_secs(10);
-/// After a 429 the limits climb back at the normal pace only to this
-/// fraction of where Microsoft refused, so the rate settles just under the
-/// level it tolerates instead of hitting it again (each 429 costs a full
-/// stop of up to 30 s).
-const SETTLE_FRACTION: f64 = 0.9;
+/// After a 429 the limits climb back (one step a minute) only to this
+/// fraction of where Microsoft refused, so the rate settles under the level
+/// it tolerates instead of hitting it again (each 429 costs a full stop of
+/// up to 30 s).
+const SETTLE_FRACTION: f64 = 0.8;
 /// Above that, the limits only probe upwards slowly: one small step per
 /// interval, in case Microsoft now allows more.
 const PROBE_INTERVAL: Duration = Duration::from_secs(60);
@@ -44,8 +44,9 @@ pub(crate) const LARGE_DOWNLOAD_BYTES: u64 = 8 * 1024 * 1024;
 /// quarters when Microsoft answers 429. One cut covers the whole penalty
 /// (`CUT_GRACE`): a 429 only counts when its request started after that, so
 /// one throttle episode is one cut, never a cascade. The level of the last
-/// 429 is remembered: the limits climb back to `SETTLE_FRACTION` of it and
-/// then only probe above it slowly, so the rate settles instead of swinging.
+/// 429 is remembered: the limits climb back one step a minute to
+/// `SETTLE_FRACTION` of it and then only probe above it in small steps, so
+/// the rate settles instead of swinging.
 pub(crate) struct AdaptiveDownloadLimit {
     maximum: usize,
     state: std::sync::Mutex<AdaptiveDownloadLimitState>,
@@ -155,11 +156,16 @@ impl AdaptiveDownloadLimit {
         let probing = settle_point.is_some_and(|(parallel, rate)| {
             state.current >= parallel || state.starts_per_second >= rate
         });
-        let (interval, rate_step) = if probing {
-            (PROBE_INTERVAL, PROBE_STEP)
+        // Before the first 429: a step every 10 s. After any 429: a step a
+        // minute (back to the settle point in normal-sized steps, then small
+        // probes above it), since climbing back fast just meets the limit
+        // again.
+        let interval = if settle_point.is_some() {
+            PROBE_INTERVAL
         } else {
-            (RAISE_INTERVAL, START_RATE_STEP)
+            RAISE_INTERVAL
         };
+        let rate_step = if probing { PROBE_STEP } else { START_RATE_STEP };
         let step_due = now.saturating_duration_since(state.last_change_at) >= interval;
         if at_ceiling || !step_due {
             return None;
@@ -285,7 +291,7 @@ mod adaptive_limit_tests {
             limit.record_success_at(cut_at + Duration::from_secs(1)),
             None
         );
-        assert!(limit.record_success_at(cut_at + RAISE_INTERVAL).is_some());
+        assert!(limit.record_success_at(cut_at + PROBE_INTERVAL).is_some());
     }
 
     #[test]
@@ -336,10 +342,10 @@ mod adaptive_limit_tests {
     }
 
     #[test]
-    fn after_a_429_it_settles_just_under_that_level_then_probes_slowly() {
+    fn after_a_429_it_climbs_back_slowly_to_80_percent_then_probes() {
         let limit = AdaptiveDownloadLimit::new(32);
         let mut now = Instant::now();
-        // Climb to 20 parallel, then get refused there.
+        // Climb to 20 parallel at the first-run pace, then get refused there.
         for _ in 0..12 {
             now += RAISE_INTERVAL;
             limit.record_success_at(now);
@@ -350,23 +356,25 @@ mod adaptive_limit_tests {
             .expect("cut");
         assert_eq!(limit.current(), 15);
 
-        // Back up at the normal pace, but no further than 90% of 20.
-        for _ in 0..10 {
-            now += RAISE_INTERVAL;
-            limit.record_success_at(now);
-        }
-        assert_eq!(limit.current(), 18, "settles at 90% of the 429 level");
-
-        // Above that, one step a minute at most.
+        // After a cut, 10 s is no longer enough for a step.
         now += RAISE_INTERVAL;
         assert_eq!(
             limit.record_success_at(now),
             None,
-            "not a full probe interval yet"
+            "one step a minute after a cut"
         );
         now += PROBE_INTERVAL;
-        let change = limit.record_success_at(now).expect("one probe step");
-        assert_eq!((change.from, change.to), (18, 19));
+        let change = limit.record_success_at(now).expect("a step after a minute");
+        assert_eq!(
+            (change.from, change.to),
+            (15, 16),
+            "the settle point, 80% of 20"
+        );
+
+        // Above it, the next step is a small probe a minute later.
+        now += PROBE_INTERVAL;
+        let change = limit.record_success_at(now).expect("probe");
+        assert_eq!((change.from, change.to), (16, 17));
     }
 
     #[test]
