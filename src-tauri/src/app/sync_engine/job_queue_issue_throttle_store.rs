@@ -84,10 +84,13 @@ pub(crate) fn read_persisted_sync_issue(
     Ok(row)
 }
 
+/// Records an event. Transfer events are kept for an hour (the throttle
+/// counters); delete events for the delete guard's whole window.
 pub(crate) fn record_throttle_event(profile_id: &str, direction: &str) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let now = current_unix_seconds();
     let trim_before = now.saturating_sub(3600);
+    let trim_deletes_before = now.saturating_sub(DELETE_GUARD_WINDOW_SECONDS);
     connection
         .execute(
             "INSERT INTO sync_throttle_events (profile_id, direction, occurred_at) VALUES (?1, ?2, ?3)",
@@ -96,8 +99,15 @@ pub(crate) fn record_throttle_event(profile_id: &str, direction: &str) -> Result
         .map_err(|error| format!("Failed recording throttle event: {error}"))?;
     connection
         .execute(
-            "DELETE FROM sync_throttle_events WHERE profile_id = ?1 AND occurred_at < ?2",
-            params![profile_id, trim_before],
+            "DELETE FROM sync_throttle_events
+             WHERE profile_id = ?1
+               AND occurred_at < CASE WHEN direction = ?3 THEN ?4 ELSE ?2 END",
+            params![
+                profile_id,
+                trim_before,
+                DELETE_EVENT_DIRECTION,
+                trim_deletes_before
+            ],
         )
         .map_err(|error| format!("Failed trimming throttle events: {error}"))?;
     Ok(())
@@ -152,4 +162,38 @@ pub(crate) fn count_events_since(
         )
         .map(|count| count.max(0) as usize)
         .map_err(|error| format!("Failed counting {direction} events: {error}"))
+}
+
+#[cfg(test)]
+mod throttle_event_tests {
+    use super::*;
+
+    #[test]
+    fn delete_events_count_for_the_whole_delete_guard_window() {
+        let profile_id = test_profile_id("delete-window");
+        let connection = open_sync_jobs_connection(&profile_id).expect("open");
+        let two_hours_ago = current_unix_seconds() - 2 * 3600;
+        for direction in [DELETE_EVENT_DIRECTION, DOWNLOAD_JOB_DIRECTION] {
+            connection
+                .execute(
+                    "INSERT INTO sync_throttle_events (profile_id, direction, occurred_at)
+                     VALUES (?1, ?2, ?3)",
+                    params![profile_id, direction, two_hours_ago],
+                )
+                .expect("insert");
+        }
+        record_throttle_event(&profile_id, DELETE_EVENT_DIRECTION).expect("record");
+
+        let since_window = current_unix_seconds() - DELETE_GUARD_WINDOW_SECONDS;
+        assert_eq!(
+            count_events_since(&profile_id, DELETE_EVENT_DIRECTION, since_window).expect("count"),
+            2,
+            "the two-hour-old delete still counts"
+        );
+        assert_eq!(
+            count_events_since(&profile_id, DOWNLOAD_JOB_DIRECTION, since_window).expect("count"),
+            0,
+            "transfer events are trimmed after an hour"
+        );
+    }
 }
