@@ -30,10 +30,14 @@ pub(crate) fn graph_http_client_no_redirect() -> Result<reqwest::Client, String>
 /// to the content server shares one connection and its flow-control window,
 /// which held 32 downloads to about 2 MB/s combined on a long-distance link.
 /// Idle connections are still kept and reused for the next file.
+///
+/// No total deadline: a large file on a slow link may take an hour and must
+/// not be cut off while data still flows. A transfer fails only when no data
+/// arrives for the stall timeout (60 s by default).
 pub(crate) fn content_http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .connect_timeout(resolve_connect_timeout())
-        .timeout(resolve_request_timeout())
+        .read_timeout(resolve_stall_timeout())
         .http1_only()
         .build()
         .map_err(|error| format!("Failed creating file transfer HTTP client: {error}"))

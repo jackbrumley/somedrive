@@ -133,59 +133,6 @@ pub(crate) fn resolve_connect_timeout() -> Duration {
         .unwrap_or(Duration::from_secs(DEFAULT_CONNECT_TIMEOUT_SECONDS))
 }
 
-pub(crate) fn resolve_download_timeout_base() -> Duration {
-    std::env::var("SOMEDRIVE_SYNC_DOWNLOAD_TIMEOUT_BASE_SECONDS")
-        .ok()
-        .and_then(|value| value.trim().parse::<u64>().ok())
-        .map(|seconds| seconds.clamp(5, 600))
-        .map(Duration::from_secs)
-        .unwrap_or(Duration::from_secs(DEFAULT_DOWNLOAD_TIMEOUT_BASE_SECONDS))
-}
-
-pub(crate) fn resolve_download_timeout_min() -> Duration {
-    std::env::var("SOMEDRIVE_SYNC_DOWNLOAD_TIMEOUT_MIN_SECONDS")
-        .ok()
-        .and_then(|value| value.trim().parse::<u64>().ok())
-        .map(|seconds| seconds.clamp(10, 1800))
-        .map(Duration::from_secs)
-        .unwrap_or(Duration::from_secs(DEFAULT_DOWNLOAD_TIMEOUT_MIN_SECONDS))
-}
-
-pub(crate) fn resolve_download_timeout_max() -> Duration {
-    std::env::var("SOMEDRIVE_SYNC_DOWNLOAD_TIMEOUT_MAX_SECONDS")
-        .ok()
-        .and_then(|value| value.trim().parse::<u64>().ok())
-        .map(|seconds| seconds.clamp(30, 7200))
-        .map(Duration::from_secs)
-        .unwrap_or(Duration::from_secs(DEFAULT_DOWNLOAD_TIMEOUT_MAX_SECONDS))
-}
-
-pub(crate) fn resolve_download_timeout_per_mib_millis() -> u64 {
-    std::env::var("SOMEDRIVE_SYNC_DOWNLOAD_TIMEOUT_PER_MIB_MILLIS")
-        .ok()
-        .and_then(|value| value.trim().parse::<u64>().ok())
-        .map(|millis| millis.clamp(100, 20_000))
-        .unwrap_or(DEFAULT_DOWNLOAD_TIMEOUT_PER_MIB_MILLIS)
-}
-
-pub(crate) fn compute_download_request_timeout(known_size_bytes: Option<u64>) -> Duration {
-    let base = resolve_download_timeout_base();
-    let fallback = resolve_request_timeout().max(resolve_download_timeout_min());
-    let max_timeout = resolve_download_timeout_max();
-
-    let mut timeout = if let Some(size_bytes) = known_size_bytes.filter(|size| *size > 0) {
-        let mib = size_bytes as f64 / (1024.0 * 1024.0);
-        let per_mib_millis = resolve_download_timeout_per_mib_millis() as f64;
-        let scaled_millis = (mib * per_mib_millis).round() as u64;
-        base.saturating_add(Duration::from_millis(scaled_millis))
-    } else {
-        fallback
-    };
-
-    timeout = timeout.max(resolve_download_timeout_min());
-    timeout.min(max_timeout)
-}
-
 pub(crate) fn resolve_stall_timeout() -> Duration {
     std::env::var("SOMEDRIVE_SYNC_STALL_TIMEOUT_SECONDS")
         .ok()
