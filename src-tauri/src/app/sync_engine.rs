@@ -42,6 +42,8 @@ mod job_materializer;
 mod job_queue;
 mod job_queue_activity_projection;
 mod job_queue_db;
+#[cfg(test)]
+mod job_queue_db_tests;
 mod job_queue_download_store;
 mod job_queue_issue_throttle_store;
 mod job_queue_lifecycle_store;

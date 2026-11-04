@@ -327,6 +327,26 @@ pub(crate) fn persist_sync_lifecycle_last_sync_at(
     upsert_sync_lifecycle_row(profile_id, &row)
 }
 
+/// Creates the account's lifecycle row from its saved profile when the
+/// database has none (a new or rebuilt sync database). Returns whether a row
+/// was created; an existing row is never changed.
+pub(crate) fn ensure_sync_lifecycle_row(
+    profile_id: &str,
+    agent_state: &str,
+    last_sync_at: Option<&str>,
+) -> Result<bool, String> {
+    if read_sync_lifecycle_row(profile_id)?.is_some() {
+        return Ok(false);
+    }
+    let row = SyncLifecycleStateRow {
+        agent_state: agent_state.to_string(),
+        last_sync_at: last_sync_at.map(ToString::to_string),
+        ..SyncLifecycleStateRow::default()
+    };
+    upsert_sync_lifecycle_row(profile_id, &row)?;
+    Ok(true)
+}
+
 pub(crate) fn read_sync_lifecycle_profile_metadata(
     profile_id: &str,
 ) -> Result<Option<(String, Option<String>)>, String> {
