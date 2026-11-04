@@ -22,7 +22,6 @@ pub(crate) async fn dispatch_claimed_download_jobs(
     download_tx: &mpsc::Sender<RemoteDownloadJob>,
     available_slots: usize,
     pending_download_count: usize,
-    remaining_download_jobs: usize,
 ) -> Result<usize, String> {
     if available_slots == 0 {
         return Ok(0);
@@ -73,7 +72,6 @@ pub(crate) async fn dispatch_claimed_download_jobs(
             download_tx,
             job,
             pending_download_count + dispatched,
-            remaining_download_jobs,
         )
         .await?;
         dispatched += 1;
@@ -86,7 +84,6 @@ pub(crate) async fn send_download_job_with_logging(
     download_tx: &mpsc::Sender<RemoteDownloadJob>,
     job: RemoteDownloadJob,
     pending_download_count: usize,
-    remaining_download_jobs: usize,
 ) -> Result<(), String> {
     let item_id = job.item_id.clone();
     let path = job.path.clone();
@@ -99,14 +96,13 @@ pub(crate) async fn send_download_job_with_logging(
             send_result = &mut send_future => {
                 if wait_logged {
                     log::info!(
-                        "{} [cycle:{}] DOWNLOAD_ENQUEUE_WAIT_DONE item_id={} path={} wait_s={} pending_downloads={} remaining_download_jobs={}",
+                        "{} [cycle:{}] DOWNLOAD_ENQUEUE_WAIT_DONE item_id={} path={} wait_s={} pending_downloads={}",
                         graph.account_prefix,
                         graph.cycle_id,
                         item_id,
                         path,
                         enqueue_started_at.elapsed().as_secs(),
-                        pending_download_count,
-                        remaining_download_jobs
+                        pending_download_count
                     );
                 }
                 return send_result.map_err(|_| "Remote download queue closed unexpectedly".to_string());
@@ -114,14 +110,13 @@ pub(crate) async fn send_download_job_with_logging(
             _ = tokio::time::sleep(Duration::from_secs(5)) => {
                 wait_logged = true;
                 log::warn!(
-                    "{} [cycle:{}] DOWNLOAD_ENQUEUE_WAITING item_id={} path={} wait_s={} pending_downloads={} remaining_download_jobs={}",
+                    "{} [cycle:{}] DOWNLOAD_ENQUEUE_WAITING item_id={} path={} wait_s={} pending_downloads={}",
                     graph.account_prefix,
                     graph.cycle_id,
                     item_id,
                     path,
                     enqueue_started_at.elapsed().as_secs(),
-                    pending_download_count,
-                    remaining_download_jobs
+                    pending_download_count
                 );
             }
         }

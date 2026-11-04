@@ -101,9 +101,11 @@ fn refresh_autostart_registration(app: &tauri::App<tauri::Wry>) {
 }
 
 fn configure_shell(app: &mut tauri::App<tauri::Wry>) -> Result<(), Box<dyn std::error::Error>> {
-    sync_runtime::initialize_status_event_stream(app.handle().clone());
-
     let app_state = app.state::<AppState>();
+    sync_runtime::initialize_status_event_stream(
+        app.handle().clone(),
+        std::sync::Arc::clone(&app_state.sync_runtime),
+    );
 
     match load_profiles() {
         Ok(accounts) => {
