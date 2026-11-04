@@ -1,29 +1,41 @@
+use super::*;
+
 // Held conflicts and the per-file problems the UI's Sync problems tab lists
 // (docs/sync-engine.md section 6.2): recording the user's choice, and the
 // problems themselves. Part of the `sync_files` store.
 
 /// Issue codes for a file that differs on both sides. The file is held (not
 /// synced, not copied) until the user picks a resolution.
-const ISSUE_CONFLICT_BOTH_CHANGED: &str = "conflict_both_changed";
-const ISSUE_CONFLICT_BOTH_NEW: &str = "conflict_both_new";
-const CONFLICT_ISSUE_PREFIX: &str = "conflict_";
+pub(crate) const ISSUE_CONFLICT_BOTH_CHANGED: &str = "conflict_both_changed";
+pub(crate) const ISSUE_CONFLICT_BOTH_NEW: &str = "conflict_both_new";
+pub(crate) const CONFLICT_ISSUE_PREFIX: &str = "conflict_";
 
-const RESOLUTION_KEEP_LOCAL: &str = "keep_local";
-const RESOLUTION_KEEP_CLOUD: &str = "keep_cloud";
-const RESOLUTION_KEEP_BOTH: &str = "keep_both";
+pub(crate) const RESOLUTION_KEEP_LOCAL: &str = "keep_local";
+pub(crate) const RESOLUTION_KEEP_CLOUD: &str = "keep_cloud";
+pub(crate) const RESOLUTION_KEEP_BOTH: &str = "keep_both";
 
 /// A held conflict with the user's choice, and the local file's time when
 /// they chose (a later edit cancels the choice and holds the file again).
-struct ConflictResolution {
-    row: SyncFileRow,
-    resolution: String,
-    chosen_local_mtime_ns: Option<i64>,
+pub(crate) struct ConflictResolution {
+    pub(crate) row: SyncFileRow,
+    pub(crate) resolution: String,
+    pub(crate) chosen_local_mtime_ns: Option<i64>,
 }
 
 /// Records the user's choice for held conflicts. Returns how many paths took
 /// it (paths that are no longer held are ignored).
-fn set_conflict_resolution(profile_id: &str, paths: &[String], resolution: &str) -> Result<usize, String> {
-    if ![RESOLUTION_KEEP_LOCAL, RESOLUTION_KEEP_CLOUD, RESOLUTION_KEEP_BOTH].contains(&resolution) {
+pub(crate) fn set_conflict_resolution(
+    profile_id: &str,
+    paths: &[String],
+    resolution: &str,
+) -> Result<usize, String> {
+    if ![
+        RESOLUTION_KEEP_LOCAL,
+        RESOLUTION_KEEP_CLOUD,
+        RESOLUTION_KEEP_BOTH,
+    ]
+    .contains(&resolution)
+    {
         return Err(format!("Unknown conflict resolution '{resolution}'"));
     }
     let mut connection = open_sync_jobs_connection(profile_id)?;
@@ -52,7 +64,7 @@ fn set_conflict_resolution(profile_id: &str, paths: &[String], resolution: &str)
 
 /// The setting's automatic choice for one held conflict, recorded against
 /// the local file's time as it is now.
-fn set_automatic_conflict_resolution(
+pub(crate) fn set_automatic_conflict_resolution(
     profile_id: &str,
     path: &str,
     resolution: &str,
@@ -64,13 +76,22 @@ fn set_automatic_conflict_resolution(
             "UPDATE sync_files
              SET resolution = ?3, resolution_local_mtime_ns = ?4, updated_at = ?5
              WHERE profile_id = ?1 AND path = ?2 AND substr(issue_code, 1, length(?6)) = ?6",
-            params![profile_id, path, resolution, local_mtime_ns, current_unix_seconds(), CONFLICT_ISSUE_PREFIX],
+            params![
+                profile_id,
+                path,
+                resolution,
+                local_mtime_ns,
+                current_unix_seconds(),
+                CONFLICT_ISSUE_PREFIX
+            ],
         )
         .map_err(|error| format!("Failed recording automatic resolution for '{path}': {error}"))?;
     Ok(())
 }
 
-fn list_conflict_resolutions(profile_id: &str) -> Result<Vec<ConflictResolution>, String> {
+pub(crate) fn list_conflict_resolutions(
+    profile_id: &str,
+) -> Result<Vec<ConflictResolution>, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let mut statement = connection
         .prepare(&format!(
@@ -95,7 +116,7 @@ fn list_conflict_resolutions(profile_id: &str) -> Result<Vec<ConflictResolution>
 
 /// The file was changed again after the user chose: drop the choice and keep
 /// it held so they decide on what is there now.
-fn withdraw_conflict_resolution(profile_id: &str, path: &str) -> Result<(), String> {
+pub(crate) fn withdraw_conflict_resolution(profile_id: &str, path: &str) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     connection
         .execute(
@@ -108,7 +129,7 @@ fn withdraw_conflict_resolution(profile_id: &str, path: &str) -> Result<(), Stri
 }
 
 /// The problem on `path` is resolved: it syncs normally again.
-fn clear_sync_file_issue(profile_id: &str, path: &str) -> Result<(), String> {
+pub(crate) fn clear_sync_file_issue(profile_id: &str, path: &str) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     connection
         .execute(
@@ -139,11 +160,11 @@ pub struct SyncProblem {
     pub retry_id: Option<String>,
 }
 
-fn nanos_to_rfc3339(value: i64) -> String {
+pub(crate) fn nanos_to_rfc3339(value: i64) -> String {
     unix_seconds_to_rfc3339(value / 1_000_000_000)
 }
 
-fn list_file_problems(profile_id: &str) -> Result<Vec<SyncProblem>, String> {
+pub(crate) fn list_file_problems(profile_id: &str) -> Result<Vec<SyncProblem>, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let mut statement = connection
         .prepare(
@@ -166,10 +187,18 @@ fn list_file_problems(profile_id: &str) -> Result<Vec<SyncProblem>, String> {
                 code,
                 detail: row.get(2)?,
                 resolution: row.get(3)?,
-                local_size: local_present.then(|| row.get::<_, i64>(5).map(|value| value.max(0) as u64)).transpose()?,
-                local_modified_at: local_present.then(|| row.get::<_, i64>(6).map(nanos_to_rfc3339)).transpose()?,
-                cloud_size: cloud_present.then(|| row.get::<_, i64>(8).map(|value| value.max(0) as u64)).transpose()?,
-                cloud_modified_at: cloud_present.then(|| row.get::<_, i64>(9).map(unix_seconds_to_rfc3339)).transpose()?,
+                local_size: local_present
+                    .then(|| row.get::<_, i64>(5).map(|value| value.max(0) as u64))
+                    .transpose()?,
+                local_modified_at: local_present
+                    .then(|| row.get::<_, i64>(6).map(nanos_to_rfc3339))
+                    .transpose()?,
+                cloud_size: cloud_present
+                    .then(|| row.get::<_, i64>(8).map(|value| value.max(0) as u64))
+                    .transpose()?,
+                cloud_modified_at: cloud_present
+                    .then(|| row.get::<_, i64>(9).map(unix_seconds_to_rfc3339))
+                    .transpose()?,
                 retry_id: None,
             })
         })
@@ -179,7 +208,7 @@ fn list_file_problems(profile_id: &str) -> Result<Vec<SyncProblem>, String> {
 }
 
 /// Downloads that failed for good, as problems the user can retry.
-fn list_failed_download_problems(profile_id: &str) -> Result<Vec<SyncProblem>, String> {
+pub(crate) fn list_failed_download_problems(profile_id: &str) -> Result<Vec<SyncProblem>, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let mut statement = connection
         .prepare(
@@ -191,7 +220,11 @@ fn list_failed_download_problems(profile_id: &str) -> Result<Vec<SyncProblem>, S
         .map_err(|error| format!("Failed preparing failed downloads query: {error}"))?;
     let rows = statement
         .query_map(
-            params![profile_id, DOWNLOAD_JOB_DIRECTION, DOWNLOAD_JOB_STATE_FAILED_TERMINAL],
+            params![
+                profile_id,
+                DOWNLOAD_JOB_DIRECTION,
+                DOWNLOAD_JOB_STATE_FAILED_TERMINAL
+            ],
             |row| {
                 let job_id: i64 = row.get(0)?;
                 Ok(SyncProblem {

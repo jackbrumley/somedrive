@@ -1,8 +1,10 @@
+use super::*;
+
 // Why a sync cycle stopped, decided where the failure happened (an HTTP
 // status, a network error, an I/O error kind), never guessed from the text.
 
 #[derive(Debug, Clone, PartialEq)]
-enum SyncError {
+pub(crate) enum SyncError {
     /// Pause, quit or update: not a failure.
     Cancelled,
     /// The sync folder is missing or empty while files are tracked there.
@@ -19,10 +21,10 @@ enum SyncError {
     Other(String),
 }
 
-type SyncResult<T> = Result<T, SyncError>;
+pub(crate) type SyncResult<T> = Result<T, SyncError>;
 
 impl SyncError {
-    fn from_status(status: StatusCode, message: String) -> Self {
+    pub(crate) fn from_status(status: StatusCode, message: String) -> Self {
         if status == StatusCode::TOO_MANY_REQUESTS {
             Self::RateLimited(message)
         } else if status == StatusCode::FORBIDDEN {
@@ -34,7 +36,7 @@ impl SyncError {
         }
     }
 
-    fn from_request(error: &reqwest::Error, message: String) -> Self {
+    pub(crate) fn from_request(error: &reqwest::Error, message: String) -> Self {
         if error.is_connect() || error.is_timeout() || error.is_request() {
             Self::Network(message)
         } else {
@@ -42,7 +44,7 @@ impl SyncError {
         }
     }
 
-    fn from_io(error: &std::io::Error, message: String) -> Self {
+    pub(crate) fn from_io(error: &std::io::Error, message: String) -> Self {
         match error.kind() {
             std::io::ErrorKind::PermissionDenied => Self::PermissionDenied(message),
             std::io::ErrorKind::StorageFull => Self::DiskFull(message),
@@ -50,7 +52,7 @@ impl SyncError {
         }
     }
 
-    fn message(&self) -> &str {
+    pub(crate) fn message(&self) -> &str {
         match self {
             Self::Cancelled => SYNC_CANCELLED_ERROR,
             Self::SyncRootUnavailable(message)
@@ -63,10 +65,12 @@ impl SyncError {
     }
 
     /// The issue code and actions the UI shows for this failure.
-    fn issue(&self) -> (&'static str, &'static [&'static str]) {
+    pub(crate) fn issue(&self) -> (&'static str, &'static [&'static str]) {
         match self {
             Self::Cancelled => ("cancelled", &[]),
-            Self::SyncRootUnavailable(_) => ("sync_root_unavailable", &["open_sync_root", "retry_sync"]),
+            Self::SyncRootUnavailable(_) => {
+                ("sync_root_unavailable", &["open_sync_root", "retry_sync"])
+            }
             Self::RateLimited(_) => ("rate_limited", &["retry_sync"]),
             Self::Network(_) => ("network_unavailable", &["retry_sync"]),
             Self::PermissionDenied(_) => ("permission_denied", &["open_sync_root", "retry_sync"]),
@@ -101,17 +105,40 @@ mod sync_error_tests {
     #[test]
     fn failures_map_to_issues_from_their_kind_not_their_text() {
         assert_eq!(
-            SyncError::from_status(StatusCode::TOO_MANY_REQUESTS, "x".into()).issue().0,
+            SyncError::from_status(StatusCode::TOO_MANY_REQUESTS, "x".into())
+                .issue()
+                .0,
             "rate_limited"
         );
-        assert_eq!(SyncError::from_status(StatusCode::FORBIDDEN, "x".into()).issue().0, "permission_denied");
-        assert_eq!(SyncError::from_status(StatusCode::BAD_GATEWAY, "x".into()).issue().0, "network_unavailable");
         assert_eq!(
-            SyncError::from_io(&std::io::Error::from(std::io::ErrorKind::StorageFull), "x".into()).issue().0,
+            SyncError::from_status(StatusCode::FORBIDDEN, "x".into())
+                .issue()
+                .0,
+            "permission_denied"
+        );
+        assert_eq!(
+            SyncError::from_status(StatusCode::BAD_GATEWAY, "x".into())
+                .issue()
+                .0,
+            "network_unavailable"
+        );
+        assert_eq!(
+            SyncError::from_io(
+                &std::io::Error::from(std::io::ErrorKind::StorageFull),
+                "x".into()
+            )
+            .issue()
+            .0,
             "disk_full"
         );
         // Text that merely mentions a network does not make it a network error.
-        assert_eq!(SyncError::from("network share 403".to_string()).issue().0, "unknown_error");
-        assert_eq!(SyncError::from(SYNC_CANCELLED_ERROR.to_string()), SyncError::Cancelled);
+        assert_eq!(
+            SyncError::from("network share 403".to_string()).issue().0,
+            "unknown_error"
+        );
+        assert_eq!(
+            SyncError::from(SYNC_CANCELLED_ERROR.to_string()),
+            SyncError::Cancelled
+        );
     }
 }

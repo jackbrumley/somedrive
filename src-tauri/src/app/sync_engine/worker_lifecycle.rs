@@ -1,24 +1,27 @@
+use super::*;
+
 /// When each account's next automatic retry after a failed cycle may run.
 /// Cleared when the user resumes or retries sync.
-static SYNC_RETRY_NOT_BEFORE: std::sync::LazyLock<std::sync::Mutex<HashMap<String, std::time::Instant>>> =
-    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+pub(crate) static SYNC_RETRY_NOT_BEFORE: std::sync::LazyLock<
+    std::sync::Mutex<HashMap<String, std::time::Instant>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
-const SYNC_RETRY_FIRST_DELAY: Duration = Duration::from_secs(30);
-const SYNC_RETRY_MAX_DELAY: Duration = Duration::from_secs(15 * 60);
+pub(crate) const SYNC_RETRY_FIRST_DELAY: Duration = Duration::from_secs(30);
+pub(crate) const SYNC_RETRY_MAX_DELAY: Duration = Duration::from_secs(15 * 60);
 
 /// 30 s, 1 min, 2 min, ... up to 15 min for consecutive failed cycles.
-fn sync_retry_delay(consecutive_failures: u32) -> Duration {
+pub(crate) fn sync_retry_delay(consecutive_failures: u32) -> Duration {
     let doublings = consecutive_failures.saturating_sub(1).min(10);
     (SYNC_RETRY_FIRST_DELAY * 2_u32.pow(doublings)).min(SYNC_RETRY_MAX_DELAY)
 }
 
-fn schedule_sync_retry(profile_id: &str, delay: Duration) {
+pub(crate) fn schedule_sync_retry(profile_id: &str, delay: Duration) {
     if let Ok(mut retries) = SYNC_RETRY_NOT_BEFORE.lock() {
         retries.insert(profile_id.to_string(), std::time::Instant::now() + delay);
     }
 }
 
-fn sync_retry_pending(profile_id: &str) -> bool {
+pub(crate) fn sync_retry_pending(profile_id: &str) -> bool {
     SYNC_RETRY_NOT_BEFORE
         .lock()
         .ok()
@@ -26,16 +29,19 @@ fn sync_retry_pending(profile_id: &str) -> bool {
         .is_some_and(|not_before| std::time::Instant::now() < not_before)
 }
 
-fn clear_sync_retry(profile_id: &str) {
+pub(crate) fn clear_sync_retry(profile_id: &str) {
     if let Ok(mut retries) = SYNC_RETRY_NOT_BEFORE.lock() {
         retries.remove(profile_id);
     }
 }
 
-const SIGN_IN_REQUIRED_MESSAGE: &str =
+pub(crate) const SIGN_IN_REQUIRED_MESSAGE: &str =
     "Your Microsoft sign-in has expired. Sign in again to resume syncing.";
 
-fn start_sync_worker(state: &tauri::State<'_, AppState>, profile_id: &str) -> Result<(), String> {
+pub(crate) fn start_sync_worker(
+    state: &tauri::State<'_, AppState>,
+    profile_id: &str,
+) -> Result<(), String> {
     let account_prefix = log_context::account_prefix(profile_id);
     if !sync_accepts_new_work() {
         // The saved agent state already says "syncing", so the updated
@@ -288,7 +294,10 @@ fn start_sync_worker(state: &tauri::State<'_, AppState>, profile_id: &str) -> Re
     Ok(())
 }
 
-fn stop_sync_worker(state: &tauri::State<'_, AppState>, profile_id: &str) -> Result<(), String> {
+pub(crate) fn stop_sync_worker(
+    state: &tauri::State<'_, AppState>,
+    profile_id: &str,
+) -> Result<(), String> {
     let _ = set_cancel_flag(state, profile_id, true)?;
     let maybe_sender = {
         let mut stops = state

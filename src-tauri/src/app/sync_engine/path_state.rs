@@ -1,6 +1,8 @@
+use super::*;
+
 // Paths: Graph path encoding, the local scan, and local name rules.
 
-fn split_parent_and_name(relative_path: &str) -> Result<(&str, &str), String> {
+pub(crate) fn split_parent_and_name(relative_path: &str) -> Result<(&str, &str), String> {
     let trimmed = relative_path.trim_matches('/');
     if trimmed.is_empty() {
         return Err("Remote folder path is empty".to_string());
@@ -11,7 +13,7 @@ fn split_parent_and_name(relative_path: &str) -> Result<(&str, &str), String> {
     Ok(("", trimmed))
 }
 
-fn encode_graph_path(path: &str) -> String {
+pub(crate) fn encode_graph_path(path: &str) -> String {
     let mut parts: Vec<String> = Vec::new();
     for segment in path.split('/') {
         if segment.is_empty() {
@@ -22,7 +24,7 @@ fn encode_graph_path(path: &str) -> String {
     parts.join("/")
 }
 
-fn percent_encode(input: &str) -> String {
+pub(crate) fn percent_encode(input: &str) -> String {
     let mut output = String::new();
     for byte in input.bytes() {
         let unreserved = matches!(
@@ -40,18 +42,18 @@ fn percent_encode(input: &str) -> String {
 }
 
 /// SomeDrive's own partial download files (`build_unique_download_temp_path`).
-fn is_download_temp_name(name: &str) -> bool {
+pub(crate) fn is_download_temp_name(name: &str) -> bool {
     name.starts_with(".somedrive-part-") && name.ends_with(".tmp")
 }
 
 /// Local files that are never synced: OneNote notebook files (OneNote keeps
 /// notebooks in the cloud) and Office's own lock files.
-fn is_excluded_local_name(name: &str) -> bool {
+pub(crate) fn is_excluded_local_name(name: &str) -> bool {
     let lower = name.to_lowercase();
     lower.ends_with(".one") || lower.ends_with(".onetoc2") || name.starts_with("~$")
 }
 
-fn local_entry_from_metadata(metadata: &std::fs::Metadata) -> LocalEntry {
+pub(crate) fn local_entry_from_metadata(metadata: &std::fs::Metadata) -> LocalEntry {
     let mtime_ns = metadata
         .modified()
         .ok()
@@ -60,13 +62,17 @@ fn local_entry_from_metadata(metadata: &std::fs::Metadata) -> LocalEntry {
         .unwrap_or(0);
     LocalEntry {
         is_dir: metadata.is_dir(),
-        size: if metadata.is_file() { metadata.len() } else { 0 },
+        size: if metadata.is_file() {
+            metadata.len()
+        } else {
+            0
+        },
         mtime_ns,
     }
 }
 
 /// The current local state of `path`, `None` when it does not exist.
-fn read_local_entry(path: &Path) -> Result<Option<LocalEntry>, String> {
+pub(crate) fn read_local_entry(path: &Path) -> Result<Option<LocalEntry>, String> {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) if metadata.is_file() || metadata.is_dir() => {
             Ok(Some(local_entry_from_metadata(&metadata)))
@@ -81,7 +87,7 @@ fn read_local_entry(path: &Path) -> Result<Option<LocalEntry>, String> {
 /// names are left alone, and SomeDrive's own leftover partial downloads are
 /// removed. Any unreadable directory fails the scan (a partial scan would
 /// look like deletions).
-fn collect_local_snapshot_with_progress<F>(
+pub(crate) fn collect_local_snapshot_with_progress<F>(
     sync_root: &Path,
     exclusions: &ExclusionRules,
     mut on_progress: F,
@@ -93,7 +99,11 @@ where
     let mut stack: Vec<PathBuf> = vec![sync_root.to_path_buf()];
     while let Some(current) = stack.pop() {
         let entries = std::fs::read_dir(&current).map_err(|error| {
-            format!("Failed reading directory '{}': {}", current.display(), error)
+            format!(
+                "Failed reading directory '{}': {}",
+                current.display(),
+                error
+            )
         })?;
         for entry in entries {
             let entry = entry.map_err(|error| error.to_string())?;
@@ -122,7 +132,11 @@ where
             let relative = path
                 .strip_prefix(sync_root)
                 .map_err(|error| {
-                    format!("Failed computing relative path '{}': {}", path.display(), error)
+                    format!(
+                        "Failed computing relative path '{}': {}",
+                        path.display(),
+                        error
+                    )
                 })?
                 .to_string_lossy()
                 .replace('\\', "/");
@@ -140,20 +154,25 @@ where
     Ok(snapshot)
 }
 
-const ISSUE_NAME_PREFIX: &str = "name_";
-const MAX_ONEDRIVE_PATH_CHARS: usize = 400;
-const RESERVED_DEVICE_NAMES: [&str; 4] = ["con", "prn", "aux", "nul"];
+pub(crate) const ISSUE_NAME_PREFIX: &str = "name_";
+pub(crate) const MAX_ONEDRIVE_PATH_CHARS: usize = 400;
+pub(crate) const RESERVED_DEVICE_NAMES: [&str; 4] = ["con", "prn", "aux", "nul"];
 
 /// Why OneDrive cannot hold a file of this name, if it cannot.
-fn invalid_onedrive_name_reason(name: &str) -> Option<&'static str> {
-    if name.chars().any(|character| "\"*:<>?\\|".contains(character)) {
+pub(crate) fn invalid_onedrive_name_reason(name: &str) -> Option<&'static str> {
+    if name
+        .chars()
+        .any(|character| "\"*:<>?\\|".contains(character))
+    {
         return Some("The name contains a character OneDrive does not allow (\" * : < > ? \\ |).");
     }
     if name.chars().any(char::is_control) {
         return Some("The name contains a control character.");
     }
     if name.starts_with(' ') || name.ends_with(' ') || name.ends_with('.') {
-        return Some("OneDrive does not allow a name that starts or ends with a space, or ends with a dot.");
+        return Some(
+            "OneDrive does not allow a name that starts or ends with a space, or ends with a dot.",
+        );
     }
     let lower = name.to_lowercase();
     let stem = lower.split('.').next().unwrap_or_default();
@@ -173,7 +192,7 @@ fn invalid_onedrive_name_reason(name: &str) -> Option<&'static str> {
 /// over-long paths, names not in Unicode NFC, and names that differ only by
 /// case from another item. Items inside an invalid folder share its issue.
 /// Recomputed every cycle, so renaming the file clears it.
-fn record_local_name_issues(
+pub(crate) fn record_local_name_issues(
     profile_id: &str,
     snapshot: &HashMap<String, LocalEntry>,
 ) -> Result<usize, String> {
@@ -215,7 +234,8 @@ fn record_local_name_issues(
         } else if path.nfc().collect::<String>() != *path {
             Some((
                 "name_not_nfc",
-                "The name uses decomposed Unicode characters; rename it so OneDrive matches it.".to_string(),
+                "The name uses decomposed Unicode characters; rename it so OneDrive matches it."
+                    .to_string(),
             ))
         } else {
             None
@@ -272,7 +292,7 @@ fn record_local_name_issues(
     Ok(issues.len())
 }
 
-fn extract_root_relative(parent_path: &str) -> String {
+pub(crate) fn extract_root_relative(parent_path: &str) -> String {
     let mut value = parent_path.trim().to_string();
     if let Some(rest) = value.strip_prefix("/drive/root:") {
         value = rest.to_string();
@@ -280,7 +300,7 @@ fn extract_root_relative(parent_path: &str) -> String {
     value.trim_start_matches('/').to_string()
 }
 
-fn normalize_relative_path(value: &str) -> String {
+pub(crate) fn normalize_relative_path(value: &str) -> String {
     value
         .replace('\\', "/")
         .split('/')
@@ -289,7 +309,7 @@ fn normalize_relative_path(value: &str) -> String {
         .join("/")
 }
 
-fn path_to_local(relative_path: &str) -> PathBuf {
+pub(crate) fn path_to_local(relative_path: &str) -> PathBuf {
     let mut output = PathBuf::new();
     for segment in relative_path.split('/') {
         if !segment.is_empty() {
@@ -299,14 +319,14 @@ fn path_to_local(relative_path: &str) -> PathBuf {
     output
 }
 
-fn parse_rfc3339_seconds(value: Option<&str>) -> i64 {
+pub(crate) fn parse_rfc3339_seconds(value: Option<&str>) -> i64 {
     value
         .and_then(|input| chrono::DateTime::parse_from_rfc3339(input).ok())
         .map(|timestamp| timestamp.timestamp())
         .unwrap_or(0)
 }
 
-fn shared_drive_id_from_delta_item(item: &GraphDriveItem) -> Option<String> {
+pub(crate) fn shared_drive_id_from_delta_item(item: &GraphDriveItem) -> Option<String> {
     item.remote_item
         .as_ref()
         .and_then(|remote_item| remote_item.get("parentReference"))
@@ -317,7 +337,7 @@ fn shared_drive_id_from_delta_item(item: &GraphDriveItem) -> Option<String> {
         .map(ToString::to_string)
 }
 
-fn shared_item_id_from_delta_item(item: &GraphDriveItem) -> Option<String> {
+pub(crate) fn shared_item_id_from_delta_item(item: &GraphDriveItem) -> Option<String> {
     item.remote_item
         .as_ref()
         .and_then(|remote_item| remote_item.get("id"))
@@ -327,7 +347,7 @@ fn shared_item_id_from_delta_item(item: &GraphDriveItem) -> Option<String> {
         .map(ToString::to_string)
 }
 
-fn shared_kind_from_delta_item(item: &GraphDriveItem) -> Option<String> {
+pub(crate) fn shared_kind_from_delta_item(item: &GraphDriveItem) -> Option<String> {
     let remote_item = item.remote_item.as_ref()?;
     if remote_item.get("folder").is_some() {
         return Some("folder".to_string());

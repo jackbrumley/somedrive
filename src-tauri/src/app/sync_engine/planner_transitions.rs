@@ -1,24 +1,28 @@
+use super::*;
+
 // The decision table (docs/sync-engine.md section 4). Each side is compared
 // with the baseline, never with the other side:
 //   cloud changed = cTag differs from the baseline cTag
 //   local changed = size or time differs from the baseline local size/time
 
-const PLANNER_ACTION_NONE: &str = "none";
-const PLANNER_ACTION_DOWNLOAD: &str = "download";
-const PLANNER_ACTION_UPLOAD: &str = "upload";
-const PLANNER_ACTION_DELETE_REMOTE: &str = "delete_remote";
-const PLANNER_ACTION_DELETE_LOCAL: &str = "delete_local";
-const PLANNER_ACTION_CONFLICT: &str = "conflict";
+pub(crate) const PLANNER_ACTION_NONE: &str = "none";
+pub(crate) const PLANNER_ACTION_DOWNLOAD: &str = "download";
+pub(crate) const PLANNER_ACTION_UPLOAD: &str = "upload";
+pub(crate) const PLANNER_ACTION_DELETE_REMOTE: &str = "delete_remote";
+pub(crate) const PLANNER_ACTION_DELETE_LOCAL: &str = "delete_local";
+pub(crate) const PLANNER_ACTION_CONFLICT: &str = "conflict";
 /// Both sides have the item and there is no baseline: compare content.
-const PLANNER_ACTION_VERIFY: &str = "verify";
+pub(crate) const PLANNER_ACTION_VERIFY: &str = "verify";
 /// Gone from both sides: drop the baseline.
-const PLANNER_ACTION_FORGET: &str = "forget";
-const PLANNER_ACTION_CREATE_LOCAL_FOLDER: &str = "create_local_folder";
-const PLANNER_ACTION_CREATE_REMOTE_FOLDER: &str = "create_remote_folder";
+pub(crate) const PLANNER_ACTION_FORGET: &str = "forget";
+pub(crate) const PLANNER_ACTION_CREATE_LOCAL_FOLDER: &str = "create_local_folder";
+pub(crate) const PLANNER_ACTION_CREATE_REMOTE_FOLDER: &str = "create_remote_folder";
 
 /// Recomputes `desired_action` for every row. The drive root (path `""`),
 /// shared references and rows with a per-file issue are never acted on.
-fn recompute_sync_file_actions(profile_id: &str) -> Result<SyncFilePlannerCounters, String> {
+pub(crate) fn recompute_sync_file_actions(
+    profile_id: &str,
+) -> Result<SyncFilePlannerCounters, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let action_expression = format!(
         "CASE
@@ -46,14 +50,14 @@ fn recompute_sync_file_actions(profile_id: &str) -> Result<SyncFilePlannerCounte
 
 /// Local changed: size or time differs from the baseline local size/time
 /// (a touch also matches; the upload step compares content first).
-const LOCAL_CHANGED: &str =
+pub(crate) const LOCAL_CHANGED: &str =
     "(local_size != base_size OR local_mtime_ns != base_local_mtime_ns)";
 
 /// Cloud changed: the content hash (or, without hashes on both sides, the
 /// cTag) or the size differs from the baseline cloud version. A baseline
 /// with no cloud version recorded (after a conflict copy) counts as changed,
 /// so the cloud version is fetched.
-const CLOUD_CHANGED: &str = "(CASE
+pub(crate) const CLOUD_CHANGED: &str = "(CASE
     WHEN cloud_hash IS NOT NULL AND base_hash IS NOT NULL
         THEN cloud_hash != base_hash OR cloud_size != base_cloud_size
     WHEN cloud_ctag IS NOT NULL AND base_ctag IS NOT NULL
@@ -63,7 +67,7 @@ const CLOUD_CHANGED: &str = "(CASE
 END)";
 
 /// Files: the decision table, rows 1 to 12.
-static PLANNER_FILE_RULE: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+pub(crate) static PLANNER_FILE_RULE: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     format!(
         "CASE
             WHEN base_present = 0 THEN CASE
@@ -99,7 +103,7 @@ static PLANNER_FILE_RULE: std::sync::LazyLock<String> = std::sync::LazyLock::new
 /// beneath it is still present on that side, so a delete never takes
 /// unsynced content with it. Descendants are found with a range on the path
 /// index ('/' sorts just before '0').
-const PLANNER_FOLDER_RULE: &str = "CASE
+pub(crate) const PLANNER_FOLDER_RULE: &str = "CASE
     WHEN base_present = 0 THEN CASE
         WHEN local_present = 1 AND cloud_present = 1 THEN 'verify'
         WHEN local_present = 1 THEN 'create_remote_folder'

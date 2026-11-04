@@ -1,3 +1,5 @@
+use super::*;
+
 #[tauri::command]
 pub fn list_account_profiles(
     state: tauri::State<'_, AppState>,
@@ -169,7 +171,9 @@ pub fn retry_failed_download(
 }
 
 #[tauri::command]
-pub fn retry_all_failed_downloads(profile_id: String) -> Result<RetryAllFailedDownloadsResponse, String> {
+pub fn retry_all_failed_downloads(
+    profile_id: String,
+) -> Result<RetryAllFailedDownloadsResponse, String> {
     let report = sync_engine::retry_all_failed_download_jobs(&profile_id)?;
     let _ = activity_log::append_event(
         &profile_id,
@@ -208,7 +212,10 @@ pub fn export_account_large_delete_preview(
     let mut output = String::new();
     output.push_str("SomeDrive Large Deletion Review\n");
     output.push_str(&format!("Profile: {}\n", profile_id));
-    output.push_str(&format!("Generated: {}\n", chrono::Local::now().to_rfc3339()));
+    output.push_str(&format!(
+        "Generated: {}\n",
+        chrono::Local::now().to_rfc3339()
+    ));
     output.push_str(&format!("Items: {}\n\n", pending_paths.len()));
     for path in pending_paths {
         output.push_str(&path);

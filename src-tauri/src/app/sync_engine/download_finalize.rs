@@ -1,3 +1,5 @@
+use super::*;
+
 // The last steps of a download: check what arrived, give it OneDrive's time,
 // and move it into place without overwriting a local change.
 
@@ -5,7 +7,7 @@
 /// was sending (`Content-Length`, or the planned size without one; SharePoint
 /// sizes can differ from the listed size) and, when OneDrive supplied one,
 /// its QuickXorHash matches.
-fn verify_downloaded_content(
+pub(crate) fn verify_downloaded_content(
     version: &CloudVersion,
     content_length: Option<u64>,
     downloaded_bytes: u64,
@@ -28,7 +30,7 @@ fn verify_downloaded_content(
     Ok(())
 }
 
-fn set_file_modified_seconds(file: &std::fs::File, unix_seconds: i64) {
+pub(crate) fn set_file_modified_seconds(file: &std::fs::File, unix_seconds: i64) {
     if unix_seconds <= 0 {
         return;
     }
@@ -43,7 +45,7 @@ fn set_file_modified_seconds(file: &std::fs::File, unix_seconds: i64) {
 /// nothing there). Otherwise the download is discarded and the path is held
 /// as a conflict (`None`), so a local edit made since the plan is never lost
 /// or duplicated.
-fn place_downloaded_file(
+pub(crate) fn place_downloaded_file(
     graph: &GraphContext,
     relative_path: &str,
     temp_path: &Path,
@@ -56,12 +58,20 @@ fn place_downloaded_file(
             ));
         }
         let row = read_sync_file_row(&graph.profile_id, relative_path)?;
-        let replaceable = row.as_ref().is_some_and(|row| row.local_matches_baseline(&existing));
+        let replaceable = row
+            .as_ref()
+            .is_some_and(|row| row.local_matches_baseline(&existing));
         if !replaceable {
             let _ = std::fs::remove_file(temp_path);
             let cloud_mtime = row.map(|row| row.cloud_mtime).unwrap_or(0);
-            hold_conflict(graph, relative_path, ISSUE_CONFLICT_BOTH_CHANGED, existing.mtime_ns, cloud_mtime)
-                .map_err(|error| error.to_string())?;
+            hold_conflict(
+                graph,
+                relative_path,
+                ISSUE_CONFLICT_BOTH_CHANGED,
+                existing.mtime_ns,
+                cloud_mtime,
+            )
+            .map_err(|error| error.to_string())?;
             return Ok(None);
         }
     }

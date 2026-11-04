@@ -1,4 +1,6 @@
-async fn run_local_scan_with_runtime_updates(
+use super::*;
+
+pub(crate) async fn run_local_scan_with_runtime_updates(
     account_prefix: &str,
     cycle_id: &str,
     sync_runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
@@ -22,7 +24,8 @@ async fn run_local_scan_with_runtime_updates(
     let mut scan_handle = tauri::async_runtime::spawn_blocking(move || {
         collect_local_snapshot_with_progress(&sync_root_owned, &exclusions, |relative_path| {
             thread_scanned_count.fetch_add(1, AtomicOrdering::Relaxed);
-            thread_last_progress_unix.store(chrono::Utc::now().timestamp(), AtomicOrdering::Relaxed);
+            thread_last_progress_unix
+                .store(chrono::Utc::now().timestamp(), AtomicOrdering::Relaxed);
             if let Ok(mut value) = thread_current_path.lock() {
                 *value = Some(relative_path.to_string());
             }
@@ -125,13 +128,13 @@ async fn run_local_scan_with_runtime_updates(
     }
 }
 
-fn new_cycle_id() -> String {
+pub(crate) fn new_cycle_id() -> String {
     let nanos = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
     let pid = std::process::id();
     format!("{}-{}", nanos, pid)
 }
 
-fn remaining_until_next_cycle(profile_id: &str, interval: Duration) -> Option<Duration> {
+pub(crate) fn remaining_until_next_cycle(profile_id: &str, interval: Duration) -> Option<Duration> {
     let lifecycle_state = read_sync_lifecycle_operational_state(profile_id).ok()?;
     let last_cycle_at = lifecycle_state.last_cycle_at?;
     let timestamp = chrono::DateTime::parse_from_rfc3339(&last_cycle_at).ok()?;
@@ -146,7 +149,7 @@ fn remaining_until_next_cycle(profile_id: &str, interval: Duration) -> Option<Du
     Some(interval - elapsed_duration)
 }
 
-fn load_syncable_profile(
+pub(crate) fn load_syncable_profile(
     profiles_lock: &Arc<std::sync::Mutex<()>>,
     profile_id: &str,
 ) -> Result<AccountProfile, String> {
@@ -167,7 +170,7 @@ fn load_syncable_profile(
     Ok(profile)
 }
 
-fn update_profile_last_sync(
+pub(crate) fn update_profile_last_sync(
     profiles_lock: &Arc<std::sync::Mutex<()>>,
     profile_id: &str,
 ) -> Result<(), String> {

@@ -1,3 +1,5 @@
+use super::*;
+
 #[tauri::command]
 pub async fn start_interactive_auth(
     state: tauri::State<'_, AppState>,
@@ -171,7 +173,7 @@ pub fn clear_account_auth(
     Ok(())
 }
 
-async fn complete_interactive_auth_from_callback(
+pub(crate) async fn complete_interactive_auth_from_callback(
     app: &tauri::AppHandle,
     profile_id: &str,
     callback_url: &str,

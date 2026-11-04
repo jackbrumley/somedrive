@@ -1,18 +1,20 @@
+use super::*;
+
 // Exclude rules (Settings → Sync): paths that are never synced in either
 // direction. A rule with a `/` is a path from the top of the sync folder
 // (that item and everything under it); a rule without one matches a file or
 // folder name anywhere (`node_modules`, `*.tmp`).
 
-const ISSUE_EXCLUDED_BY_RULE: &str = "excluded_by_rule";
+pub(crate) const ISSUE_EXCLUDED_BY_RULE: &str = "excluded_by_rule";
 
 /// The compiled exclude rules for one cycle.
-struct ExclusionRules {
-    matcher: globset::GlobSet,
-    is_empty: bool,
+pub(crate) struct ExclusionRules {
+    pub(crate) matcher: globset::GlobSet,
+    pub(crate) is_empty: bool,
 }
 
 impl ExclusionRules {
-    fn compile(patterns: &[String]) -> Result<Self, String> {
+    pub(crate) fn compile(patterns: &[String]) -> Result<Self, String> {
         let mut builder = globset::GlobSetBuilder::new();
         let mut count = 0;
         for pattern in patterns {
@@ -48,11 +50,11 @@ impl ExclusionRules {
         })
     }
 
-    fn load() -> Result<Self, String> {
+    pub(crate) fn load() -> Result<Self, String> {
         Self::compile(&crate::app::app_settings::load_exclude_patterns()?)
     }
 
-    fn excludes(&self, relative_path: &str) -> bool {
+    pub(crate) fn excludes(&self, relative_path: &str) -> bool {
         !self.is_empty && !relative_path.is_empty() && self.matcher.is_match(relative_path)
     }
 }
@@ -64,7 +66,10 @@ pub fn validate_exclude_patterns(patterns: &[String]) -> Result<(), String> {
 
 /// Marks every tracked path the rules exclude (so nothing acts on it) and
 /// clears the mark from paths no rule excludes any more.
-fn apply_exclusion_rules(profile_id: &str, rules: &ExclusionRules) -> Result<usize, String> {
+pub(crate) fn apply_exclusion_rules(
+    profile_id: &str,
+    rules: &ExclusionRules,
+) -> Result<usize, String> {
     let mut connection = open_sync_jobs_connection(profile_id)?;
     let rows: Vec<(String, Option<String>)> = {
         let mut statement = connection
@@ -116,8 +121,13 @@ mod exclusion_rules_tests {
     use super::*;
 
     fn rules(patterns: &[&str]) -> ExclusionRules {
-        ExclusionRules::compile(&patterns.iter().map(|value| value.to_string()).collect::<Vec<_>>())
-            .expect("compile")
+        ExclusionRules::compile(
+            &patterns
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>(),
+        )
+        .expect("compile")
     }
 
     #[test]

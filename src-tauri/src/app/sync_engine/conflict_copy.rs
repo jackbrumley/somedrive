@@ -1,9 +1,11 @@
+use super::*;
+
 // Conflict copies (docs/sync-engine.md section 6.2): when SomeDrive cannot be
 // sure which version to keep, the local version is copied aside as
 // `name (conflict YYYY-MM-DD HHMM on <host>).ext` and both are kept. The copy
 // is a new local file, so the next cycle uploads it.
 
-fn local_hostname() -> String {
+pub(crate) fn local_hostname() -> String {
     std::fs::read_to_string("/proc/sys/kernel/hostname")
         .map(|value| value.trim().to_string())
         .ok()
@@ -12,7 +14,7 @@ fn local_hostname() -> String {
 }
 
 /// A free path next to `local_path` for its conflict copy.
-fn conflict_copy_path(local_path: &Path) -> Result<PathBuf, String> {
+pub(crate) fn conflict_copy_path(local_path: &Path) -> Result<PathBuf, String> {
     let parent = local_path
         .parent()
         .ok_or_else(|| format!("'{}' has no parent folder", local_path.display()))?;
@@ -32,17 +34,22 @@ fn conflict_copy_path(local_path: &Path) -> Result<PathBuf, String> {
         } else {
             format!(" {attempt}")
         };
-        let candidate = parent.join(format!("{stem} (conflict {stamp} on {host}{suffix}){extension}"));
+        let candidate = parent.join(format!(
+            "{stem} (conflict {stamp} on {host}{suffix}){extension}"
+        ));
         if !candidate.exists() {
             return Ok(candidate);
         }
     }
-    Err(format!("No free conflict copy name next to '{}'", local_path.display()))
+    Err(format!(
+        "No free conflict copy name next to '{}'",
+        local_path.display()
+    ))
 }
 
 /// Copies the local file at `local_path` to a conflict copy and checks the
 /// copy's size before anything replaces the original.
-fn preserve_conflict_copy(local_path: &Path) -> Result<PathBuf, String> {
+pub(crate) fn preserve_conflict_copy(local_path: &Path) -> Result<PathBuf, String> {
     let copy_path = conflict_copy_path(local_path)?;
     let copied = std::fs::copy(local_path, &copy_path).map_err(|error| {
         format!(
@@ -73,7 +80,8 @@ mod conflict_copy_tests {
 
     #[test]
     fn conflict_copy_keeps_the_original_and_its_content() {
-        let folder = std::env::temp_dir().join(format!("somedrive-conflict-{}", std::process::id()));
+        let folder =
+            std::env::temp_dir().join(format!("somedrive-conflict-{}", std::process::id()));
         std::fs::create_dir_all(&folder).expect("create folder");
         let original = folder.join("report.docx");
         std::fs::write(&original, b"local edits").expect("write original");

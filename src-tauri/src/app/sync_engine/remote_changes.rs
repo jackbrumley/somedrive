@@ -1,12 +1,14 @@
+use super::*;
+
 /// Pages through the cloud changes since the last cycle (the whole drive on
 /// the first sync), recording each page and downloading planned files while
 /// pages are still arriving.
-async fn fetch_and_apply_delta_changes(
+pub(crate) async fn fetch_and_apply_delta_changes(
     graph: &mut GraphContext,
     sync_root: &Path,
     stats: &mut SyncCycleStats,
     cancel_flag: &Arc<AtomicBool>,
-) -> SyncResult<()>  {
+) -> SyncResult<()> {
     let delta_page_queue_capacity = resolve_delta_page_queue_capacity();
     let download_queue_capacity = resolve_download_queue_capacity();
     let download_concurrency = resolve_download_concurrency();
@@ -60,7 +62,8 @@ async fn fetch_and_apply_delta_changes(
         producer_alive_flag,
     );
 
-    let (download_tx_raw, download_rx) = mpsc::channel::<RemoteDownloadJob>(download_queue_capacity);
+    let (download_tx_raw, download_rx) =
+        mpsc::channel::<RemoteDownloadJob>(download_queue_capacity);
     let mut download_tx = Some(download_tx_raw);
     let (download_result_tx, mut download_result_rx) =
         mpsc::channel::<RemoteDownloadResult>(download_queue_capacity);
@@ -144,10 +147,10 @@ async fn fetch_and_apply_delta_changes(
 /// After a fresh enumeration (expired delta link), items it did not return
 /// are not taken as deleted: each is read directly, and only an item
 /// OneDrive no longer has is recorded as deleted.
-async fn confirm_items_missing_after_resync(
+pub(crate) async fn confirm_items_missing_after_resync(
     graph: &GraphContext,
     cancel_flag: &Arc<AtomicBool>,
-) -> SyncResult<()>  {
+) -> SyncResult<()> {
     let Some(started_at) = read_delta_resync_started_at(&graph.profile_id)? else {
         return Ok(());
     };
@@ -155,7 +158,10 @@ async fn confirm_items_missing_after_resync(
     let mut confirmed_deleted = 0;
     for (path, item_id) in &unseen {
         ensure_not_cancelled(cancel_flag)?;
-        if fetch_remote_item(graph, item_id, cancel_flag).await?.is_none() {
+        if fetch_remote_item(graph, item_id, cancel_flag)
+            .await?
+            .is_none()
+        {
             record_cloud_item_deleted(&graph.profile_id, item_id)?;
             confirmed_deleted += 1;
             log::info!(

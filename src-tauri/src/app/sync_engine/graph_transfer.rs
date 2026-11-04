@@ -1,4 +1,6 @@
-fn graph_http_client_no_redirect() -> Result<reqwest::Client, String> {
+use super::*;
+
+pub(crate) fn graph_http_client_no_redirect() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .connect_timeout(resolve_connect_timeout())
         .timeout(resolve_request_timeout())
@@ -9,13 +11,13 @@ fn graph_http_client_no_redirect() -> Result<reqwest::Client, String> {
 
 /// The body of a successful GET, or the one status the caller asked to
 /// handle itself (each caller handles a single status).
-enum GraphGetOutcome {
+pub(crate) enum GraphGetOutcome {
     Body(String),
     HandledStatus,
 }
 
 /// Like `graph_get_text`, but a 404 is an answer (`None`), not an error.
-async fn graph_get_text_if_exists(
+pub(crate) async fn graph_get_text_if_exists(
     graph: &GraphContext,
     url: &str,
     cancel_flag: &Arc<AtomicBool>,
@@ -28,7 +30,7 @@ async fn graph_get_text_if_exists(
 
 /// A delta page, or `None` when OneDrive says the delta link has expired
 /// (410 Gone, `resyncRequired`) and the drive must be enumerated again.
-async fn graph_get_delta_page(
+pub(crate) async fn graph_get_delta_page(
     graph: &GraphContext,
     url: &str,
     cancel_flag: &Arc<AtomicBool>,
@@ -39,7 +41,7 @@ async fn graph_get_delta_page(
     }
 }
 
-async fn graph_get(
+pub(crate) async fn graph_get(
     graph: &GraphContext,
     url: &str,
     cancel_flag: &Arc<AtomicBool>,
@@ -79,7 +81,10 @@ async fn graph_get(
                     sleep_with_cancellation(cancel_flag, delay).await?;
                     continue;
                 }
-                return Err(SyncError::from_request(&error, format!("Graph GET failed: {error}")));
+                return Err(SyncError::from_request(
+                    &error,
+                    format!("Graph GET failed: {error}"),
+                ));
             }
         };
 
@@ -126,7 +131,10 @@ async fn graph_get(
                     sleep_with_cancellation(cancel_flag, delay).await?;
                     continue;
                 }
-                return Err(SyncError::from_request(&error, format!("Failed reading Graph response: {error}")));
+                return Err(SyncError::from_request(
+                    &error,
+                    format!("Failed reading Graph response: {error}"),
+                ));
             }
         };
 
@@ -148,7 +156,10 @@ async fn graph_get(
             let snippet: String = text.chars().take(400).collect();
             return Err(SyncError::from_status(
                 status,
-                format!("Graph GET {} failed with status {}: {}", url, status, snippet),
+                format!(
+                    "Graph GET {} failed with status {}: {}",
+                    url, status, snippet
+                ),
             ));
         }
         return Ok(GraphGetOutcome::Body(text));
@@ -157,11 +168,11 @@ async fn graph_get(
 
 /// A request that failed for a reason worth retrying (connection, timeout,
 /// interrupted body), judged from the error itself.
-fn is_transient_reqwest_error(error: &reqwest::Error) -> bool {
+pub(crate) fn is_transient_reqwest_error(error: &reqwest::Error) -> bool {
     error.is_connect() || error.is_timeout() || error.is_request() || error.is_body()
 }
 
-async fn graph_delete(graph: &GraphContext, url: &str) -> Result<(), String> {
+pub(crate) async fn graph_delete(graph: &GraphContext, url: &str) -> Result<(), String> {
     let client = graph_http_client()?;
     let mut refreshed = false;
     loop {
@@ -200,7 +211,7 @@ async fn graph_delete(graph: &GraphContext, url: &str) -> Result<(), String> {
 // the transfer needs the job, the item, the planned version and the target;
 // a download request struct is tracked with the cycle context in docs/TODO.md.
 #[allow(clippy::too_many_arguments)]
-async fn download_remote_item_content(
+pub(crate) async fn download_remote_item_content(
     graph: &GraphContext,
     job_id: Option<i64>,
     item_id: &str,
@@ -421,38 +432,37 @@ async fn download_remote_item_content(
             );
             return Err(DOWNLOAD_RETRY_DEFERRED_ERROR.to_string());
         }
-        if status.is_server_error()
-            && attempt < MAX_DOWNLOAD_RETRIES {
-                let delay = parse_retry_after_delay(response.headers())
-                    .unwrap_or_else(|| exponential_backoff_delay(attempt));
-                if let Some(active_job_id) = job_id {
-                    let retry_reason = format!("Download retry scheduled for HTTP status {status}");
-                    if let Err(error) = record_download_job_retrying_in_place(
-                        &graph.profile_id,
-                        active_job_id,
-                        &retry_reason,
-                    ) {
-                        log::warn!(
-                            "{} [cycle:{}] DOWNLOAD_RETRY_PERSIST_FAILED path={} error={}",
-                            graph.account_prefix,
-                            graph.cycle_id,
-                            relative_path,
-                            error
-                        );
-                    }
+        if status.is_server_error() && attempt < MAX_DOWNLOAD_RETRIES {
+            let delay = parse_retry_after_delay(response.headers())
+                .unwrap_or_else(|| exponential_backoff_delay(attempt));
+            if let Some(active_job_id) = job_id {
+                let retry_reason = format!("Download retry scheduled for HTTP status {status}");
+                if let Err(error) = record_download_job_retrying_in_place(
+                    &graph.profile_id,
+                    active_job_id,
+                    &retry_reason,
+                ) {
+                    log::warn!(
+                        "{} [cycle:{}] DOWNLOAD_RETRY_PERSIST_FAILED path={} error={}",
+                        graph.account_prefix,
+                        graph.cycle_id,
+                        relative_path,
+                        error
+                    );
                 }
-                log::warn!(
-                    "{} [cycle:{}] DOWNLOAD_RETRY_HTTP attempt={} status={} path={} delay_ms={}",
-                    graph.account_prefix,
-                    graph.cycle_id,
-                    attempt,
-                    status,
-                    relative_path,
-                    delay.as_millis()
-                );
-                sleep_with_cancellation(cancel_flag, delay).await?;
-                continue;
             }
+            log::warn!(
+                "{} [cycle:{}] DOWNLOAD_RETRY_HTTP attempt={} status={} path={} delay_ms={}",
+                graph.account_prefix,
+                graph.cycle_id,
+                attempt,
+                status,
+                relative_path,
+                delay.as_millis()
+            );
+            sleep_with_cancellation(cancel_flag, delay).await?;
+            continue;
+        }
         if !status.is_success() {
             if status == StatusCode::NOT_FOUND || status == StatusCode::GONE {
                 if let Some(active_transfer_id) = &transfer_id {
@@ -525,7 +535,8 @@ async fn download_remote_item_content(
             })?;
         }
 
-        let temp_path = build_unique_download_temp_path(local_path, item_id, relative_path, &graph.cycle_id);
+        let temp_path =
+            build_unique_download_temp_path(local_path, item_id, relative_path, &graph.cycle_id);
         let _ = std::fs::remove_file(&temp_path);
         let mut output_file = std::fs::File::create(&temp_path).map_err(|error| {
             format!(
@@ -542,7 +553,11 @@ async fn download_remote_item_content(
         let mut should_retry_download = false;
         while let Some(chunk_result) = stream.next().await {
             if cancel_flag.load(Ordering::Relaxed) {
-                runtime_finish_transfer_cancelled(&graph.sync_runtime, &graph.profile_id, &transfer_id);
+                runtime_finish_transfer_cancelled(
+                    &graph.sync_runtime,
+                    &graph.profile_id,
+                    &transfer_id,
+                );
                 let _ = std::fs::remove_file(&temp_path);
                 return Err(SYNC_CANCELLED_ERROR.to_string());
             }
@@ -642,7 +657,9 @@ async fn download_remote_item_content(
             .flush()
             .and_then(|()| output_file.sync_all())
             .map_err(|error| format!("Failed flushing temporary file: {error}"))
-            .and_then(|()| verify_downloaded_content(version, total, downloaded_bytes, &content_hasher));
+            .and_then(|()| {
+                verify_downloaded_content(version, total, downloaded_bytes, &content_hasher)
+            });
         if let Err(reason) = verification {
             drop(output_file);
             if handle_download_retry(
@@ -672,10 +689,15 @@ async fn download_remote_item_content(
             return Err(SYNC_CANCELLED_ERROR.to_string());
         }
 
-        let placed_entry = match place_downloaded_file(graph, relative_path, &temp_path, local_path) {
+        let placed_entry = match place_downloaded_file(graph, relative_path, &temp_path, local_path)
+        {
             Ok(Some(entry)) => entry,
             Ok(None) => {
-                runtime_finish_transfer_cancelled(&graph.sync_runtime, &graph.profile_id, &transfer_id);
+                runtime_finish_transfer_cancelled(
+                    &graph.sync_runtime,
+                    &graph.profile_id,
+                    &transfer_id,
+                );
                 return Ok(RemoteDownloadOutcome::HeldAsConflict);
             }
             Err(reason) => {
@@ -727,11 +749,11 @@ async fn download_remote_item_content(
     }
 }
 
-async fn create_remote_folder(
+pub(crate) async fn create_remote_folder(
     graph: &mut GraphContext,
     relative_path: &str,
     cancel_flag: &Arc<AtomicBool>,
-) -> SyncResult<GraphDriveItem>  {
+) -> SyncResult<GraphDriveItem> {
     ensure_not_cancelled(cancel_flag)?;
     let (parent, name) = split_parent_and_name(relative_path)?;
     let endpoint = if parent.is_empty() {
@@ -834,11 +856,11 @@ async fn create_remote_folder(
     }
 }
 
-async fn delete_remote_item(
+pub(crate) async fn delete_remote_item(
     graph: &mut GraphContext,
     item_id: &str,
     cancel_flag: &Arc<AtomicBool>,
-) -> SyncResult<()>  {
+) -> SyncResult<()> {
     ensure_not_cancelled(cancel_flag)?;
     let url = format!("{GRAPH_ROOT}/me/drive/items/{}", item_id);
     log::info!(

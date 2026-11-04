@@ -1,22 +1,24 @@
+use super::*;
+
 // Records the cloud side of `sync_files` from delta pages: path resolution
 // from parent item IDs, renames and moves, deletes, and cloud items that are
 // never synced. Part of the `sync_files` store.
 
-const ISSUE_ONENOTE_NOTEBOOK: &str = "onenote_notebook";
-const ISSUE_MALWARE_DETECTED: &str = "malware_detected";
+pub(crate) const ISSUE_ONENOTE_NOTEBOOK: &str = "onenote_notebook";
+pub(crate) const ISSUE_MALWARE_DETECTED: &str = "malware_detected";
 
 /// What applying one delta page did.
 #[derive(Debug, Default)]
-struct DeltaPageSummary {
-    recorded: usize,
-    deleted: usize,
-    skipped_unresolved: usize,
+pub(crate) struct DeltaPageSummary {
+    pub(crate) recorded: usize,
+    pub(crate) deleted: usize,
+    pub(crate) skipped_unresolved: usize,
 }
 
 /// Applies one delta page and records its continuation link in the same
 /// transaction, so an interrupted cycle resumes exactly after the last page
 /// whose items are stored (nothing is lost on pause or quit).
-fn apply_delta_page(
+pub(crate) fn apply_delta_page(
     profile_id: &str,
     account_prefix: &str,
     items: &[GraphDriveItem],
@@ -45,7 +47,12 @@ fn apply_delta_page(
             continue;
         };
         let exclusion = cloud_item_exclusion(&transaction, profile_id, item)?;
-        upsert_cloud_item(&transaction, profile_id, &item.to_cloud_item(path.clone()), now)?;
+        upsert_cloud_item(
+            &transaction,
+            profile_id,
+            &item.to_cloud_item(path.clone()),
+            now,
+        )?;
         if let Some((issue_code, issue_detail)) = exclusion {
             write_sync_file_issue(&transaction, profile_id, &path, issue_code, issue_detail)?;
         }
@@ -73,7 +80,7 @@ fn apply_delta_page(
 /// Cloud items SomeDrive never syncs: OneNote notebooks and everything in
 /// them (Graph cannot round-trip them as files) and items OneDrive flagged
 /// as malware (downloads are refused).
-fn cloud_item_exclusion(
+pub(crate) fn cloud_item_exclusion(
     connection: &Connection,
     profile_id: &str,
     item: &GraphDriveItem,
@@ -103,16 +110,18 @@ fn cloud_item_exclusion(
         .optional()
         .map_err(|error| format!("Failed reading parent exclusion: {error}"))?
         .flatten();
-    Ok((parent_issue.as_deref() == Some(ISSUE_ONENOTE_NOTEBOOK)).then_some((
-        ISSUE_ONENOTE_NOTEBOOK,
-        "OneNote notebooks are not synced; open them in OneNote.",
-    )))
+    Ok(
+        (parent_issue.as_deref() == Some(ISSUE_ONENOTE_NOTEBOOK)).then_some((
+            ISSUE_ONENOTE_NOTEBOOK,
+            "OneNote notebooks are not synced; open them in OneNote.",
+        )),
+    )
 }
 
 /// The item's path, from its parent's stored path (the drive root is stored
 /// as `""`). Falls back to `parentReference.path` when Graph supplies it.
 /// `None` when neither is known: the item is skipped, never guessed.
-fn resolve_delta_item_path(
+pub(crate) fn resolve_delta_item_path(
     connection: &Connection,
     profile_id: &str,
     item: &GraphDriveItem,
@@ -120,7 +129,12 @@ fn resolve_delta_item_path(
     if item.root.is_some() {
         return Ok(Some(String::new()));
     }
-    let Some(name) = item.name.as_deref().map(str::trim).filter(|name| !name.is_empty()) else {
+    let Some(name) = item
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+    else {
         return Ok(None);
     };
     let parent_path = match item.parent_id() {
@@ -143,7 +157,7 @@ fn resolve_delta_item_path(
 }
 
 /// The stored path of the cloud folder `parent_id` (`""` for the drive root).
-fn resolve_cloud_parent_path(
+pub(crate) fn resolve_cloud_parent_path(
     connection: &Connection,
     profile_id: &str,
     parent_id: &str,
@@ -159,7 +173,7 @@ fn resolve_cloud_parent_path(
         .map_err(|error| format!("Failed resolving parent folder {parent_id}: {error}"))
 }
 
-fn upsert_cloud_item(
+pub(crate) fn upsert_cloud_item(
     connection: &Connection,
     profile_id: &str,
     item: &CloudItem,
@@ -229,7 +243,7 @@ fn upsert_cloud_item(
 /// `old_path` to `new_path`: its cloud state follows it, while the local
 /// state and baseline stay at the old path. The planner then removes the old
 /// copy (to Trash, through the delete guard) and downloads the new one.
-fn move_cloud_state(
+pub(crate) fn move_cloud_state(
     connection: &Connection,
     profile_id: &str,
     old_path: &str,
@@ -320,7 +334,7 @@ fn move_cloud_state(
 
 /// A deleted cloud item: it and, for a folder, everything under it are
 /// absent in the cloud (Graph reports only the folder itself).
-fn mark_cloud_item_deleted(
+pub(crate) fn mark_cloud_item_deleted(
     connection: &Connection,
     profile_id: &str,
     remote_item_id: &str,
@@ -352,7 +366,7 @@ fn mark_cloud_item_deleted(
     Ok(())
 }
 
-fn clear_cloud_state(
+pub(crate) fn clear_cloud_state(
     connection: &Connection,
     profile_id: &str,
     path: &str,
@@ -374,7 +388,7 @@ fn clear_cloud_state(
 /// OneDrive expired the delta link: forget it and remember when the fresh
 /// enumeration started, so items it does not return can be checked one by
 /// one afterwards instead of being taken as deleted.
-fn begin_delta_resync(profile_id: &str) -> Result<i64, String> {
+pub(crate) fn begin_delta_resync(profile_id: &str) -> Result<i64, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let now = current_unix_seconds();
     connection
@@ -392,7 +406,7 @@ fn begin_delta_resync(profile_id: &str) -> Result<i64, String> {
     Ok(now)
 }
 
-fn read_delta_resync_started_at(profile_id: &str) -> Result<Option<i64>, String> {
+pub(crate) fn read_delta_resync_started_at(profile_id: &str) -> Result<Option<i64>, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     connection
         .query_row(
@@ -405,7 +419,7 @@ fn read_delta_resync_started_at(profile_id: &str) -> Result<Option<i64>, String>
         .map_err(|error| format!("Failed reading delta resync marker: {error}"))
 }
 
-fn finish_delta_resync(profile_id: &str) -> Result<(), String> {
+pub(crate) fn finish_delta_resync(profile_id: &str) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     connection
         .execute(
@@ -418,7 +432,10 @@ fn finish_delta_resync(profile_id: &str) -> Result<(), String> {
 
 /// Cloud items recorded before `since` that a fresh enumeration did not
 /// return: `(path, remote item id)`.
-fn list_cloud_items_unseen_since(profile_id: &str, since: i64) -> Result<Vec<(String, String)>, String> {
+pub(crate) fn list_cloud_items_unseen_since(
+    profile_id: &str,
+    since: i64,
+) -> Result<Vec<(String, String)>, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let mut statement = connection
         .prepare(
@@ -429,27 +446,38 @@ fn list_cloud_items_unseen_since(profile_id: &str, since: i64) -> Result<Vec<(St
         )
         .map_err(|error| format!("Failed preparing unseen items query: {error}"))?;
     let rows = statement
-        .query_map(params![profile_id, since], |row| Ok((row.get(0)?, row.get(1)?)))
+        .query_map(params![profile_id, since], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
         .map_err(|error| format!("Failed querying unseen items: {error}"))?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| format!("Failed reading unseen items: {error}"))
 }
 
 /// A cloud item confirmed gone (it and anything under it).
-fn record_cloud_item_deleted(profile_id: &str, remote_item_id: &str) -> Result<(), String> {
+pub(crate) fn record_cloud_item_deleted(
+    profile_id: &str,
+    remote_item_id: &str,
+) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
-    mark_cloud_item_deleted(&connection, profile_id, remote_item_id, current_unix_seconds())
+    mark_cloud_item_deleted(
+        &connection,
+        profile_id,
+        remote_item_id,
+        current_unix_seconds(),
+    )
 }
 
 /// Rows at `path` or anywhere under it.
-const PATH_OR_DESCENDANT: &str = "(path = ?2 OR substr(path, 1, length(?2) + 1) = ?2 || '/')";
+pub(crate) const PATH_OR_DESCENDANT: &str =
+    "(path = ?2 OR substr(path, 1, length(?2) + 1) = ?2 || '/')";
 
 /// A cloud item moved from `old_path` to `new_path` and nothing is tracked at
 /// the new path yet: the whole record (cloud, local and baseline) moves with
 /// it, and the same rename is queued for this device. Returns false when the
 /// new path is already in use, so the caller falls back to moving only the
 /// cloud state (re-download plus a guarded delete of the old copy).
-fn follow_cloud_move(
+pub(crate) fn follow_cloud_move(
     connection: &Connection,
     profile_id: &str,
     old_path: &str,
@@ -499,12 +527,12 @@ fn follow_cloud_move(
 
 /// A cloud rename waiting to be repeated on this device.
 #[derive(Debug, Clone, PartialEq)]
-struct PendingLocalMove {
-    old_path: String,
-    new_path: String,
+pub(crate) struct PendingLocalMove {
+    pub(crate) old_path: String,
+    pub(crate) new_path: String,
 }
 
-fn list_pending_local_moves(profile_id: &str) -> Result<Vec<PendingLocalMove>, String> {
+pub(crate) fn list_pending_local_moves(profile_id: &str) -> Result<Vec<PendingLocalMove>, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let mut statement = connection
         .prepare(
@@ -524,7 +552,7 @@ fn list_pending_local_moves(profile_id: &str) -> Result<Vec<PendingLocalMove>, S
         .map_err(|error| format!("Failed reading local moves: {error}"))
 }
 
-fn finish_local_move(profile_id: &str, old_path: &str) -> Result<(), String> {
+pub(crate) fn finish_local_move(profile_id: &str, old_path: &str) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     connection
         .execute(
@@ -539,7 +567,11 @@ fn finish_local_move(profile_id: &str, old_path: &str) -> Result<(), String> {
 /// back to the old path, while the cloud state stays at the new one. The
 /// planner then downloads the new path and (through the delete guard)
 /// removes the old copy.
-fn undo_local_follow(profile_id: &str, old_path: &str, new_path: &str) -> Result<(), String> {
+pub(crate) fn undo_local_follow(
+    profile_id: &str,
+    old_path: &str,
+    new_path: &str,
+) -> Result<(), String> {
     let mut connection = open_sync_jobs_connection(profile_id)?;
     let transaction = connection
         .transaction()

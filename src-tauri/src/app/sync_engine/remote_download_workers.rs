@@ -1,4 +1,6 @@
-fn spawn_remote_download_workers(
+use super::*;
+
+pub(crate) fn spawn_remote_download_workers(
     graph: &GraphContext,
     download_concurrency: usize,
     cycle_cancel_flag: &Arc<AtomicBool>,
@@ -101,7 +103,7 @@ fn spawn_remote_download_workers(
     }
 }
 
-async fn execute_remote_download_job(
+pub(crate) async fn execute_remote_download_job(
     worker_graph: &GraphContext,
     job: RemoteDownloadJob,
     worker_cancel: &Arc<AtomicBool>,
@@ -119,7 +121,9 @@ async fn execute_remote_download_job(
     .await;
     let status = match outcome {
         Ok(outcome) => RemoteDownloadResultStatus::Success(outcome),
-        Err(error) if error == DOWNLOAD_RETRY_DEFERRED_ERROR => RemoteDownloadResultStatus::DeferredRetry,
+        Err(error) if error == DOWNLOAD_RETRY_DEFERRED_ERROR => {
+            RemoteDownloadResultStatus::DeferredRetry
+        }
         Err(error) if is_sync_cancelled_error(&error) => RemoteDownloadResultStatus::Cancelled,
         Err(error) => RemoteDownloadResultStatus::Failed(format!(
             "Remote download failed item_id={} path={}: {}",

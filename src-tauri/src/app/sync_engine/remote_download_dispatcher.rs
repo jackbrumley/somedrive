@@ -1,4 +1,6 @@
-fn spawn_remote_download_dispatcher(
+use super::*;
+
+pub(crate) fn spawn_remote_download_dispatcher(
     graph: &GraphContext,
     sync_root: &Path,
     download_concurrency: usize,

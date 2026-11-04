@@ -1,4 +1,8 @@
-fn sync_download_counters_from_db(graph: &GraphContext) -> Result<DownloadJobCounters, String> {
+use super::*;
+
+pub(crate) fn sync_download_counters_from_db(
+    graph: &GraphContext,
+) -> Result<DownloadJobCounters, String> {
     let counters = read_download_job_counters(&graph.profile_id)?;
     runtime_set_remote_download_counters(
         &graph.sync_runtime,
@@ -12,7 +16,7 @@ fn sync_download_counters_from_db(graph: &GraphContext) -> Result<DownloadJobCou
     Ok(counters)
 }
 
-async fn dispatch_claimed_download_jobs(
+pub(crate) async fn dispatch_claimed_download_jobs(
     graph: &GraphContext,
     sync_root: &Path,
     download_tx: &mpsc::Sender<RemoteDownloadJob>,
@@ -33,9 +37,9 @@ async fn dispatch_claimed_download_jobs(
     for claimed_job in claimed {
         // The version to download is captured now, so the baseline records
         // exactly what was fetched even if the cloud changes meanwhile.
-        let Some(row) = read_sync_file_row(&graph.profile_id, &claimed_job.path)?
-            .filter(|row| row.cloud_present && row.remote_item_id.as_deref() == Some(claimed_job.item_id.as_str()))
-        else {
+        let Some(row) = read_sync_file_row(&graph.profile_id, &claimed_job.path)?.filter(|row| {
+            row.cloud_present && row.remote_item_id.as_deref() == Some(claimed_job.item_id.as_str())
+        }) else {
             // The plan moved on (the item was deleted or moved): drop the job.
             mark_download_job_done(&graph.profile_id, claimed_job.job_id, true)?;
             continue;
@@ -63,7 +67,7 @@ async fn dispatch_claimed_download_jobs(
     Ok(dispatched)
 }
 
-async fn send_download_job_with_logging(
+pub(crate) async fn send_download_job_with_logging(
     graph: &GraphContext,
     download_tx: &mpsc::Sender<RemoteDownloadJob>,
     job: RemoteDownloadJob,
@@ -112,9 +116,9 @@ async fn send_download_job_with_logging(
 
 /// How long a download that got 404/410 waits before it is tried again; a
 /// delta page normally confirms the delete well before then.
-const DOWNLOAD_NOT_FOUND_RETRY_DELAY: Duration = Duration::from_secs(600);
+pub(crate) const DOWNLOAD_NOT_FOUND_RETRY_DELAY: Duration = Duration::from_secs(600);
 
-fn apply_remote_download_result(
+pub(crate) fn apply_remote_download_result(
     graph: &GraphContext,
     stats: &mut SyncCycleStats,
     result: RemoteDownloadResult,
@@ -165,7 +169,11 @@ fn apply_remote_download_result(
         }
         RemoteDownloadResultStatus::Failed(error_text) => {
             mark_download_job_failed(&graph.profile_id, result.job_id, &error_text)?;
-            runtime_record_remote_download_failed(&graph.sync_runtime, &graph.profile_id, &result.item_id);
+            runtime_record_remote_download_failed(
+                &graph.sync_runtime,
+                &graph.profile_id,
+                &result.item_id,
+            );
             log::warn!(
                 "{} [cycle:{}] REMOTE_DOWNLOAD_JOB_FAILED path={} id={} error={}",
                 graph.account_prefix,
@@ -178,7 +186,11 @@ fn apply_remote_download_result(
         RemoteDownloadResultStatus::Success(RemoteDownloadOutcome::Downloaded(entry)) => {
             commit_baseline(&graph.profile_id, &result.path, &result.version, &entry)?;
             mark_download_job_done(&graph.profile_id, result.job_id, false)?;
-            runtime_record_remote_download_completed(&graph.sync_runtime, &graph.profile_id, &result.item_id);
+            runtime_record_remote_download_completed(
+                &graph.sync_runtime,
+                &graph.profile_id,
+                &result.item_id,
+            );
             stats.downloaded_files += 1;
         }
         RemoteDownloadResultStatus::Success(RemoteDownloadOutcome::HeldAsConflict) => {

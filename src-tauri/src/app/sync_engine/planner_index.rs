@@ -1,4 +1,8 @@
-fn read_sync_file_planner_counters(profile_id: &str) -> Result<SyncFilePlannerCounters, String> {
+use super::*;
+
+pub(crate) fn read_sync_file_planner_counters(
+    profile_id: &str,
+) -> Result<SyncFilePlannerCounters, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let count_sync_files = |condition: &str, label: &str| -> Result<usize, String> {
         connection
@@ -51,7 +55,9 @@ fn read_sync_file_planner_counters(profile_id: &str) -> Result<SyncFilePlannerCo
     Ok(counters)
 }
 
-fn list_sync_file_download_candidates(profile_id: &str) -> Result<Vec<PlannerDownloadCandidate>, String> {
+pub(crate) fn list_sync_file_download_candidates(
+    profile_id: &str,
+) -> Result<Vec<PlannerDownloadCandidate>, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let mut statement = connection
         .prepare(
@@ -102,7 +108,9 @@ fn list_sync_file_download_candidates(profile_id: &str) -> Result<Vec<PlannerDow
     Ok(candidates)
 }
 
-fn list_sync_file_upload_candidates(profile_id: &str) -> Result<Vec<PlannerUploadCandidate>, String> {
+pub(crate) fn list_sync_file_upload_candidates(
+    profile_id: &str,
+) -> Result<Vec<PlannerUploadCandidate>, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let mut statement = connection
         .prepare(
@@ -135,16 +143,16 @@ fn list_sync_file_upload_candidates(profile_id: &str) -> Result<Vec<PlannerUploa
     Ok(candidates)
 }
 #[derive(Debug, Clone)]
-struct PlannerDownloadCandidate {
-    item_id: String,
-    path: String,
-    remote_size: u64,
-    remote_modified_ts: i64,
+pub(crate) struct PlannerDownloadCandidate {
+    pub(crate) item_id: String,
+    pub(crate) path: String,
+    pub(crate) remote_size: u64,
+    pub(crate) remote_modified_ts: i64,
 }
 
 #[derive(Debug, Clone)]
-struct PlannerUploadCandidate {
-    path: String,
-    local_size: u64,
-    local_mtime_ns: i64,
+pub(crate) struct PlannerUploadCandidate {
+    pub(crate) path: String,
+    pub(crate) local_size: u64,
+    pub(crate) local_mtime_ns: i64,
 }

@@ -1,22 +1,24 @@
+use super::*;
+
 // OneDrive's QuickXorHash (the `file.hashes.quickXorHash` Graph returns for
 // every file): a 160-bit XOR-and-shift digest with the content length XORed
 // into the last 8 bytes, base64 encoded. Used to match identical files at
 // first sync and to verify downloads. Port of Microsoft's reference
 // implementation.
 
-const QUICK_XOR_WIDTH_BITS: usize = 160;
-const QUICK_XOR_SHIFT: usize = 11;
-const QUICK_XOR_CELLS: usize = (QUICK_XOR_WIDTH_BITS - 1) / 64 + 1;
-const QUICK_XOR_BITS_IN_LAST_CELL: usize = 32;
+pub(crate) const QUICK_XOR_WIDTH_BITS: usize = 160;
+pub(crate) const QUICK_XOR_SHIFT: usize = 11;
+pub(crate) const QUICK_XOR_CELLS: usize = (QUICK_XOR_WIDTH_BITS - 1) / 64 + 1;
+pub(crate) const QUICK_XOR_BITS_IN_LAST_CELL: usize = 32;
 
-struct QuickXorHasher {
-    cells: [u64; QUICK_XOR_CELLS],
-    shift_so_far: usize,
-    length_so_far: u64,
+pub(crate) struct QuickXorHasher {
+    pub(crate) cells: [u64; QUICK_XOR_CELLS],
+    pub(crate) shift_so_far: usize,
+    pub(crate) length_so_far: u64,
 }
 
 impl QuickXorHasher {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             cells: [0; QUICK_XOR_CELLS],
             shift_so_far: 0,
@@ -24,7 +26,7 @@ impl QuickXorHasher {
         }
     }
 
-    fn update(&mut self, bytes: &[u8]) {
+    pub(crate) fn update(&mut self, bytes: &[u8]) {
         let mut cell_index = self.shift_so_far / 64;
         let mut cell_offset = self.shift_so_far % 64;
         let iterations = bytes.len().min(QUICK_XOR_WIDTH_BITS);
@@ -63,13 +65,13 @@ impl QuickXorHasher {
             }
         }
 
-        self.shift_so_far =
-            (self.shift_so_far + QUICK_XOR_SHIFT * (bytes.len() % QUICK_XOR_WIDTH_BITS))
-                % QUICK_XOR_WIDTH_BITS;
+        self.shift_so_far = (self.shift_so_far
+            + QUICK_XOR_SHIFT * (bytes.len() % QUICK_XOR_WIDTH_BITS))
+            % QUICK_XOR_WIDTH_BITS;
         self.length_so_far += bytes.len() as u64;
     }
 
-    fn finish_base64(&self) -> String {
+    pub(crate) fn finish_base64(&self) -> String {
         use base64::Engine;
         let mut digest = [0_u8; QUICK_XOR_WIDTH_BITS / 8];
         for (cell_number, cell) in self.cells.iter().enumerate() {
@@ -88,7 +90,7 @@ impl QuickXorHasher {
 }
 
 /// The QuickXorHash of a local file, base64 encoded like Graph's value.
-fn quick_xor_hash_file(path: &Path) -> Result<String, String> {
+pub(crate) fn quick_xor_hash_file(path: &Path) -> Result<String, String> {
     let mut file = std::fs::File::open(path)
         .map_err(|error| format!("Failed opening '{}' for hashing: {error}", path.display()))?;
     let mut hasher = QuickXorHasher::new();
@@ -122,7 +124,9 @@ mod quick_xor_hash_tests {
 
     #[test]
     fn chunked_updates_match_a_single_update() {
-        let content: Vec<u8> = (0..10_000_u32).map(|value| (value * 31 % 251) as u8).collect();
+        let content: Vec<u8> = (0..10_000_u32)
+            .map(|value| (value * 31 % 251) as u8)
+            .collect();
         let whole = hash_of(&content);
         for chunk_size in [1, 7, 159, 160, 161, 4096] {
             let mut hasher = QuickXorHasher::new();

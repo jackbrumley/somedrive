@@ -1,12 +1,14 @@
+use super::*;
+
 // Fresh reads of single items from OneDrive, used to re-check an item just
 // before acting on it.
 
 /// The item as OneDrive holds it right now; `None` when it no longer exists.
-async fn fetch_remote_item(
+pub(crate) async fn fetch_remote_item(
     graph: &GraphContext,
     item_id: &str,
     cancel_flag: &Arc<AtomicBool>,
-) -> SyncResult<Option<GraphDriveItem>>  {
+) -> SyncResult<Option<GraphDriveItem>> {
     let url = format!("{GRAPH_ROOT}/me/drive/items/{item_id}");
     let Some(text) = graph_get_text_if_exists(graph, &url, cancel_flag).await? else {
         return Ok(None);
@@ -17,12 +19,15 @@ async fn fetch_remote_item(
 }
 
 /// The item at `relative_path` in OneDrive; `None` when there is none.
-async fn fetch_remote_item_by_path(
+pub(crate) async fn fetch_remote_item_by_path(
     graph: &GraphContext,
     relative_path: &str,
     cancel_flag: &Arc<AtomicBool>,
-) -> SyncResult<Option<GraphDriveItem>>  {
-    let url = format!("{GRAPH_ROOT}/me/drive/root:/{}", encode_graph_path(relative_path));
+) -> SyncResult<Option<GraphDriveItem>> {
+    let url = format!(
+        "{GRAPH_ROOT}/me/drive/root:/{}",
+        encode_graph_path(relative_path)
+    );
     let Some(text) = graph_get_text_if_exists(graph, &url, cancel_flag).await? else {
         return Ok(None);
     };
@@ -33,11 +38,11 @@ async fn fetch_remote_item_by_path(
 
 /// Whether the cloud folder currently has any children (a fresh listing,
 /// not the stored state; Graph deletes folders recursively).
-async fn remote_folder_has_children(
+pub(crate) async fn remote_folder_has_children(
     graph: &GraphContext,
     item_id: &str,
     cancel_flag: &Arc<AtomicBool>,
-) -> SyncResult<bool>  {
+) -> SyncResult<bool> {
     #[derive(Deserialize)]
     struct ChildrenPage {
         value: Vec<serde_json::Value>,

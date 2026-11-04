@@ -1,31 +1,36 @@
+use super::*;
+
 /// Per-cycle connection to Microsoft Graph for one account: the access token
 /// (refreshed on demand), the account-wide throttle window, and the single
 /// path that records a sign-in Microsoft no longer accepts.
 #[derive(Clone)]
-struct GraphContext {
-    profile_id: String,
-    account_prefix: String,
-    cycle_id: String,
-    access_token: Arc<tokio::sync::RwLock<String>>,
-    token_refresh_lock: Arc<tokio::sync::Mutex<()>>,
-    profiles_lock: Arc<std::sync::Mutex<()>>,
-    sync_runtime: Arc<std::sync::Mutex<SyncRuntimeMap>>,
+pub(crate) struct GraphContext {
+    pub(crate) profile_id: String,
+    pub(crate) account_prefix: String,
+    pub(crate) cycle_id: String,
+    pub(crate) access_token: Arc<tokio::sync::RwLock<String>>,
+    pub(crate) token_refresh_lock: Arc<tokio::sync::Mutex<()>>,
+    pub(crate) profiles_lock: Arc<std::sync::Mutex<()>>,
+    pub(crate) sync_runtime: Arc<std::sync::Mutex<SyncRuntimeMap>>,
     /// Account-wide throttle window: after Microsoft answers 429, no Graph
     /// request for this account starts before this instant, so parallel
     /// workers back off together instead of each hitting the limit again.
-    throttled_until: Arc<std::sync::Mutex<Option<tokio::time::Instant>>>,
+    pub(crate) throttled_until: Arc<std::sync::Mutex<Option<tokio::time::Instant>>>,
     /// The exclude rules for this cycle.
-    exclusions: Arc<ExclusionRules>,
+    pub(crate) exclusions: Arc<ExclusionRules>,
 }
 
 impl GraphContext {
-    async fn current_access_token(&self) -> String {
+    pub(crate) async fn current_access_token(&self) -> String {
         self.access_token.read().await.clone()
     }
 
     /// Holds every Graph request back until the account's throttle window
     /// (set by `extend_throttle_window`) has passed.
-    async fn wait_for_throttle_window(&self, cancel_flag: &Arc<AtomicBool>) -> Result<(), String> {
+    pub(crate) async fn wait_for_throttle_window(
+        &self,
+        cancel_flag: &Arc<AtomicBool>,
+    ) -> Result<(), String> {
         loop {
             let resume_at = self
                 .throttled_until
@@ -41,7 +46,7 @@ impl GraphContext {
 
     /// Records a 429 for the whole account: pushes the throttle window out to
     /// `retry_after` from now (never shortens it).
-    fn extend_throttle_window(&self, retry_after: Duration) -> Result<(), String> {
+    pub(crate) fn extend_throttle_window(&self, retry_after: Duration) -> Result<(), String> {
         let resume_at = tokio::time::Instant::now() + retry_after;
         let mut throttled_until = self
             .throttled_until
@@ -59,7 +64,10 @@ impl GraphContext {
         Ok(())
     }
 
-    async fn refresh_token_if_needed(&self, stale_token: &str) -> Result<String, String> {
+    pub(crate) async fn refresh_token_if_needed(
+        &self,
+        stale_token: &str,
+    ) -> Result<String, String> {
         let _refresh_guard = self.token_refresh_lock.lock().await;
 
         let current_token = self.current_access_token().await;
@@ -90,7 +98,7 @@ impl GraphContext {
 /// The single path for "this account's saved sign-in no longer works":
 /// persists the signed-out state, marks the runtime not auth-ready (which
 /// raises the `auth_required` issue) and returns the cycle error.
-fn record_sign_in_required(
+pub(crate) fn record_sign_in_required(
     profiles_lock: &std::sync::Mutex<()>,
     sync_runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,

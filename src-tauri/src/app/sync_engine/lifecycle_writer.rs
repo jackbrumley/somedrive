@@ -1,4 +1,6 @@
-fn runtime_set_phase(
+use super::*;
+
+pub(crate) fn runtime_set_phase(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     phase: &str,
@@ -55,13 +57,16 @@ pub fn runtime_set_engine_state(
     }
 }
 
-fn runtime_reset_transfer_activity(runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>, profile_id: &str) {
+pub(crate) fn runtime_reset_transfer_activity(
+    runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
+    profile_id: &str,
+) {
     if let Ok(mut runtime_map) = runtime.lock() {
         sync_runtime::reset_transfer_activity(&mut runtime_map, profile_id);
     }
 }
 
-fn runtime_set_local_scan_progress(
+pub(crate) fn runtime_set_local_scan_progress(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     scanned_count: usize,
@@ -103,7 +108,7 @@ fn runtime_set_local_scan_progress(
 
 // the structured activity contract (stage, progress_mode, current, total, unit, detail, cycle_id) is passed field by field; bundling it into one struct is tracked in docs/TODO.md.
 #[allow(clippy::too_many_arguments)]
-fn runtime_set_current_activity(
+pub(crate) fn runtime_set_current_activity(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     stage: &str,
@@ -146,7 +151,10 @@ fn runtime_set_current_activity(
     }
 }
 
-fn runtime_clear_issue(runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>, profile_id: &str) {
+pub(crate) fn runtime_clear_issue(
+    runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
+    profile_id: &str,
+) {
     if let Ok(mut runtime_map) = runtime.lock() {
         sync_runtime::clear_issue(&mut runtime_map, profile_id);
     }
@@ -159,7 +167,7 @@ fn runtime_clear_issue(runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>, profile_
     }
 }
 
-fn runtime_set_issue(
+pub(crate) fn runtime_set_issue(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     issue_code: &str,
@@ -196,7 +204,7 @@ fn runtime_set_issue(
     }
 }
 
-fn runtime_set_remote_scan_complete(
+pub(crate) fn runtime_set_remote_scan_complete(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     complete: bool,
@@ -214,14 +222,14 @@ fn runtime_set_remote_scan_complete(
     }
 }
 
-fn persist_lifecycle_operational_state(
+pub(crate) fn persist_lifecycle_operational_state(
     profile_id: &str,
     state: &SyncLifecycleOperationalState,
 ) -> Result<(), String> {
     persist_sync_lifecycle_operational_state(profile_id, state)
 }
 
-fn runtime_record_remote_download_completed(
+pub(crate) fn runtime_record_remote_download_completed(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     item_id: &str,
@@ -231,7 +239,7 @@ fn runtime_record_remote_download_completed(
     }
 }
 
-fn runtime_record_remote_download_failed(
+pub(crate) fn runtime_record_remote_download_failed(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     item_id: &str,
@@ -241,7 +249,7 @@ fn runtime_record_remote_download_failed(
     }
 }
 
-fn runtime_set_remote_download_counters(
+pub(crate) fn runtime_set_remote_download_counters(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     planned_total: usize,
@@ -263,7 +271,7 @@ fn runtime_set_remote_download_counters(
     }
 }
 
-fn runtime_set_upload_counters(
+pub(crate) fn runtime_set_upload_counters(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     planned_total: usize,
@@ -283,7 +291,7 @@ fn runtime_set_upload_counters(
     }
 }
 
-fn runtime_set_upload_planned_total(
+pub(crate) fn runtime_set_upload_planned_total(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     planned_total: usize,
@@ -293,7 +301,7 @@ fn runtime_set_upload_planned_total(
     }
 }
 
-fn runtime_profile_auth_ready(
+pub(crate) fn runtime_profile_auth_ready(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
 ) -> bool {
@@ -423,7 +431,10 @@ mod lifecycle_writer_tests {
         assert_eq!(hydrated.profile_id, built.profile_id);
         assert_eq!(hydrated.phase, built.phase);
         assert_eq!(hydrated.phase_message, built.phase_message);
-        assert_eq!(hydrated.current_activity.stage, built.current_activity.stage);
+        assert_eq!(
+            hydrated.current_activity.stage,
+            built.current_activity.stage
+        );
         assert_eq!(
             hydrated.current_activity.progress_mode,
             built.current_activity.progress_mode

@@ -1,6 +1,8 @@
+use super::*;
+
 /// How an upload may treat an item already at its path in OneDrive.
 #[derive(Debug, Clone)]
-enum UploadTarget {
+pub(crate) enum UploadTarget {
     /// A new file: fail if something appeared at the path since the plan.
     New,
     /// Replace the synced version; an upload session only proceeds if the
@@ -9,7 +11,7 @@ enum UploadTarget {
 }
 
 impl UploadTarget {
-    fn conflict_behavior(&self) -> &'static str {
+    pub(crate) fn conflict_behavior(&self) -> &'static str {
         match self {
             Self::New => "fail",
             Self::Replace { .. } => "replace",
@@ -17,7 +19,7 @@ impl UploadTarget {
     }
 }
 
-async fn upload_file_by_path(
+pub(crate) async fn upload_file_by_path(
     graph: &mut GraphContext,
     sync_root: &Path,
     relative_path: &str,
@@ -161,7 +163,7 @@ async fn upload_file_by_path(
     result
 }
 
-fn sync_upload_counters_from_db(graph: &GraphContext) {
+pub(crate) fn sync_upload_counters_from_db(graph: &GraphContext) {
     match read_upload_job_counters(&graph.profile_id) {
         Ok(counters) => runtime_set_upload_counters(
             &graph.sync_runtime,
@@ -182,7 +184,7 @@ fn sync_upload_counters_from_db(graph: &GraphContext) {
     }
 }
 
-fn resolve_upload_retry_delay(attempt_count: u32) -> Duration {
+pub(crate) fn resolve_upload_retry_delay(attempt_count: u32) -> Duration {
     let exponent = attempt_count.saturating_sub(1).min(10);
     let retry_seconds = 2_u64.saturating_pow(exponent).min(MAX_RETRY_DELAY_SECONDS);
     Duration::from_secs(retry_seconds.max(1))
@@ -191,7 +193,7 @@ fn resolve_upload_retry_delay(attempt_count: u32) -> Duration {
 // the upload needs the job, the path, the target, the bytes and the transfer
 // row; an upload request struct is tracked with the cycle context.
 #[allow(clippy::too_many_arguments)]
-async fn upload_small_file_simple(
+pub(crate) async fn upload_small_file_simple(
     graph: &mut GraphContext,
     upload_job_id: i64,
     relative_path: &str,
@@ -314,7 +316,7 @@ async fn upload_small_file_simple(
 
 // see upload_small_file_simple.
 #[allow(clippy::too_many_arguments)]
-async fn upload_large_file_session(
+pub(crate) async fn upload_large_file_session(
     graph: &mut GraphContext,
     upload_job_id: i64,
     relative_path: &str,
@@ -487,7 +489,7 @@ async fn upload_large_file_session(
 
 /// Starts an upload session. `If-Match` is sent only here (never on chunk
 /// uploads, where the eTag changes as the session runs).
-async fn create_upload_session(
+pub(crate) async fn create_upload_session(
     graph: &mut GraphContext,
     relative_path: &str,
     target: &UploadTarget,
@@ -542,7 +544,8 @@ async fn create_upload_session(
             continue;
         }
         if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
-            let delay = parse_retry_after_delay(response.headers()).unwrap_or_else(|| Duration::from_secs(2));
+            let delay = parse_retry_after_delay(response.headers())
+                .unwrap_or_else(|| Duration::from_secs(2));
             if status == StatusCode::TOO_MANY_REQUESTS {
                 let _ = record_throttle_event(&graph.profile_id, UPLOAD_JOB_DIRECTION);
                 graph.extend_throttle_window(delay)?;
@@ -571,8 +574,9 @@ async fn create_upload_session(
             ));
         }
 
-        let session = serde_json::from_str::<UploadSessionResponse>(&text)
-            .map_err(|error| format!("Failed decoding create upload session response JSON: {error}"))?;
+        let session = serde_json::from_str::<UploadSessionResponse>(&text).map_err(|error| {
+            format!("Failed decoding create upload session response JSON: {error}")
+        })?;
         return Ok(session.upload_url);
     }
 }

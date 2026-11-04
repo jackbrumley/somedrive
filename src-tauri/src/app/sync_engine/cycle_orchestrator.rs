@@ -1,18 +1,20 @@
+use super::*;
+
 // One sync cycle (docs/sync-engine.md section 5): scan this device, record
 // cloud changes (downloading as pages arrive), plan from the baseline, then
 // apply the plan. There is one mode from the first sync onwards.
 
 /// Below this many synced files a missing sync folder cannot be told apart
 /// from a small drive the user emptied, so the check does not apply.
-const MISSING_ROOT_MIN_TRACKED_FILES: usize = 20;
-const DELETE_GUARD_WINDOW_SECONDS: i64 = 24 * 60 * 60;
+pub(crate) const MISSING_ROOT_MIN_TRACKED_FILES: usize = 20;
+pub(crate) const DELETE_GUARD_WINDOW_SECONDS: i64 = 24 * 60 * 60;
 
-async fn tick_sync_cycle(
+pub(crate) async fn tick_sync_cycle(
     profiles_lock: &Arc<std::sync::Mutex<()>>,
     sync_runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     cancel_flag: &Arc<AtomicBool>,
-) -> SyncResult<SyncCycleStats>  {
+) -> SyncResult<SyncCycleStats> {
     ensure_not_cancelled(cancel_flag)?;
     let profile = load_syncable_profile(profiles_lock, profile_id)?;
     let account_prefix = log_context::account_prefix_from_parts(profile_id, &profile.email);
@@ -20,8 +22,9 @@ async fn tick_sync_cycle(
     let sync_root = PathBuf::from(profile.sync_root.clone());
     ensure_sync_root_available(profile_id, &sync_root)?;
 
-    let session = load_auth_session(profile_id)
-        .map_err(|error| record_sign_in_required(profiles_lock, sync_runtime, profile_id, &error))?;
+    let session = load_auth_session(profile_id).map_err(|error| {
+        record_sign_in_required(profiles_lock, sync_runtime, profile_id, &error)
+    })?;
     if session.access_token.trim().is_empty() {
         return Err(SyncError::from(record_sign_in_required(
             profiles_lock,
@@ -64,7 +67,12 @@ async fn tick_sync_cycle(
     apply_pending_local_moves(profile_id, &account_prefix, &sync_root)?;
 
     // 1. This device first, so every download decision knows what is on disk.
-    runtime_set_phase(&graph.sync_runtime, profile_id, "scanning_local", "Checking this device");
+    runtime_set_phase(
+        &graph.sync_runtime,
+        profile_id,
+        "scanning_local",
+        "Checking this device",
+    );
     let local_snapshot = run_local_scan_with_runtime_updates(
         &graph.account_prefix,
         &graph.cycle_id,
@@ -91,7 +99,12 @@ async fn tick_sync_cycle(
     fetch_and_apply_delta_changes(&mut graph, &sync_root, &mut stats, cancel_flag).await?;
 
     // 3. Plan everything from the baseline.
-    runtime_set_phase(&graph.sync_runtime, profile_id, "planning_actions", "Planning sync actions");
+    runtime_set_phase(
+        &graph.sync_runtime,
+        profile_id,
+        "planning_actions",
+        "Planning sync actions",
+    );
     let counters = recompute_sync_file_actions(profile_id)?;
     log::info!(
         "{} [cycle:{}] SYNC_PLANNER_SUMMARY cloud={} local={} shared_excluded={} download={} upload={} delete_remote={} delete_local={} conflicts={}",
@@ -110,7 +123,12 @@ async fn tick_sync_cycle(
     let planned = collect_planned_actions(profile_id)?;
 
     // 4. Apply it, starting with the user's conflict choices.
-    runtime_set_phase(&graph.sync_runtime, profile_id, "applying_local", "Applying changes");
+    runtime_set_phase(
+        &graph.sync_runtime,
+        profile_id,
+        "applying_local",
+        "Applying changes",
+    );
     apply_conflict_resolutions(&mut graph, &sync_root, &mut stats, cancel_flag).await?;
     let planned_action_count = planned.verify.len()
         + planned.conflicts.len()
@@ -131,10 +149,38 @@ async fn tick_sync_cycle(
         Some(&cycle_id),
     );
     forget_rows(profile_id, &planned.forget)?;
-    create_local_folders(&graph, &sync_root, &planned.create_local_folders, &mut stats)?;
-    create_remote_folders(&mut graph, &sync_root, &planned.create_remote_folders, &mut stats, cancel_flag).await?;
-    reconcile_both_sides(&graph, &sync_root, &planned.verify, ISSUE_CONFLICT_BOTH_NEW, &mut stats, cancel_flag).await?;
-    reconcile_both_sides(&graph, &sync_root, &planned.conflicts, ISSUE_CONFLICT_BOTH_CHANGED, &mut stats, cancel_flag).await?;
+    create_local_folders(
+        &graph,
+        &sync_root,
+        &planned.create_local_folders,
+        &mut stats,
+    )?;
+    create_remote_folders(
+        &mut graph,
+        &sync_root,
+        &planned.create_remote_folders,
+        &mut stats,
+        cancel_flag,
+    )
+    .await?;
+    reconcile_both_sides(
+        &graph,
+        &sync_root,
+        &planned.verify,
+        ISSUE_CONFLICT_BOTH_NEW,
+        &mut stats,
+        cancel_flag,
+    )
+    .await?;
+    reconcile_both_sides(
+        &graph,
+        &sync_root,
+        &planned.conflicts,
+        ISSUE_CONFLICT_BOTH_CHANGED,
+        &mut stats,
+        cancel_flag,
+    )
+    .await?;
     materialize_planner_upload_jobs(profile_id)?;
     upload_planned_files(&mut graph, &sync_root, &mut stats, cancel_flag).await?;
     apply_deletes_through_guard(&mut graph, &sync_root, &planned, &mut stats, cancel_flag).await?;
@@ -164,7 +210,12 @@ async fn tick_sync_cycle(
         "success",
         &format!("{} [cycle:{}] {}", account_prefix, cycle_id, summary),
     );
-    runtime_set_phase(&graph.sync_runtime, profile_id, "idle", "Up to date - waiting for the next check");
+    runtime_set_phase(
+        &graph.sync_runtime,
+        profile_id,
+        "idle",
+        "Up to date - waiting for the next check",
+    );
     Ok(stats)
 }
 
@@ -172,7 +223,7 @@ async fn tick_sync_cycle(
 /// first file is synced a missing folder is simply created; afterwards a
 /// missing or empty folder (an unmounted drive, an empty mount point) stops
 /// the cycle instead of being read as "every file deleted".
-fn ensure_sync_root_available(profile_id: &str, sync_root: &Path) -> SyncResult<()>  {
+pub(crate) fn ensure_sync_root_available(profile_id: &str, sync_root: &Path) -> SyncResult<()> {
     let tracked_files = count_tracked_files(profile_id)?;
     let root_exists = sync_root.is_dir();
     let root_empty = root_exists
@@ -184,7 +235,11 @@ fn ensure_sync_root_available(profile_id: &str, sync_root: &Path) -> SyncResult<
             std::fs::create_dir_all(sync_root).map_err(|error| {
                 SyncError::from_io(
                     &error,
-                    format!("Failed to create sync root '{}': {}", sync_root.display(), error),
+                    format!(
+                        "Failed to create sync root '{}': {}",
+                        sync_root.display(),
+                        error
+                    ),
                 )
             })?;
         }
@@ -206,13 +261,13 @@ fn ensure_sync_root_available(profile_id: &str, sync_root: &Path) -> SyncResult<
 /// files or 10% of synced files, whichever is larger, in either direction.
 /// An approval covers only paths that were on the reviewed list and are
 /// still planned for deletion now.
-async fn apply_deletes_through_guard(
+pub(crate) async fn apply_deletes_through_guard(
     graph: &mut GraphContext,
     sync_root: &Path,
     planned: &PlannedActions,
     stats: &mut SyncCycleStats,
     cancel_flag: &Arc<AtomicBool>,
-) -> SyncResult<()>  {
+) -> SyncResult<()> {
     let mut guard_state = read_large_delete_guard_state(&graph.profile_id)?;
     let planned_paths: Vec<String> = planned
         .delete_local
@@ -293,7 +348,7 @@ async fn apply_deletes_through_guard(
     Ok(())
 }
 
-fn large_delete_guard_issue_message(pending_count: usize) -> String {
+pub(crate) fn large_delete_guard_issue_message(pending_count: usize) -> String {
     format!(
         "{pending_count} files would be deleted. Review them, then confirm the deletion or keep the files."
     )

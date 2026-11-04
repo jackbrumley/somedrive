@@ -1,4 +1,6 @@
-fn persist_sync_issue(
+use super::*;
+
+pub(crate) fn persist_sync_issue(
     profile_id: &str,
     issue_code: &str,
     issue_message: &str,
@@ -43,7 +45,7 @@ fn persist_sync_issue(
     Ok(())
 }
 
-fn clear_persisted_sync_issue(profile_id: &str) -> Result<(), String> {
+pub(crate) fn clear_persisted_sync_issue(profile_id: &str) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     connection
         .execute(
@@ -54,7 +56,9 @@ fn clear_persisted_sync_issue(profile_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn read_persisted_sync_issue(profile_id: &str) -> Result<Option<PersistedSyncIssue>, String> {
+pub(crate) fn read_persisted_sync_issue(
+    profile_id: &str,
+) -> Result<Option<PersistedSyncIssue>, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let row = connection
         .query_row(
@@ -64,8 +68,8 @@ fn read_persisted_sync_issue(profile_id: &str) -> Result<Option<PersistedSyncIss
             params![profile_id],
             |row| {
                 let issue_actions_json: String = row.get(2)?;
-                let issue_actions = serde_json::from_str::<Vec<String>>(&issue_actions_json)
-                    .unwrap_or_default();
+                let issue_actions =
+                    serde_json::from_str::<Vec<String>>(&issue_actions_json).unwrap_or_default();
                 Ok(PersistedSyncIssue {
                     issue_code: row.get(0)?,
                     issue_message: row.get(1)?,
@@ -80,7 +84,7 @@ fn read_persisted_sync_issue(profile_id: &str) -> Result<Option<PersistedSyncIss
     Ok(row)
 }
 
-fn record_throttle_event(profile_id: &str, direction: &str) -> Result<(), String> {
+pub(crate) fn record_throttle_event(profile_id: &str, direction: &str) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let now = current_unix_seconds();
     let trim_before = now.saturating_sub(3600);
@@ -99,7 +103,7 @@ fn record_throttle_event(profile_id: &str, direction: &str) -> Result<(), String
     Ok(())
 }
 
-fn read_throttle_counters(profile_id: &str) -> Result<ThrottleCounters, String> {
+pub(crate) fn read_throttle_counters(profile_id: &str) -> Result<ThrottleCounters, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let now = current_unix_seconds();
     let last_minute = now.saturating_sub(60);
@@ -133,7 +137,11 @@ fn read_throttle_counters(profile_id: &str) -> Result<ThrottleCounters, String> 
 
 /// Events of `direction` recorded since `since_unix_seconds` (the delete
 /// guard counts deletes over a rolling window with this).
-fn count_events_since(profile_id: &str, direction: &str, since_unix_seconds: i64) -> Result<usize, String> {
+pub(crate) fn count_events_since(
+    profile_id: &str,
+    direction: &str,
+    since_unix_seconds: i64,
+) -> Result<usize, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     connection
         .query_row(

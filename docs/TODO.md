@@ -31,7 +31,7 @@ review, 2026-11-04). Design: `docs/sync-engine.md`. Built on branch
    browser caches.
 9. [x] Typed `SyncError` through the engine instead of classifying errors by
    their text (`classify_sync_issue`).
-10. [ ] Replace the `include!` modules in `app/sync_engine.rs` and
+10. [x] Replace the `include!` modules in `app/sync_engine.rs` and
     `app/auth.rs` with real Rust modules.
 11. [ ] Split the files over the 600-line soft budget
     (`npm run check:structure` lists them).

@@ -1,17 +1,16 @@
-use chrono::{Local, TimeZone};
-use rusqlite::{params, Connection, OptionalExtension};
+use super::*;
 
 /// Schema of the baseline engine (docs/sync-engine.md section 8). A database
 /// written by an older engine is dropped and recreated, not migrated
 /// (development-phase data policy).
-const SYNC_SCHEMA_VERSION: i64 = 7;
+pub(crate) const SYNC_SCHEMA_VERSION: i64 = 7;
 
 /// Accounts whose schema is already in place in this process, so the DDL
 /// runs once per account rather than on every connection.
-static SYNC_SCHEMA_READY: std::sync::LazyLock<std::sync::Mutex<HashSet<String>>> =
+pub(crate) static SYNC_SCHEMA_READY: std::sync::LazyLock<std::sync::Mutex<HashSet<String>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(HashSet::new()));
 
-const SYNC_SCHEMA_SQL: &str = "
+pub(crate) const SYNC_SCHEMA_SQL: &str = "
     CREATE TABLE IF NOT EXISTS sync_jobs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         profile_id TEXT NOT NULL,
@@ -138,7 +137,7 @@ const SYNC_SCHEMA_SQL: &str = "
 ";
 
 /// Tables of the pre-baseline engine, dropped when an old database is found.
-const LEGACY_SYNC_TABLES: [&str; 7] = [
+pub(crate) const LEGACY_SYNC_TABLES: [&str; 7] = [
     "sync_local_moves",
     "sync_jobs",
     "sync_files",
@@ -148,11 +147,11 @@ const LEGACY_SYNC_TABLES: [&str; 7] = [
     "sync_state_store",
 ];
 
-fn sync_jobs_db_path(profile_id: &str) -> Result<PathBuf, String> {
+pub(crate) fn sync_jobs_db_path(profile_id: &str) -> Result<PathBuf, String> {
     Ok(crate::paths::account_dir(profile_id)?.join("sync_jobs.db"))
 }
 
-fn open_sync_jobs_connection(profile_id: &str) -> Result<Connection, String> {
+pub(crate) fn open_sync_jobs_connection(profile_id: &str) -> Result<Connection, String> {
     let db_path = sync_jobs_db_path(profile_id)?;
     if let Some(parent) = db_path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| {
@@ -182,7 +181,7 @@ fn open_sync_jobs_connection(profile_id: &str) -> Result<Connection, String> {
     Ok(connection)
 }
 
-fn ensure_sync_schema(profile_id: &str, connection: &Connection) -> Result<(), String> {
+pub(crate) fn ensure_sync_schema(profile_id: &str, connection: &Connection) -> Result<(), String> {
     let mut ready = SYNC_SCHEMA_READY
         .lock()
         .map_err(|_| "Sync schema lock is poisoned".to_string())?;
@@ -217,15 +216,19 @@ fn ensure_sync_schema(profile_id: &str, connection: &Connection) -> Result<(), S
     Ok(())
 }
 
-fn bool_to_sql(value: bool) -> i64 {
-    if value { 1 } else { 0 }
+pub(crate) fn bool_to_sql(value: bool) -> i64 {
+    if value {
+        1
+    } else {
+        0
+    }
 }
 
-fn sql_to_bool(value: i64) -> bool {
+pub(crate) fn sql_to_bool(value: i64) -> bool {
     value != 0
 }
 
-fn unix_seconds_to_rfc3339(value: i64) -> String {
+pub(crate) fn unix_seconds_to_rfc3339(value: i64) -> String {
     Local
         .timestamp_opt(value, 0)
         .single()

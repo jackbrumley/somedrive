@@ -1,3 +1,5 @@
+use super::*;
+
 // Repeats cloud renames and moves on this device (docs/sync-engine.md
 // section 8a): the folder or file is renamed in place rather than
 // downloaded again and deleted.
@@ -6,7 +8,11 @@
 /// taken is undone in the database instead (the planner then re-downloads
 /// and removes the old copy through the delete guard); a move whose old path
 /// is gone needs nothing on disk.
-fn apply_pending_local_moves(profile_id: &str, account_prefix: &str, sync_root: &Path) -> Result<usize, String> {
+pub(crate) fn apply_pending_local_moves(
+    profile_id: &str,
+    account_prefix: &str,
+    sync_root: &Path,
+) -> Result<usize, String> {
     let mut applied = 0;
     for pending in list_pending_local_moves(profile_id)? {
         let old_abs = sync_root.join(path_to_local(&pending.old_path));

@@ -1,11 +1,13 @@
+use super::*;
+
 // Applies a cycle's plan (docs/sync-engine.md sections 4 and 6). Every action
 // re-checks the file it is about to touch, so a change made since the plan
 // is never overwritten or deleted: the action is skipped and the next cycle
 // plans again from the new state.
 
-const DELETE_EVENT_DIRECTION: &str = "delete";
+pub(crate) const DELETE_EVENT_DIRECTION: &str = "delete";
 
-async fn hash_local_file(path: &Path) -> SyncResult<String>  {
+pub(crate) async fn hash_local_file(path: &Path) -> SyncResult<String> {
     let owned = path.to_path_buf();
     let hash = tauri::async_runtime::spawn_blocking(move || quick_xor_hash_file(&owned))
         .await
@@ -13,14 +15,18 @@ async fn hash_local_file(path: &Path) -> SyncResult<String>  {
     Ok(hash)
 }
 
-fn local_path_for(sync_root: &Path, relative_path: &str) -> PathBuf {
+pub(crate) fn local_path_for(sync_root: &Path, relative_path: &str) -> PathBuf {
     sync_root.join(path_to_local(relative_path))
 }
 
 /// Whether the local file's content equals the cloud version in `row`.
 /// Empty files match without a hash; a non-empty file is never assumed equal
 /// without one.
-async fn local_matches_cloud(row: &SyncFileRow, local_path: &Path, entry: &LocalEntry) -> SyncResult<bool>  {
+pub(crate) async fn local_matches_cloud(
+    row: &SyncFileRow,
+    local_path: &Path,
+    entry: &LocalEntry,
+) -> SyncResult<bool> {
     if entry.size == 0 && row.cloud_size == 0 {
         return Ok(true);
     }
@@ -33,18 +39,26 @@ async fn local_matches_cloud(row: &SyncFileRow, local_path: &Path, entry: &Local
     }
 }
 
-fn forget_rows(profile_id: &str, rows: &[SyncFileRow]) -> SyncResult<()>  {
+pub(crate) fn forget_rows(profile_id: &str, rows: &[SyncFileRow]) -> SyncResult<()> {
     for row in rows {
         forget_sync_file(profile_id, &row.path)?;
     }
     Ok(())
 }
 
-fn create_local_folders(graph: &GraphContext, sync_root: &Path, rows: &[SyncFileRow], stats: &mut SyncCycleStats) -> SyncResult<()>  {
+pub(crate) fn create_local_folders(
+    graph: &GraphContext,
+    sync_root: &Path,
+    rows: &[SyncFileRow],
+    stats: &mut SyncCycleStats,
+) -> SyncResult<()> {
     for row in rows {
         let local_path = local_path_for(sync_root, &row.path);
         std::fs::create_dir_all(&local_path).map_err(|error| {
-            SyncError::from_io(&error, format!("Failed creating folder '{}': {error}", local_path.display()))
+            SyncError::from_io(
+                &error,
+                format!("Failed creating folder '{}': {error}", local_path.display()),
+            )
         })?;
         if let Some(entry) = read_local_entry(&local_path)? {
             commit_baseline(&graph.profile_id, &row.path, &row.cloud_version(), &entry)?;
@@ -54,26 +68,30 @@ fn create_local_folders(graph: &GraphContext, sync_root: &Path, rows: &[SyncFile
     Ok(())
 }
 
-async fn create_remote_folders(
+pub(crate) async fn create_remote_folders(
     graph: &mut GraphContext,
     sync_root: &Path,
     rows: &[SyncFileRow],
     stats: &mut SyncCycleStats,
     cancel_flag: &Arc<AtomicBool>,
-) -> SyncResult<()>  {
+) -> SyncResult<()> {
     for row in rows {
         ensure_accepting_new_transfers()?;
         let Some(entry) = read_local_entry(&local_path_for(sync_root, &row.path))? else {
             continue;
         };
         let created = create_remote_folder(graph, &row.path, cancel_flag).await?;
-        commit_baseline_from_upload(&graph.profile_id, &created.to_cloud_item(row.path.clone()), &entry)?;
+        commit_baseline_from_upload(
+            &graph.profile_id,
+            &created.to_cloud_item(row.path.clone()),
+            &entry,
+        )?;
         stats.created_remote_folders += 1;
     }
     Ok(())
 }
 
-fn conflict_detail(conflict_code: &str) -> &'static str {
+pub(crate) fn conflict_detail(conflict_code: &str) -> &'static str {
     if conflict_code == ISSUE_CONFLICT_BOTH_NEW {
         "This file is on this device and in OneDrive with different content."
     } else {
@@ -84,14 +102,19 @@ fn conflict_detail(conflict_code: &str) -> &'static str {
 /// Holds `path` as a conflict: it stops syncing until it is resolved. With
 /// the "keep the newest" setting the newer side is chosen straight away (and
 /// applied next cycle, through the same checks as a user's choice).
-fn hold_conflict(
+pub(crate) fn hold_conflict(
     graph: &GraphContext,
     path: &str,
     conflict_code: &str,
     local_mtime_ns: i64,
     cloud_mtime: i64,
-) -> SyncResult<()>  {
-    record_sync_file_issue(&graph.profile_id, path, conflict_code, conflict_detail(conflict_code))?;
+) -> SyncResult<()> {
+    record_sync_file_issue(
+        &graph.profile_id,
+        path,
+        conflict_code,
+        conflict_detail(conflict_code),
+    )?;
     log::warn!(
         "{} [cycle:{}] CONFLICT_HELD path={} code={}",
         graph.account_prefix,
@@ -99,7 +122,9 @@ fn hold_conflict(
         path,
         conflict_code
     );
-    if crate::app::app_settings::load_conflict_policy()? == crate::app::app_settings::ConflictPolicy::KeepNewest {
+    if crate::app::app_settings::load_conflict_policy()?
+        == crate::app::app_settings::ConflictPolicy::KeepNewest
+    {
         let resolution = if local_mtime_ns / 1_000_000_000 > cloud_mtime {
             RESOLUTION_KEEP_LOCAL
         } else {
@@ -120,7 +145,13 @@ fn hold_conflict(
 /// Keeps the local version as a conflict copy and records that the cloud
 /// version should now be fetched into the original name (the user chose
 /// "Keep both").
-fn keep_both_versions(graph: &GraphContext, row: &SyncFileRow, local_path: &Path, entry: &LocalEntry, stats: &mut SyncCycleStats) -> SyncResult<()>  {
+pub(crate) fn keep_both_versions(
+    graph: &GraphContext,
+    row: &SyncFileRow,
+    local_path: &Path,
+    entry: &LocalEntry,
+    stats: &mut SyncCycleStats,
+) -> SyncResult<()> {
     let copy = preserve_conflict_copy(local_path)?;
     mark_conflict_preserved(&graph.profile_id, &row.path, entry)?;
     stats.conflict_copies += 1;
@@ -138,14 +169,14 @@ fn keep_both_versions(graph: &GraphContext, row: &SyncFileRow, local_path: &Path
 /// and items changed on both sides: identical content is adopted; anything
 /// else is held as a conflict for the user to resolve. Nothing is copied or
 /// overwritten.
-async fn reconcile_both_sides(
+pub(crate) async fn reconcile_both_sides(
     graph: &GraphContext,
     sync_root: &Path,
     rows: &[SyncFileRow],
     conflict_code: &str,
     stats: &mut SyncCycleStats,
     cancel_flag: &Arc<AtomicBool>,
-) -> SyncResult<()>  {
+) -> SyncResult<()> {
     for row in rows {
         ensure_not_cancelled(cancel_flag)?;
         let local_path = local_path_for(sync_root, &row.path);
@@ -169,7 +200,13 @@ async fn reconcile_both_sides(
             commit_baseline(&graph.profile_id, &row.path, &row.cloud_version(), &entry)?;
             stats.matched_files += 1;
         } else {
-            hold_conflict(graph, &row.path, conflict_code, entry.mtime_ns, row.cloud_mtime)?;
+            hold_conflict(
+                graph,
+                &row.path,
+                conflict_code,
+                entry.mtime_ns,
+                row.cloud_mtime,
+            )?;
             stats.conflicts_held += 1;
         }
     }
@@ -179,12 +216,12 @@ async fn reconcile_both_sides(
 /// Uploads planned files. A file whose content still equals the baseline
 /// (a touch, a time change) only refreshes the baseline. The baseline is
 /// recorded only if the file did not change while it was uploading.
-async fn upload_planned_files(
+pub(crate) async fn upload_planned_files(
     graph: &mut GraphContext,
     sync_root: &Path,
     stats: &mut SyncCycleStats,
     cancel_flag: &Arc<AtomicBool>,
-) -> SyncResult<()>  {
+) -> SyncResult<()> {
     for row in list_sync_file_rows_by_action(&graph.profile_id, PLANNER_ACTION_UPLOAD)? {
         ensure_not_cancelled(cancel_flag)?;
         if row.is_dir {
@@ -206,27 +243,30 @@ async fn upload_planned_files(
             continue;
         }
         let target = if row.base_present && row.cloud_present {
-            UploadTarget::Replace { base_etag: row.base_etag.clone() }
+            UploadTarget::Replace {
+                base_etag: row.base_etag.clone(),
+            }
         } else {
             UploadTarget::New
         };
-        let uploaded = match upload_file_by_path(graph, sync_root, &row.path, &target, cancel_flag).await {
-            Ok(uploaded) => uploaded,
-            Err(error) => {
-                if is_sync_cancelled_error(&error) {
-                    return Err(SyncError::from(error));
+        let uploaded =
+            match upload_file_by_path(graph, sync_root, &row.path, &target, cancel_flag).await {
+                Ok(uploaded) => uploaded,
+                Err(error) => {
+                    if is_sync_cancelled_error(&error) {
+                        return Err(SyncError::from(error));
+                    }
+                    stats.upload_failures += 1;
+                    log::warn!(
+                        "{} [cycle:{}] UPLOAD_FAILED path={} error={}",
+                        graph.account_prefix,
+                        graph.cycle_id,
+                        row.path,
+                        error
+                    );
+                    continue;
                 }
-                stats.upload_failures += 1;
-                log::warn!(
-                    "{} [cycle:{}] UPLOAD_FAILED path={} error={}",
-                    graph.account_prefix,
-                    graph.cycle_id,
-                    row.path,
-                    error
-                );
-                continue;
-            }
-        };
+            };
         if read_local_entry(&local_path)?.as_ref() != Some(&entry) {
             log::info!(
                 "{} [cycle:{}] UPLOAD_SOURCE_CHANGED path={} action=replan",
@@ -236,7 +276,11 @@ async fn upload_planned_files(
             );
             continue;
         }
-        if uploaded.quick_xor_hash().as_deref().is_some_and(|cloud_hash| cloud_hash != local_hash) {
+        if uploaded
+            .quick_xor_hash()
+            .as_deref()
+            .is_some_and(|cloud_hash| cloud_hash != local_hash)
+        {
             // SharePoint libraries rewrite some file types after upload; the
             // baseline records what OneDrive now holds.
             log::warn!(
@@ -248,7 +292,11 @@ async fn upload_planned_files(
                 uploaded.quick_xor_hash()
             );
         }
-        commit_baseline_from_upload(&graph.profile_id, &uploaded.to_cloud_item(row.path.clone()), &entry)?;
+        commit_baseline_from_upload(
+            &graph.profile_id,
+            &uploaded.to_cloud_item(row.path.clone()),
+            &entry,
+        )?;
         stats.uploaded_files += 1;
     }
     Ok(())
@@ -256,7 +304,12 @@ async fn upload_planned_files(
 
 /// Moves local files and empty folders the plan deletes to the Trash, each
 /// only if it still matches the baseline.
-fn delete_local_items(graph: &GraphContext, sync_root: &Path, rows: &[SyncFileRow], stats: &mut SyncCycleStats) -> SyncResult<()>  {
+pub(crate) fn delete_local_items(
+    graph: &GraphContext,
+    sync_root: &Path,
+    rows: &[SyncFileRow],
+    stats: &mut SyncCycleStats,
+) -> SyncResult<()> {
     for row in rows {
         let local_path = local_path_for(sync_root, &row.path);
         let Some(entry) = read_local_entry(&local_path)? else {
@@ -279,8 +332,12 @@ fn delete_local_items(graph: &GraphContext, sync_root: &Path, rows: &[SyncFileRo
             );
             continue;
         }
-        trash::delete(&local_path)
-            .map_err(|error| format!("Failed moving '{}' to the Trash: {error}", local_path.display()))?;
+        trash::delete(&local_path).map_err(|error| {
+            format!(
+                "Failed moving '{}' to the Trash: {error}",
+                local_path.display()
+            )
+        })?;
         record_local_absent(&graph.profile_id, &row.path)?;
         forget_sync_file(&graph.profile_id, &row.path)?;
         record_throttle_event(&graph.profile_id, DELETE_EVENT_DIRECTION)?;
@@ -298,12 +355,12 @@ fn delete_local_items(graph: &GraphContext, sync_root: &Path, rows: &[SyncFileRo
 /// Deletes cloud items the plan deletes (OneDrive keeps them in its recycle
 /// bin). Each item is read again first: a file whose content changed since
 /// the baseline, or a folder that is not empty, is left alone.
-async fn delete_remote_items(
+pub(crate) async fn delete_remote_items(
     graph: &mut GraphContext,
     rows: &[SyncFileRow],
     stats: &mut SyncCycleStats,
     cancel_flag: &Arc<AtomicBool>,
-) -> SyncResult<()>  {
+) -> SyncResult<()> {
     for row in rows {
         ensure_not_cancelled(cancel_flag)?;
         let Some(item_id) = row.remote_item_id.clone() else {
@@ -344,12 +401,12 @@ async fn delete_remote_items(
 /// Carries out the user's choices for held conflicts. Each choice applies
 /// only if the local file is as it was when they chose; otherwise the choice
 /// is withdrawn and the file stays held for a fresh decision.
-async fn apply_conflict_resolutions(
+pub(crate) async fn apply_conflict_resolutions(
     graph: &mut GraphContext,
     sync_root: &Path,
     stats: &mut SyncCycleStats,
     cancel_flag: &Arc<AtomicBool>,
-) -> SyncResult<()>  {
+) -> SyncResult<()> {
     for choice in list_conflict_resolutions(&graph.profile_id)? {
         ensure_not_cancelled(cancel_flag)?;
         let row = &choice.row;
@@ -378,9 +435,14 @@ async fn apply_conflict_resolutions(
                 } else {
                     UploadTarget::New
                 };
-                let uploaded = upload_file_by_path(graph, sync_root, &row.path, &target, cancel_flag).await?;
+                let uploaded =
+                    upload_file_by_path(graph, sync_root, &row.path, &target, cancel_flag).await?;
                 if read_local_entry(&local_path)?.as_ref() == Some(&entry) {
-                    commit_baseline_from_upload(&graph.profile_id, &uploaded.to_cloud_item(row.path.clone()), &entry)?;
+                    commit_baseline_from_upload(
+                        &graph.profile_id,
+                        &uploaded.to_cloud_item(row.path.clone()),
+                        &entry,
+                    )?;
                     clear_sync_file_issue(&graph.profile_id, &row.path)?;
                     stats.uploaded_files += 1;
                 }
@@ -388,7 +450,10 @@ async fn apply_conflict_resolutions(
             (RESOLUTION_KEEP_CLOUD, local_entry) => {
                 if local_entry.is_some() {
                     trash::delete(&local_path).map_err(|error| {
-                        format!("Failed moving '{}' to the Trash: {error}", local_path.display())
+                        format!(
+                            "Failed moving '{}' to the Trash: {error}",
+                            local_path.display()
+                        )
                     })?;
                     record_local_absent(&graph.profile_id, &row.path)?;
                 }
@@ -412,7 +477,10 @@ async fn apply_conflict_resolutions(
                 clear_sync_file_issue(&graph.profile_id, &row.path)?;
             }
             (resolution, Some(_)) => {
-                return Err(SyncError::from(format!("Unknown conflict resolution '{resolution}' for '{}'", row.path)));
+                return Err(SyncError::from(format!(
+                    "Unknown conflict resolution '{resolution}' for '{}'",
+                    row.path
+                )));
             }
         }
         log::info!(

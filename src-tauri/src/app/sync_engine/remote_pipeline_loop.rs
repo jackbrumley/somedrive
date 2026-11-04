@@ -1,10 +1,12 @@
-struct RemotePipelineLoopOutcome {
-    deferred_delta_link: Option<String>,
+use super::*;
+
+pub(crate) struct RemotePipelineLoopOutcome {
+    pub(crate) deferred_delta_link: Option<String>,
 }
 
 // the pipeline loop owns the cycle's channels and shared counters explicitly; a pipeline context struct is tracked in docs/TODO.md.
 #[allow(clippy::too_many_arguments)]
-async fn run_remote_pipeline_loop(
+pub(crate) async fn run_remote_pipeline_loop(
     graph: &mut GraphContext,
     sync_root: &Path,
     stats: &mut SyncCycleStats,
@@ -14,7 +16,7 @@ async fn run_remote_pipeline_loop(
     pending_download_count: &Arc<AtomicUsize>,
     page_rx: &mut mpsc::Receiver<Result<DeltaPageWorkItem, SyncError>>,
     download_result_rx: &mut mpsc::Receiver<RemoteDownloadResult>,
-) -> SyncResult<RemotePipelineLoopOutcome>  {
+) -> SyncResult<RemotePipelineLoopOutcome> {
     const PHASE_PROGRESS_UPDATE_INTERVAL: Duration = Duration::from_millis(750);
     const PHASE_PROGRESS_ITEM_STEP: usize = 250;
     const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);

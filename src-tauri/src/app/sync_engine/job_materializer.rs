@@ -1,3 +1,5 @@
+use super::*;
+
 // Turns the plan in `sync_files.desired_action` into work. Downloads and
 // uploads go through the job queue (workers, retries, progress); folder
 // creates, content checks, conflicts, deletes and forgets are applied by the
@@ -5,17 +7,17 @@
 
 /// The plan's non-transfer actions for this cycle.
 #[derive(Debug, Default)]
-struct PlannedActions {
-    verify: Vec<SyncFileRow>,
-    conflicts: Vec<SyncFileRow>,
-    create_local_folders: Vec<SyncFileRow>,
-    create_remote_folders: Vec<SyncFileRow>,
-    delete_local: Vec<SyncFileRow>,
-    delete_remote: Vec<SyncFileRow>,
-    forget: Vec<SyncFileRow>,
+pub(crate) struct PlannedActions {
+    pub(crate) verify: Vec<SyncFileRow>,
+    pub(crate) conflicts: Vec<SyncFileRow>,
+    pub(crate) create_local_folders: Vec<SyncFileRow>,
+    pub(crate) create_remote_folders: Vec<SyncFileRow>,
+    pub(crate) delete_local: Vec<SyncFileRow>,
+    pub(crate) delete_remote: Vec<SyncFileRow>,
+    pub(crate) forget: Vec<SyncFileRow>,
 }
 
-fn collect_planned_actions(profile_id: &str) -> Result<PlannedActions, String> {
+pub(crate) fn collect_planned_actions(profile_id: &str) -> Result<PlannedActions, String> {
     Ok(PlannedActions {
         verify: list_sync_file_rows_by_action(profile_id, PLANNER_ACTION_VERIFY)?,
         conflicts: list_sync_file_rows_by_action(profile_id, PLANNER_ACTION_CONFLICT)?,
@@ -35,7 +37,7 @@ fn collect_planned_actions(profile_id: &str) -> Result<PlannedActions, String> {
 
 /// Queues every planned download (re-queuing finished jobs) and drops queued
 /// downloads the plan no longer wants. Returns the number planned.
-fn materialize_planner_download_jobs(profile_id: &str) -> Result<usize, String> {
+pub(crate) fn materialize_planner_download_jobs(profile_id: &str) -> Result<usize, String> {
     let candidates = list_sync_file_download_candidates(profile_id)?;
     let mut planned_item_ids: HashSet<String> = HashSet::new();
     for candidate in &candidates {
@@ -54,7 +56,7 @@ fn materialize_planner_download_jobs(profile_id: &str) -> Result<usize, String> 
 
 /// Queues every planned upload (re-queuing finished jobs) and drops queued
 /// uploads the plan no longer wants. Returns the number planned.
-fn materialize_planner_upload_jobs(profile_id: &str) -> Result<usize, String> {
+pub(crate) fn materialize_planner_upload_jobs(profile_id: &str) -> Result<usize, String> {
     let candidates = list_sync_file_upload_candidates(profile_id)?;
     let mut planned_paths: HashSet<String> = HashSet::new();
     for candidate in &candidates {
@@ -72,7 +74,7 @@ fn materialize_planner_upload_jobs(profile_id: &str) -> Result<usize, String> {
 
 /// Removes queued or retry-waiting jobs of `direction` whose item the plan
 /// no longer wants. Running and finished jobs are left alone.
-fn prune_unplanned_queued_jobs(
+pub(crate) fn prune_unplanned_queued_jobs(
     profile_id: &str,
     direction: &str,
     planned_item_ids: &HashSet<String>,

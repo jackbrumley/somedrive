@@ -1,7 +1,9 @@
+use super::*;
+
 /// Queues a download for `item_id`. A job that already finished (done,
 /// failed or skipped) is queued again: the planner only asks for a download
 /// when the file needs one now.
-fn upsert_download_job(
+pub(crate) fn upsert_download_job(
     profile_id: &str,
     item_id: &str,
     path: &str,
@@ -79,7 +81,7 @@ fn upsert_download_job(
     Ok(false)
 }
 
-fn claim_download_jobs(
+pub(crate) fn claim_download_jobs(
     profile_id: &str,
     lease_owner: &str,
     max_jobs: usize,
@@ -195,7 +197,11 @@ fn claim_download_jobs(
     Ok(jobs)
 }
 
-fn mark_download_job_done(profile_id: &str, job_id: i64, skipped: bool) -> Result<(), String> {
+pub(crate) fn mark_download_job_done(
+    profile_id: &str,
+    job_id: i64,
+    skipped: bool,
+) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let now = current_unix_seconds();
     let final_state = if skipped {
@@ -228,7 +234,7 @@ fn mark_download_job_done(profile_id: &str, job_id: i64, skipped: bool) -> Resul
     Ok(())
 }
 
-fn mark_download_job_running(profile_id: &str, job_id: i64) -> Result<(), String> {
+pub(crate) fn mark_download_job_running(profile_id: &str, job_id: i64) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let now = current_unix_seconds();
     let lease_until = now.saturating_add(DOWNLOAD_JOB_LEASE_SECONDS);
@@ -256,7 +262,7 @@ fn mark_download_job_running(profile_id: &str, job_id: i64) -> Result<(), String
     Ok(())
 }
 
-fn update_download_job_progress(
+pub(crate) fn update_download_job_progress(
     profile_id: &str,
     job_id: i64,
     bytes_done: u64,
@@ -292,7 +298,11 @@ fn update_download_job_progress(
     Ok(())
 }
 
-fn mark_download_job_failed(profile_id: &str, job_id: i64, error_text: &str) -> Result<(), String> {
+pub(crate) fn mark_download_job_failed(
+    profile_id: &str,
+    job_id: i64,
+    error_text: &str,
+) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let now = current_unix_seconds();
     connection
@@ -448,7 +458,7 @@ pub fn retry_all_failed_download_jobs(
     })
 }
 
-fn mark_download_job_retry_wait(
+pub(crate) fn mark_download_job_retry_wait(
     profile_id: &str,
     job_id: i64,
     error_text: &str,
@@ -490,7 +500,7 @@ fn mark_download_job_retry_wait(
 /// The job stays claimed (state and lease unchanged): releasing it here would
 /// let the dispatcher hand the file to a second worker while this one still
 /// retries it, and both would write the same temporary file.
-fn record_download_job_retrying_in_place(
+pub(crate) fn record_download_job_retrying_in_place(
     profile_id: &str,
     job_id: i64,
     error_text: &str,
@@ -511,7 +521,7 @@ fn record_download_job_retrying_in_place(
     Ok(())
 }
 
-fn reset_running_sync_jobs_for_pause(profile_id: &str) -> Result<usize, String> {
+pub(crate) fn reset_running_sync_jobs_for_pause(profile_id: &str) -> Result<usize, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let now = current_unix_seconds();
     connection
@@ -542,13 +552,16 @@ fn reset_running_sync_jobs_for_pause(profile_id: &str) -> Result<usize, String> 
         .map_err(|error| format!("Failed resetting running sync jobs for pause: {error}"))
 }
 
-fn read_download_job_counters(profile_id: &str) -> Result<DownloadJobCounters, String> {
+pub(crate) fn read_download_job_counters(profile_id: &str) -> Result<DownloadJobCounters, String> {
     query_download_job_counters(&open_sync_jobs_connection(profile_id)?, profile_id)
 }
 
 /// The download counters read on a caller-owned connection, so they can share
 /// one snapshot with other reads (see `hydrate_runtime_status_from_db`).
-fn query_download_job_counters(connection: &Connection, profile_id: &str) -> Result<DownloadJobCounters, String> {
+pub(crate) fn query_download_job_counters(
+    connection: &Connection,
+    profile_id: &str,
+) -> Result<DownloadJobCounters, String> {
     connection
         .query_row(
             "SELECT
