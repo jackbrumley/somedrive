@@ -16,6 +16,8 @@ pub(crate) struct SyncFileRow {
     pub(crate) cloud_etag: Option<String>,
     pub(crate) cloud_ctag: Option<String>,
     pub(crate) cloud_hash: Option<String>,
+    pub(crate) cloud_download_url: Option<String>,
+    pub(crate) cloud_download_url_at: i64,
     pub(crate) base_present: bool,
     pub(crate) base_size: u64,
     pub(crate) base_local_mtime_ns: i64,
@@ -56,7 +58,8 @@ pub(crate) struct CloudVersion {
 
 pub(crate) const SYNC_FILE_ROW_COLUMNS: &str = "path, is_dir, remote_item_id,
     cloud_present, cloud_size, cloud_mtime, cloud_etag, cloud_ctag, cloud_hash,
-    base_present, base_size, base_local_mtime_ns, base_etag, base_hash, base_cloud_size";
+    base_present, base_size, base_local_mtime_ns, base_etag, base_hash, base_cloud_size,
+    cloud_download_url, cloud_download_url_at";
 
 pub(crate) fn sync_file_row_from_sql(row: &rusqlite::Row<'_>) -> rusqlite::Result<SyncFileRow> {
     Ok(SyncFileRow {
@@ -75,6 +78,8 @@ pub(crate) fn sync_file_row_from_sql(row: &rusqlite::Row<'_>) -> rusqlite::Resul
         base_etag: row.get(12)?,
         base_hash: row.get(13)?,
         base_cloud_size: row.get::<_, i64>(14)?.max(0) as u64,
+        cloud_download_url: row.get(15)?,
+        cloud_download_url_at: row.get(16)?,
     })
 }
 

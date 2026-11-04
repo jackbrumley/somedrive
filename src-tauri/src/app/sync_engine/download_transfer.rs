@@ -11,6 +11,7 @@ pub(crate) async fn download_remote_item_content(
     relative_path: &str,
     version: &CloudVersion,
     cloud_mtime: i64,
+    direct_url: Option<&str>,
     local_path: &Path,
     cancel_flag: &Arc<AtomicBool>,
 ) -> Result<RemoteDownloadOutcome, String> {
@@ -44,9 +45,7 @@ pub(crate) async fn download_remote_item_content(
         relative_path,
         None,
     );
-    if let Some(active_job_id) = job_id {
-        let _ = mark_download_job_running(&graph.profile_id, active_job_id);
-    }
+    let mut direct_url = direct_url.map(ToString::to_string);
     loop {
         ensure_not_cancelled(cancel_flag)?;
         graph.wait_for_throttle_window(cancel_flag).await?;
@@ -60,11 +59,16 @@ pub(crate) async fn download_remote_item_content(
                 runtime_finish_transfer_cancelled(&graph.sync_runtime, &graph.profile_id, &transfer_id);
                 return Err(SYNC_CANCELLED_ERROR.to_string());
             }
-            value = graph_client
-                .get(&url)
-                .bearer_auth(&access_token)
-                .timeout(download_request_timeout)
-                .send() => {
+            value = match direct_url.as_deref() {
+                // The change feed's pre-authenticated link: one request
+                // straight to the content server, no Graph call or redirect.
+                Some(direct) => content_client.get(direct).timeout(download_request_timeout).send(),
+                None => graph_client
+                    .get(&url)
+                    .bearer_auth(&access_token)
+                    .timeout(download_request_timeout)
+                    .send(),
+            } => {
                 value.map_err(|error| format!("Download request failed: {error}"))
             }
         };
@@ -91,6 +95,18 @@ pub(crate) async fn download_remote_item_content(
         };
         let mut response = response;
         let mut status = response.status();
+        if direct_url.is_some() && matches!(status.as_u16(), 401 | 403 | 404 | 410) {
+            log::info!(
+                "{} [cycle:{}] DOWNLOAD_DIRECT_URL_REFUSED path={} status={} action=use_graph",
+                graph.account_prefix,
+                graph.cycle_id,
+                relative_path,
+                status
+            );
+            direct_url = None;
+            attempt -= 1;
+            continue;
+        }
         if status.as_u16() == 401 && !token_refreshed {
             log::warn!(
                 "{} [cycle:{}] GRAPH_DOWNLOAD_401_REFRESH",

@@ -115,6 +115,7 @@ pub(crate) async fn execute_remote_download_job(
         &job.path,
         &job.version,
         job.cloud_mtime,
+        job.direct_url.as_deref(),
         &job.local_abs,
         worker_cancel,
     )

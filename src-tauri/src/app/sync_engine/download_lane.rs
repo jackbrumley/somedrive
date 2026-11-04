@@ -45,7 +45,12 @@ pub(crate) async fn dispatch_claimed_download_jobs(
             continue;
         };
         let local_abs = sync_root.join(path_to_local(&claimed_job.path));
+        let direct_url = row
+            .cloud_download_url
+            .clone()
+            .filter(|_| current_unix_seconds() - row.cloud_download_url_at < DIRECT_URL_MAX_AGE_SECONDS);
         let job = RemoteDownloadJob {
+            direct_url,
             job_id: claimed_job.job_id,
             item_id: claimed_job.item_id,
             path: claimed_job.path,
@@ -113,6 +118,10 @@ pub(crate) async fn send_download_job_with_logging(
         }
     }
 }
+
+/// Graph's direct download links last about an hour; older ones are not
+/// tried (the download goes through Graph instead).
+const DIRECT_URL_MAX_AGE_SECONDS: i64 = 50 * 60;
 
 /// How long a download that got 404/410 waits before it is tried again; a
 /// delta page normally confirms the delete well before then.

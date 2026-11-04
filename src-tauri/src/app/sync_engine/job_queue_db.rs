@@ -62,6 +62,8 @@ pub(crate) const SYNC_SCHEMA_SQL: &str = "
         cloud_ctag TEXT,
         cloud_hash TEXT,
         cloud_seen_at INTEGER NOT NULL DEFAULT 0,
+        cloud_download_url TEXT,
+        cloud_download_url_at INTEGER NOT NULL DEFAULT 0,
         local_present INTEGER NOT NULL DEFAULT 0,
         local_size INTEGER NOT NULL DEFAULT 0,
         local_mtime_ns INTEGER NOT NULL DEFAULT 0,

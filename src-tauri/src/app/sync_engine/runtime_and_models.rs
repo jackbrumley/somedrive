@@ -41,6 +41,8 @@ pub(crate) struct DeltaPageWorkItem {
 }
 
 pub(crate) struct RemoteDownloadJob {
+    /// A still-fresh direct content URL from the change feed, if any.
+    pub(crate) direct_url: Option<String>,
     pub(crate) job_id: i64,
     pub(crate) item_id: String,
     pub(crate) path: String,
@@ -497,6 +499,7 @@ pub(crate) struct CloudItem {
     pub(crate) etag: Option<String>,
     pub(crate) ctag: Option<String>,
     pub(crate) quick_xor_hash: Option<String>,
+    pub(crate) download_url: Option<String>,
     pub(crate) is_shared_reference: bool,
     pub(crate) shared_drive_id: Option<String>,
     pub(crate) shared_item_id: Option<String>,
@@ -532,6 +535,9 @@ pub(crate) struct GraphDriveItem {
     pub(crate) e_tag: Option<String>,
     #[serde(rename = "cTag")]
     pub(crate) c_tag: Option<String>,
+    /// A short-lived (about an hour), pre-authenticated content URL.
+    #[serde(rename = "@microsoft.graph.downloadUrl")]
+    pub(crate) download_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -579,6 +585,7 @@ impl GraphDriveItem {
             etag: self.e_tag.clone(),
             ctag: self.c_tag.clone(),
             quick_xor_hash: self.quick_xor_hash(),
+            download_url: self.download_url.clone(),
             is_shared_reference: self.remote_item.is_some(),
             shared_drive_id: shared_drive_id_from_delta_item(self),
             shared_item_id: shared_item_id_from_delta_item(self),

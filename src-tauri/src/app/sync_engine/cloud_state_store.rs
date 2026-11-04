@@ -199,8 +199,9 @@ pub(crate) fn upsert_cloud_item(
             "INSERT INTO sync_files (
                 profile_id, path, is_dir, is_shared_reference, shared_drive_id, shared_item_id,
                 shared_kind, remote_item_id, remote_parent_id, cloud_present, cloud_size,
-                cloud_mtime, cloud_etag, cloud_ctag, cloud_hash, cloud_seen_at, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1, ?10, ?11, ?12, ?13, ?14, ?15, ?15)
+                cloud_mtime, cloud_etag, cloud_ctag, cloud_hash, cloud_seen_at,
+                cloud_download_url, cloud_download_url_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?15, ?15)
              ON CONFLICT(profile_id, path) DO UPDATE SET
                 is_dir = excluded.is_dir,
                 is_shared_reference = excluded.is_shared_reference,
@@ -216,6 +217,8 @@ pub(crate) fn upsert_cloud_item(
                 cloud_ctag = excluded.cloud_ctag,
                 cloud_hash = excluded.cloud_hash,
                 cloud_seen_at = excluded.cloud_seen_at,
+                cloud_download_url = excluded.cloud_download_url,
+                cloud_download_url_at = excluded.cloud_download_url_at,
                 updated_at = excluded.updated_at",
             params![
                 profile_id,
@@ -233,6 +236,7 @@ pub(crate) fn upsert_cloud_item(
                 item.ctag,
                 item.quick_xor_hash,
                 now,
+                item.download_url,
             ],
         )
         .map_err(|error| format!("Failed recording cloud item '{}': {error}", item.path))?;
