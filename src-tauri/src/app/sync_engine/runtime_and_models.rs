@@ -5,23 +5,30 @@ struct SyncCycleStats {
     downloaded_files: usize,
     uploaded_files: usize,
     upload_failures: usize,
-    upload_cooldown_skips: usize,
+    baseline_refreshes: usize,
+    matched_files: usize,
+    conflict_copies: usize,
     deleted_local: usize,
     deleted_remote: usize,
+    created_local_folders: usize,
     created_remote_folders: usize,
     remote_pages: usize,
     remote_items_received: usize,
-    remote_items_skipped_missing: usize,
+    remote_items_skipped_unresolved: usize,
     local_items_seen: usize,
+    name_issues: usize,
 }
 
 enum RemoteDownloadOutcome {
-    Downloaded,
-    SkippedMissingRemote,
+    /// The file is in place; `entry` is its state on disk afterwards.
+    Downloaded(LocalEntry),
+    /// Graph returned 404/410: the item may be gone. Nothing changes until a
+    /// delta page confirms it; the job retries later.
+    NotFoundOnCloud,
 }
 
 struct DeltaPageWorkItem {
-    items: Vec<DeltaItem>,
+    items: Vec<GraphDriveItem>,
     next_link: Option<String>,
     delta_link: Option<String>,
 }
@@ -31,7 +38,9 @@ struct RemoteDownloadJob {
     item_id: String,
     path: String,
     local_abs: PathBuf,
-    remote_entry: RemoteKnownItem,
+    /// The cloud version planned for download.
+    version: CloudVersion,
+    cloud_mtime: i64,
 }
 
 enum RemoteDownloadResultStatus {
@@ -43,7 +52,9 @@ enum RemoteDownloadResultStatus {
 
 struct RemoteDownloadResult {
     job_id: i64,
-    remote_entry: RemoteKnownItem,
+    item_id: String,
+    path: String,
+    version: CloudVersion,
     status: RemoteDownloadResultStatus,
 }
 
@@ -74,14 +85,6 @@ fn resolve_download_queue_capacity() -> usize {
         .and_then(|value| value.trim().parse::<usize>().ok())
         .map(|value| value.clamp(16, 4096))
         .unwrap_or(512)
-}
-
-fn resolve_checkpoint_flush_step() -> usize {
-    std::env::var("SOMEDRIVE_SYNC_CHECKPOINT_FLUSH_STEP")
-        .ok()
-        .and_then(|value| value.trim().parse::<usize>().ok())
-        .map(|value| value.clamp(1, 500))
-        .unwrap_or(25)
 }
 
 fn resolve_simple_upload_max_bytes() -> u64 {
@@ -453,77 +456,115 @@ fn runtime_finish_transfer_download_success(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-struct LocalSnapshotEntry {
+/// A file or folder found by the local scan. Times are nanoseconds since the
+/// Unix epoch so a same-size edit within one second is still a change.
+#[derive(Debug, Clone, PartialEq)]
+struct LocalEntry {
     is_dir: bool,
     size: u64,
-    modified_ts: i64,
+    mtime_ns: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RemoteKnownItem {
+/// The cloud state of one item, as stored in `sync_files` (cloud columns).
+#[derive(Debug, Clone)]
+struct CloudItem {
     id: String,
+    parent_id: Option<String>,
     path: String,
     is_dir: bool,
     size: u64,
-    modified_ts: i64,
-    #[serde(default)]
+    mtime: i64,
+    etag: Option<String>,
+    ctag: Option<String>,
+    quick_xor_hash: Option<String>,
     is_shared_reference: bool,
-    #[serde(default)]
     shared_drive_id: Option<String>,
-    #[serde(default)]
     shared_item_id: Option<String>,
-    #[serde(default)]
     shared_kind: Option<String>,
-}
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
-struct PersistedSyncState {
-    remote_by_id: HashMap<String, RemoteKnownItem>,
-    remote_path_to_id: HashMap<String, String>,
-    local_snapshot: HashMap<String, LocalSnapshotEntry>,
 }
 
 #[derive(Debug, Deserialize)]
 struct DeltaResponse {
-    value: Vec<DeltaItem>,
+    value: Vec<GraphDriveItem>,
     #[serde(rename = "@odata.nextLink")]
     next_link: Option<String>,
     #[serde(rename = "@odata.deltaLink")]
     delta_link: Option<String>,
 }
 
+/// A Graph driveItem, as returned by delta pages, uploads and folder creates.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DeltaItem {
+struct GraphDriveItem {
     id: String,
     name: Option<String>,
     size: Option<u64>,
     folder: Option<serde_json::Value>,
+    file: Option<GraphFileFacet>,
+    root: Option<serde_json::Value>,
+    package: Option<serde_json::Value>,
+    malware: Option<serde_json::Value>,
     remote_item: Option<serde_json::Value>,
     deleted: Option<serde_json::Value>,
     parent_reference: Option<ParentReference>,
     last_modified_date_time: Option<String>,
+    #[serde(rename = "eTag")]
+    e_tag: Option<String>,
+    #[serde(rename = "cTag")]
+    c_tag: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GraphFileFacet {
+    hashes: Option<GraphFileHashes>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GraphFileHashes {
+    quick_xor_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ParentReference {
+    id: Option<String>,
     path: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DriveItemResponse {
-    id: String,
-    name: Option<String>,
-    size: Option<u64>,
-    folder: Option<serde_json::Value>,
-    parent_reference: Option<ParentReference>,
-    last_modified_date_time: Option<String>,
+impl GraphDriveItem {
+    fn quick_xor_hash(&self) -> Option<String> {
+        self.file
+            .as_ref()
+            .and_then(|file| file.hashes.as_ref())
+            .and_then(|hashes| hashes.quick_xor_hash.clone())
+    }
+
+    fn parent_id(&self) -> Option<String> {
+        self.parent_reference
+            .as_ref()
+            .and_then(|reference| reference.id.clone())
+    }
+
+    /// The cloud state of this item at `path`.
+    fn to_cloud_item(&self, path: String) -> CloudItem {
+        CloudItem {
+            id: self.id.clone(),
+            parent_id: self.parent_id(),
+            path,
+            is_dir: self.folder.is_some(),
+            size: self.size.unwrap_or(0),
+            mtime: parse_rfc3339_seconds(self.last_modified_date_time.as_deref()),
+            etag: self.e_tag.clone(),
+            ctag: self.c_tag.clone(),
+            quick_xor_hash: self.quick_xor_hash(),
+            is_shared_reference: self.remote_item.is_some(),
+            shared_drive_id: shared_drive_id_from_delta_item(self),
+            shared_item_id: shared_item_id_from_delta_item(self),
+            shared_kind: shared_kind_from_delta_item(self),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

@@ -1,52 +1,6 @@
-pub(crate) fn list_terminal_failed_download_paths(
-    profile_id: &str,
-    limit: usize,
-) -> Result<Vec<String>, String> {
-    let connection = open_sync_jobs_connection(profile_id)?;
-    let mut statement = connection
-        .prepare(
-            "SELECT path
-             FROM sync_jobs
-             WHERE profile_id = ?1
-               AND direction = ?2
-               AND state = ?3
-             ORDER BY finished_at DESC, updated_at DESC
-             LIMIT ?4",
-        )
-        .map_err(|error| format!("Failed preparing terminal failed path query: {error}"))?;
-    let rows = statement
-        .query_map(
-            params![
-                profile_id,
-                DOWNLOAD_JOB_DIRECTION,
-                DOWNLOAD_JOB_STATE_FAILED_TERMINAL,
-                limit as i64,
-            ],
-            |row| row.get::<_, String>(0),
-        )
-        .map_err(|error| format!("Failed querying terminal failed download paths: {error}"))?;
-
-    let mut paths: Vec<String> = Vec::new();
-    for row in rows {
-        paths.push(row.map_err(|error| format!("Failed reading terminal failed path row: {error}"))?);
-    }
-    Ok(paths)
-}
-
-fn remove_download_job_by_item_id(profile_id: &str, item_id: &str) -> Result<(), String> {
-    let connection = open_sync_jobs_connection(profile_id)?;
-    connection
-        .execute(
-            "DELETE FROM sync_jobs
-             WHERE profile_id = ?1
-               AND direction = ?2
-               AND item_id = ?3",
-            params![profile_id, DOWNLOAD_JOB_DIRECTION, item_id],
-        )
-        .map_err(|error| format!("Failed removing download job by item id: {error}"))?;
-    Ok(())
-}
-
+/// Queues a download for `item_id`. A job that already finished (done,
+/// failed or skipped) is queued again: the planner only asks for a download
+/// when the file needs one now.
 fn upsert_download_job(
     profile_id: &str,
     item_id: &str,
@@ -102,6 +56,11 @@ fn upsert_download_job(
              SET path = ?1,
                  remote_size = ?2,
                  remote_modified_ts = ?3,
+                 state = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN 'queued' ELSE state END,
+                 run_state = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN 'idle' ELSE run_state END,
+                 attempt_count = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN 0 ELSE attempt_count END,
+                 last_error = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN NULL ELSE last_error END,
+                 finished_at = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN NULL ELSE finished_at END,
                  bytes_total = CASE WHEN ?2 > 0 THEN ?2 ELSE bytes_total END,
                  progress_updated_at = COALESCE(progress_updated_at, ?4),
                  updated_at = ?4
@@ -164,7 +123,7 @@ fn claim_download_jobs(
 
     let mut statement = transaction
         .prepare(
-            "SELECT id, item_id, path, remote_size, remote_modified_ts
+            "SELECT id, item_id, path
              FROM sync_jobs
              WHERE profile_id = ?1
                AND direction = ?2
@@ -191,8 +150,6 @@ fn claim_download_jobs(
                     job_id: row.get(0)?,
                     item_id: row.get(1)?,
                     path: row.get(2)?,
-                    remote_size: row.get::<_, i64>(3)?.max(0) as u64,
-                    remote_modified_ts: row.get(4)?,
                 })
             },
         )
@@ -268,139 +225,6 @@ fn mark_download_job_done(profile_id: &str, job_id: i64, skipped: bool) -> Resul
             ],
         )
         .map_err(|error| format!("Failed marking download job done: {error}"))?;
-    Ok(())
-}
-
-fn mark_download_job_done_with_local_index(
-    profile_id: &str,
-    job_id: i64,
-    remote_entry: &RemoteKnownItem,
-    local_entry: &LocalSnapshotEntry,
-) -> Result<(), String> {
-    let mut connection = open_sync_jobs_connection(profile_id)?;
-    let transaction = connection
-        .transaction()
-        .map_err(|error| format!("Failed starting download completion transaction: {error}"))?;
-    let now = current_unix_seconds();
-
-    transaction
-        .execute(
-            "UPDATE sync_jobs
-             SET state = ?1,
-                 run_state = ?2,
-                 lease_owner = NULL,
-                 lease_until = NULL,
-                 bytes_done = COALESCE(bytes_total, bytes_done),
-                 updated_at = ?3,
-                 finished_at = ?3,
-                 progress_updated_at = ?3
-             WHERE profile_id = ?4 AND direction = ?5 AND id = ?6",
-            params![
-                DOWNLOAD_JOB_STATE_DONE,
-                JOB_RUN_STATE_IDLE,
-                now,
-                profile_id,
-                DOWNLOAD_JOB_DIRECTION,
-                job_id,
-            ],
-        )
-        .map_err(|error| format!("Failed marking download job done: {error}"))?;
-
-    transaction
-        .execute(
-            "INSERT INTO sync_files (
-                profile_id, path, is_dir, is_shared_reference, shared_drive_id, shared_item_id, shared_kind,
-                remote_item_id, remote_present, local_present,
-                remote_size, local_size, remote_modified_ts, local_modified_ts,
-                desired_action, conflict_state, updated_at
-             ) VALUES (
-                ?1, ?2, ?3, ?4, ?5, ?6, ?7,
-                ?8, 1, 1,
-                ?9, ?10, ?11, ?12,
-                'none', NULL, ?13
-             )
-             ON CONFLICT(profile_id, path)
-             DO UPDATE SET
-                is_dir = excluded.is_dir,
-                is_shared_reference = excluded.is_shared_reference,
-                shared_drive_id = excluded.shared_drive_id,
-                shared_item_id = excluded.shared_item_id,
-                shared_kind = excluded.shared_kind,
-                remote_item_id = excluded.remote_item_id,
-                remote_present = 1,
-                local_present = 1,
-                remote_size = excluded.remote_size,
-                local_size = excluded.local_size,
-                remote_modified_ts = excluded.remote_modified_ts,
-                local_modified_ts = excluded.local_modified_ts,
-                updated_at = excluded.updated_at",
-            params![
-                profile_id,
-                remote_entry.path,
-                bool_to_sql(remote_entry.is_dir),
-                bool_to_sql(remote_entry.is_shared_reference),
-                remote_entry.shared_drive_id.as_deref(),
-                remote_entry.shared_item_id.as_deref(),
-                remote_entry.shared_kind.as_deref(),
-                remote_entry.id,
-                remote_entry.size as i64,
-                local_entry.size as i64,
-                remote_entry.modified_ts,
-                local_entry.modified_ts,
-                now,
-            ],
-        )
-        .map_err(|error| format!("Failed upserting local sync file row during completion: {error}"))?;
-
-    transaction
-        .commit()
-        .map_err(|error| format!("Failed committing download completion transaction: {error}"))?;
-    Ok(())
-}
-
-fn upsert_sync_file_remote_presence(profile_id: &str, remote_entry: &RemoteKnownItem) -> Result<(), String> {
-    let connection = open_sync_jobs_connection(profile_id)?;
-    let now = current_unix_seconds();
-    connection
-        .execute(
-            "INSERT INTO sync_files (
-                profile_id, path, is_dir, is_shared_reference, shared_drive_id, shared_item_id, shared_kind,
-                remote_item_id, remote_present, local_present,
-                remote_size, local_size, remote_modified_ts, local_modified_ts,
-                desired_action, conflict_state, updated_at
-             ) VALUES (
-                ?1, ?2, ?3, ?4, ?5, ?6, ?7,
-                ?8, 1, 0,
-                ?9, 0, ?10, 0,
-                'none', NULL, ?11
-             )
-             ON CONFLICT(profile_id, path)
-             DO UPDATE SET
-                is_dir = excluded.is_dir,
-                is_shared_reference = excluded.is_shared_reference,
-                shared_drive_id = excluded.shared_drive_id,
-                shared_item_id = excluded.shared_item_id,
-                shared_kind = excluded.shared_kind,
-                remote_item_id = excluded.remote_item_id,
-                remote_present = 1,
-                remote_size = excluded.remote_size,
-                remote_modified_ts = excluded.remote_modified_ts,
-                updated_at = excluded.updated_at",
-            params![
-                profile_id,
-                remote_entry.path,
-                bool_to_sql(remote_entry.is_dir),
-                bool_to_sql(remote_entry.is_shared_reference),
-                remote_entry.shared_drive_id.as_deref(),
-                remote_entry.shared_item_id.as_deref(),
-                remote_entry.shared_kind.as_deref(),
-                remote_entry.id,
-                remote_entry.size as i64,
-                remote_entry.modified_ts,
-                now,
-            ],
-        )
-        .map_err(|error| format!("Failed upserting remote sync file row: {error}"))?;
     Ok(())
 }
 

@@ -124,7 +124,6 @@ pub struct SyncRuntimeAccountStatus {
     pub upload_throttle_total: usize,
     pub upload_throttle_last_minute: usize,
     pub remote_scan_complete: bool,
-    pub two_way_ready: bool,
     pub local_scan_scanned_count: usize,
     pub local_scan_estimated_total: Option<usize>,
     pub local_scan_current_path: Option<String>,
@@ -185,7 +184,6 @@ impl SyncRuntimeAccountStatus {
             upload_throttle_total: 0,
             upload_throttle_last_minute: 0,
             remote_scan_complete: false,
-            two_way_ready: false,
             local_scan_scanned_count: 0,
             local_scan_estimated_total: None,
             local_scan_current_path: None,
@@ -436,14 +434,6 @@ pub fn set_remote_scan_complete(
     status.updated_at = now_rfc3339();
     bump_runtime_revision();
     emit_status_event_for_account(runtime_map, profile_id, StatusEventEmitMode::Immediate);
-}
-
-pub fn record_remote_discovered(runtime_map: &mut SyncRuntimeMap, profile_id: &str, item_id: &str) {
-    let _ = item_id;
-    let status = ensure_account_status(runtime_map, profile_id);
-    status.updated_at = now_rfc3339();
-    bump_runtime_revision();
-    emit_status_event_for_account(runtime_map, profile_id, StatusEventEmitMode::Throttled);
 }
 
 pub fn record_remote_download_completed(

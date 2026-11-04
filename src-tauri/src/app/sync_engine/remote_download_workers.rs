@@ -47,7 +47,9 @@ fn spawn_remote_download_workers(
                 let result = if !sync_accepts_new_work() {
                     RemoteDownloadResult {
                         job_id: job.job_id,
-                        remote_entry: job.remote_entry,
+                        item_id: job.item_id,
+                        path: job.path,
+                        version: job.version,
                         status: RemoteDownloadResultStatus::Cancelled,
                     }
                 } else {
@@ -104,45 +106,31 @@ async fn execute_remote_download_job(
     job: RemoteDownloadJob,
     worker_cancel: &Arc<AtomicBool>,
 ) -> RemoteDownloadResult {
-    match download_remote_item_content(
+    let outcome = download_remote_item_content(
         worker_graph,
         Some(job.job_id),
         &job.item_id,
         &job.path,
-        Some(job.remote_entry.size),
+        &job.version,
+        job.cloud_mtime,
         &job.local_abs,
         worker_cancel,
     )
-    .await
-    {
-        Ok(outcome) => RemoteDownloadResult {
-            job_id: job.job_id,
-            remote_entry: job.remote_entry,
-            status: RemoteDownloadResultStatus::Success(outcome),
-        },
-        Err(error) => {
-            if error == DOWNLOAD_RETRY_DEFERRED_ERROR {
-                RemoteDownloadResult {
-                    job_id: job.job_id,
-                    remote_entry: job.remote_entry,
-                    status: RemoteDownloadResultStatus::DeferredRetry,
-                }
-            } else if is_sync_cancelled_error(&error) {
-                RemoteDownloadResult {
-                    job_id: job.job_id,
-                    remote_entry: job.remote_entry,
-                    status: RemoteDownloadResultStatus::Cancelled,
-                }
-            } else {
-                RemoteDownloadResult {
-                    job_id: job.job_id,
-                    remote_entry: job.remote_entry,
-                    status: RemoteDownloadResultStatus::Failed(format!(
-                        "Remote download failed item_id={} path={}: {}",
-                        job.item_id, job.path, error
-                    )),
-                }
-            }
-        }
+    .await;
+    let status = match outcome {
+        Ok(outcome) => RemoteDownloadResultStatus::Success(outcome),
+        Err(error) if error == DOWNLOAD_RETRY_DEFERRED_ERROR => RemoteDownloadResultStatus::DeferredRetry,
+        Err(error) if is_sync_cancelled_error(&error) => RemoteDownloadResultStatus::Cancelled,
+        Err(error) => RemoteDownloadResultStatus::Failed(format!(
+            "Remote download failed item_id={} path={}: {}",
+            job.item_id, job.path, error
+        )),
+    };
+    RemoteDownloadResult {
+        job_id: job.job_id,
+        item_id: job.item_id,
+        path: job.path,
+        version: job.version,
+        status,
     }
 }

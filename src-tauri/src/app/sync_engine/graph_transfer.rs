@@ -12,6 +12,26 @@ async fn graph_get_text(
     url: &str,
     cancel_flag: &Arc<AtomicBool>,
 ) -> Result<String, String> {
+    graph_get(graph, url, cancel_flag, false)
+        .await?
+        .ok_or_else(|| format!("Graph GET {url} returned no content"))
+}
+
+/// Like `graph_get_text`, but a 404 is an answer (`None`), not an error.
+async fn graph_get_text_if_exists(
+    graph: &GraphContext,
+    url: &str,
+    cancel_flag: &Arc<AtomicBool>,
+) -> Result<Option<String>, String> {
+    graph_get(graph, url, cancel_flag, true).await
+}
+
+async fn graph_get(
+    graph: &GraphContext,
+    url: &str,
+    cancel_flag: &Arc<AtomicBool>,
+    not_found_is_none: bool,
+) -> Result<Option<String>, String> {
     let client = graph_http_client()?;
     let mut refreshed = false;
     let mut attempt: u32 = 0;
@@ -114,6 +134,9 @@ async fn graph_get_text(
             continue;
         }
 
+        if not_found_is_none && status == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
         if !status.is_success() {
             let snippet: String = text.chars().take(400).collect();
             return Err(format!(
@@ -121,8 +144,58 @@ async fn graph_get_text(
                 url, status, snippet
             ));
         }
-        return Ok(text);
+        return Ok(Some(text));
     }
+}
+
+/// The item as OneDrive holds it right now; `None` when it no longer exists.
+async fn fetch_remote_item(
+    graph: &GraphContext,
+    item_id: &str,
+    cancel_flag: &Arc<AtomicBool>,
+) -> Result<Option<GraphDriveItem>, String> {
+    let url = format!("{GRAPH_ROOT}/me/drive/items/{item_id}");
+    let Some(text) = graph_get_text_if_exists(graph, &url, cancel_flag).await? else {
+        return Ok(None);
+    };
+    serde_json::from_str::<GraphDriveItem>(&text)
+        .map(Some)
+        .map_err(|error| format!("Failed decoding item {item_id}: {error}"))
+}
+
+/// The item at `relative_path` in OneDrive; `None` when there is none.
+async fn fetch_remote_item_by_path(
+    graph: &GraphContext,
+    relative_path: &str,
+    cancel_flag: &Arc<AtomicBool>,
+) -> Result<Option<GraphDriveItem>, String> {
+    let url = format!("{GRAPH_ROOT}/me/drive/root:/{}", encode_graph_path(relative_path));
+    let Some(text) = graph_get_text_if_exists(graph, &url, cancel_flag).await? else {
+        return Ok(None);
+    };
+    serde_json::from_str::<GraphDriveItem>(&text)
+        .map(Some)
+        .map_err(|error| format!("Failed decoding item at '{relative_path}': {error}"))
+}
+
+/// Whether the cloud folder currently has any children (a fresh listing,
+/// not the stored state; Graph deletes folders recursively).
+async fn remote_folder_has_children(
+    graph: &GraphContext,
+    item_id: &str,
+    cancel_flag: &Arc<AtomicBool>,
+) -> Result<bool, String> {
+    #[derive(Deserialize)]
+    struct ChildrenPage {
+        value: Vec<serde_json::Value>,
+    }
+    let url = format!("{GRAPH_ROOT}/me/drive/items/{item_id}/children?$top=1&$select=id");
+    let Some(text) = graph_get_text_if_exists(graph, &url, cancel_flag).await? else {
+        return Ok(false);
+    };
+    let page: ChildrenPage = serde_json::from_str(&text)
+        .map_err(|error| format!("Failed decoding children of {item_id}: {error}"))?;
+    Ok(!page.value.is_empty())
 }
 
 fn is_transient_request_error(error: &str) -> bool {
@@ -173,12 +246,16 @@ async fn graph_delete(graph: &GraphContext, url: &str) -> Result<(), String> {
     }
 }
 
+// the transfer needs the job, the item, the planned version and the target;
+// a download request struct is tracked with the cycle context in docs/TODO.md.
+#[allow(clippy::too_many_arguments)]
 async fn download_remote_item_content(
     graph: &GraphContext,
     job_id: Option<i64>,
     item_id: &str,
     relative_path: &str,
-    known_size_bytes: Option<u64>,
+    version: &CloudVersion,
+    cloud_mtime: i64,
     local_path: &Path,
     cancel_flag: &Arc<AtomicBool>,
 ) -> Result<RemoteDownloadOutcome, String> {
@@ -194,13 +271,13 @@ async fn download_remote_item_content(
     let url = format!("{GRAPH_ROOT}/me/drive/items/{}/content", item_id);
     let graph_client = graph_http_client_no_redirect()?;
     let content_client = graph_http_client()?;
-    let download_request_timeout = compute_download_request_timeout(known_size_bytes);
+    let download_request_timeout = compute_download_request_timeout(Some(version.size));
     log::info!(
         "{} [cycle:{}] DOWNLOAD_TIMEOUT_POLICY path={} known_size_bytes={} timeout_seconds={}",
         graph.account_prefix,
         graph.cycle_id,
         relative_path,
-        known_size_bytes.unwrap_or(0),
+        version.size,
         download_request_timeout.as_secs()
     );
     let mut token_refreshed = false;
@@ -435,14 +512,14 @@ async fn download_remote_item_content(
                     );
                 }
                 log::warn!(
-                    "{} [cycle:{}] DOWNLOAD_SKIPPED_MISSING item_id={} path={} status={}",
+                    "{} [cycle:{}] DOWNLOAD_NOT_FOUND item_id={} path={} status={}",
                     graph.account_prefix,
                     graph.cycle_id,
                     item_id,
                     relative_path,
                     status
                 );
-                return Ok(RemoteDownloadOutcome::SkippedMissingRemote);
+                return Ok(RemoteDownloadOutcome::NotFoundOnCloud);
             }
             let response_headers = response.headers().clone();
             let text = response.text().await.unwrap_or_default();
@@ -509,6 +586,7 @@ async fn download_remote_item_content(
 
         let mut stream = response.bytes_stream();
         let mut downloaded_bytes: u64 = 0;
+        let mut content_hasher = QuickXorHasher::new();
         let mut last_progress_persisted_at = std::time::Instant::now();
         let mut should_retry_download = false;
         while let Some(chunk_result) = stream.next().await {
@@ -569,6 +647,7 @@ async fn download_remote_item_content(
             }
 
             downloaded_bytes += chunk.len() as u64;
+            content_hasher.update(&chunk);
             // The database copy of progress is for restarts and the activity
             // projection, so it is written at most once per interval: a write
             // per chunk from every worker starves the result writer.
@@ -608,9 +687,13 @@ async fn download_remote_item_content(
             continue;
         }
 
-        if let Err(error) = output_file.flush() {
+        let verification = output_file
+            .flush()
+            .and_then(|()| output_file.sync_all())
+            .map_err(|error| format!("Failed flushing temporary file: {error}"))
+            .and_then(|()| verify_downloaded_content(version, total, downloaded_bytes, &content_hasher));
+        if let Err(reason) = verification {
             drop(output_file);
-            let reason = format!("Failed flushing temporary file: {error}");
             if handle_download_retry(
                 graph,
                 job_id,
@@ -626,12 +709,11 @@ async fn download_remote_item_content(
             {
                 continue;
             }
-            return Err(format!(
-                "Failed flushing temporary file '{}': {}",
-                temp_path.display(),
-                error
-            ));
+            return Err(reason);
         }
+        // OneDrive's time, so both sides agree on when the file changed.
+        set_file_modified_seconds(&output_file, cloud_mtime);
+        drop(output_file);
 
         if cancel_flag.load(Ordering::Relaxed) {
             runtime_finish_transfer_cancelled(&graph.sync_runtime, &graph.profile_id, &transfer_id);
@@ -639,34 +721,27 @@ async fn download_remote_item_content(
             return Err(SYNC_CANCELLED_ERROR.to_string());
         }
 
-        if let Err(error) = std::fs::rename(&temp_path, local_path) {
-            let reason = format!(
-                "Failed finalizing local file: {} (temp_path={})",
-                error,
-                temp_path.display()
-            );
-            if handle_download_retry(
-                graph,
-                job_id,
-                cancel_flag,
-                &transfer_id,
-                attempt,
-                relative_path,
-                &reason,
-                Some(&temp_path),
-                &reason,
-            )
-            .await?
-            {
-                continue;
+        let placed_entry = match place_downloaded_file(graph, relative_path, &temp_path, local_path) {
+            Ok(entry) => entry,
+            Err(reason) => {
+                if handle_download_retry(
+                    graph,
+                    job_id,
+                    cancel_flag,
+                    &transfer_id,
+                    attempt,
+                    relative_path,
+                    &reason,
+                    Some(&temp_path),
+                    &reason,
+                )
+                .await?
+                {
+                    continue;
+                }
+                return Err(reason);
             }
-            return Err(format!(
-                "Failed moving '{}' to '{}': {}",
-                temp_path.display(),
-                local_path.display(),
-                error
-            ));
-        }
+        };
 
         runtime_finish_transfer_download_success(
             &graph.sync_runtime,
@@ -693,15 +768,103 @@ async fn download_remote_item_content(
             relative_path,
             downloaded_bytes
         );
-        return Ok(RemoteDownloadOutcome::Downloaded);
+        return Ok(RemoteDownloadOutcome::Downloaded(placed_entry));
     }
+}
+
+/// A download is only accepted when its size matches what the server said it
+/// was sending (`Content-Length`, or the planned size without one; SharePoint
+/// sizes can differ from the listed size) and, when OneDrive supplied one,
+/// its QuickXorHash matches.
+fn verify_downloaded_content(
+    version: &CloudVersion,
+    content_length: Option<u64>,
+    downloaded_bytes: u64,
+    hasher: &QuickXorHasher,
+) -> Result<(), String> {
+    let expected_size = content_length.unwrap_or(version.size);
+    if downloaded_bytes != expected_size {
+        return Err(format!(
+            "Downloaded size {downloaded_bytes} does not match the expected {expected_size} bytes"
+        ));
+    }
+    if let Some(expected) = version.quick_xor_hash.as_deref() {
+        let actual = hasher.finish_base64();
+        if actual != expected {
+            return Err(format!(
+                "Downloaded content hash {actual} does not match OneDrive's {expected}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn set_file_modified_seconds(file: &std::fs::File, unix_seconds: i64) {
+    if unix_seconds <= 0 {
+        return;
+    }
+    let modified = std::time::UNIX_EPOCH + Duration::from_secs(unix_seconds as u64);
+    if let Err(error) = file.set_modified(modified) {
+        log::warn!("DOWNLOAD_SET_MTIME_FAILED error={}", error);
+    }
+}
+
+/// Moves a verified download into place. The file currently at the target is
+/// only replaced when it still matches the baseline (or the plan expected
+/// nothing there); anything else is kept as a conflict copy first, so a local
+/// edit made since the plan is never lost.
+fn place_downloaded_file(
+    graph: &GraphContext,
+    relative_path: &str,
+    temp_path: &Path,
+    local_path: &Path,
+) -> Result<LocalEntry, String> {
+    if let Some(existing) = read_local_entry(local_path)? {
+        if existing.is_dir {
+            return Err(format!(
+                "A folder is in the way of '{relative_path}'; the file is not downloaded"
+            ));
+        }
+        let replaceable = read_sync_file_row(&graph.profile_id, relative_path)?
+            .is_some_and(|row| row.local_matches_baseline(&existing));
+        if !replaceable {
+            let copy = preserve_conflict_copy(local_path)?;
+            log::warn!(
+                "{} [cycle:{}] CONFLICT_LOCAL_PRESERVED path={} copy={}",
+                graph.account_prefix,
+                graph.cycle_id,
+                relative_path,
+                copy.display()
+            );
+        }
+    }
+    std::fs::rename(temp_path, local_path).map_err(|error| {
+        format!(
+            "Failed moving '{}' to '{}': {error}",
+            temp_path.display(),
+            local_path.display()
+        )
+    })?;
+    if let Some(parent) = local_path.parent() {
+        if let Err(error) = std::fs::File::open(parent).and_then(|folder| folder.sync_all()) {
+            log::warn!(
+                "{} [cycle:{}] DOWNLOAD_DIR_SYNC_FAILED path={} error={}",
+                graph.account_prefix,
+                graph.cycle_id,
+                relative_path,
+                error
+            );
+        }
+    }
+    read_local_entry(local_path)?
+        .ok_or_else(|| format!("'{relative_path}' is missing right after it was downloaded"))
 }
 
 async fn create_remote_folder(
     graph: &mut GraphContext,
     relative_path: &str,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<DriveItemResponse, String> {
+) -> Result<GraphDriveItem, String> {
     ensure_not_cancelled(cancel_flag)?;
     let (parent, name) = split_parent_and_name(relative_path)?;
     let endpoint = if parent.is_empty() {
@@ -715,7 +878,7 @@ async fn create_remote_folder(
     let payload = serde_json::json!({
         "name": name,
         "folder": {},
-        "@microsoft.graph.conflictBehavior": "replace"
+        "@microsoft.graph.conflictBehavior": "fail"
     });
     log::info!(
         "{} [cycle:{}] REMOTE_DIR_CREATE_REQUEST path={} parent={}",
@@ -766,6 +929,24 @@ async fn create_remote_folder(
             continue;
         }
 
+        if status == StatusCode::CONFLICT {
+            // Something already exists at this path: use it if it is a
+            // folder, never replace it.
+            let existing = fetch_remote_item_by_path(graph, relative_path, cancel_flag)
+                .await?
+                .filter(|item| item.folder.is_some())
+                .ok_or_else(|| {
+                    format!("A file in OneDrive is in the way of folder '{relative_path}'")
+                })?;
+            log::info!(
+                "{} [cycle:{}] REMOTE_DIR_EXISTS path={} remote_id={}",
+                graph.account_prefix,
+                graph.cycle_id,
+                relative_path,
+                existing.id
+            );
+            return Ok(existing);
+        }
         if !status.is_success() {
             let snippet: String = text.chars().take(400).collect();
             return Err(format!(
@@ -773,7 +954,7 @@ async fn create_remote_folder(
                 relative_path, status, snippet
             ));
         }
-        let parsed = serde_json::from_str::<DriveItemResponse>(&text)
+        let parsed = serde_json::from_str::<GraphDriveItem>(&text)
             .map_err(|error| format!("Failed decoding create-folder response JSON: {error}"))?;
         log::info!(
             "{} [cycle:{}] REMOTE_DIR_CREATE_OK path={} remote_id={}",

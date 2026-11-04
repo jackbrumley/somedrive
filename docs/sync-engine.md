@@ -193,7 +193,24 @@ covers caches such as browser profiles.
 One table holds the per-item state; the JSON `PersistedSyncState` caches are
 removed.
 
-`sync_items` (replaces `sync_files` and the JSON caches):
+Implementation notes (2026-11-04):
+- The table keeps the name `sync_files` (no rename churn); its columns are
+  replaced by the set below (`cloud_*`, `local_*`, `base_*`).
+- Schema version 7. A database from the old engine (`user_version` 1 to 6)
+  is dropped and recreated, not migrated; the first sync then matches
+  existing files by content (row 12). The schema is created once per
+  account per process, not on every connection.
+- Local times are stored in nanoseconds (`local_mtime_ns`).
+- Cycle order: local scan first, then cloud delta pages (downloads stream
+  while pages arrive, planned with the local state already known), then the
+  full plan and execution.
+- Cloud renames and moves, first version: the cloud columns move to the new
+  path, so the old path plans "delete locally" (to Trash, guarded) and the
+  new path plans "download". A true local rename is a later optimisation.
+- Row 12 ("both new") plans a `verify` action that hashes the local file
+  with QuickXorHash and compares it with the cloud hash.
+
+`sync_files` columns:
 
 | Column | Notes |
 |---|---|
@@ -210,6 +227,47 @@ removed.
 
 Per the development-phase data policy there is no migration: the new engine
 starts from an empty database. Existing local files are matched by row 12.
+
+## 8a. Lessons from abraunegg/onedrive and rclone bisync
+
+Researched 2026-11-04 (behaviours only; no code taken). These refine the
+sections above and win where they differ:
+
+- **Cloud changed** = the quickXorHash or size differs from the baseline.
+  The cTag is only a fallback when either side has no hash; a missing value
+  never counts as a change on its own. SharePoint rewrites Office/PDF files
+  after upload, so the baseline after an upload records the hash OneDrive
+  returns.
+- **`If-Match`** only on creating an upload session; never on chunk uploads
+  or deletes (both fail spuriously). Before a cloud delete, the item is read
+  again and its hash compared with the baseline; a change cancels the delete
+  (the planner then downloads it).
+- **Content before action:** before an upload, a local file whose hash still
+  equals the baseline hash only refreshes the baseline (a `touch` is not an
+  edit). Before a conflict copy, matching local and cloud hashes adopt the
+  file. A mass time change (clock or timezone shift) therefore only refreshes
+  baselines and uploads nothing. If the sync folder is missing or empty while
+  20 or more files are tracked (an unmounted drive, an empty mount point),
+  the cycle stops with an issue instead of acting.
+- **Folder deletes in the cloud** happen only when a fresh children listing
+  shows the folder empty (Graph deletes recursively).
+- **Conflict copies** are made by copying the local file and checking the
+  copy before the original is replaced.
+- **Times:** after setting a downloaded file's time, the file is read back and
+  that value is the baseline (OneDrive keeps whole seconds).
+- **Excluded items** (per-file issues, never synced or deleted): OneNote
+  notebooks (`package` facet) and everything inside them, local `.one` and
+  `.onetoc2` files, items with a `malware` facet, shared shortcuts
+  (`remoteItem`), and invalid local names: `" * : < > ? \ |`, leading or
+  trailing spaces, a trailing dot, `CON PRN AUX NUL COM0-9 LPT0-9` (with any
+  extension), `.lock`, `desktop.ini`, `~$*`, `*_vti_*`, control characters,
+  paths of 400 characters or more, names not in Unicode NFC, and local names
+  that differ only by case from another item.
+- **Zero-byte files** have no hash: equal size 0 is a match. A non-empty file
+  without a hash on either side is never assumed equal (conflict copy).
+- **Cloud folder renames** still plan "delete old + download new" in the first
+  version, so a rename of more than the guard threshold asks before acting.
+  A true local rename by item ID is the next robustness step.
 
 ## 9. What is removed
 

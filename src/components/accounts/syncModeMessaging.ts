@@ -57,27 +57,12 @@ export function syncModeMessage(
   }
 
   if (!hasCompletedInitialSync) {
-    const failedDownloads = runtimeStatus.remoteDownloadFailedTotal ?? 0;
-    if (failedDownloads > 0) {
-      return {
-        title: "Some files could not be downloaded",
-        detail: `Two-way sync starts once ${failedDownloads} failed download${failedDownloads === 1 ? " is" : "s are"} resolved.`,
-        tone: "warning",
-      };
-    }
     if (phase === "paused") {
       return { title: "Paused", detail: "The first sync is paused. Resume when you're ready.", tone: "caution" };
     }
-    if (phase === "scanning_local" || phase === "applying_local" || phase === "preparing_two_way_baseline") {
-      return {
-        title: "Getting ready for two-way sync",
-        detail: "Checking this device before local changes start syncing to OneDrive.",
-        tone: "caution",
-      };
-    }
     return {
-      title: "Downloading your files",
-      detail: "The first sync copies everything from OneDrive. Changes on this device sync once it finishes.",
+      title: "First sync in progress",
+      detail: "Bringing this device and OneDrive into step. Files already here are compared, never overwritten.",
       tone: "caution",
     };
   }

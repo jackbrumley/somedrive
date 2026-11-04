@@ -84,7 +84,7 @@ export function AccountDetailUnifiedPanel({
     return (
       <AccountSyncActivityPanel
         runtimeStatus={runtimeStatus}
-        hasCompletedInitialSync={computeHasCompletedInitialSync(runtimeStatus)}
+        hasCompletedInitialSync={computeHasCompletedInitialSync(account)}
         issueMessage={hasBlockingIssue ? syncIssueMessage : null}
         issueKind={issueKind}
         issueActions={issueActions}

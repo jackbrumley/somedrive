@@ -112,20 +112,24 @@ fn start_sync_worker(state: &tauri::State<'_, AppState>, profile_id: &str) -> Re
                         match tick_sync_cycle(&profiles_lock, &sync_runtime, &profile_id_owned, &cancel_flag).await {
                             Ok(stats) => {
                                 log::info!(
-                                    "{} [cycle:{}] SYNC_CYCLE_COMPLETE downloaded={} uploaded={} upload_failures={} upload_cooldown_skips={} local_deleted={} remote_deleted={} remote_folders={} remote_pages={} remote_items={} remote_missing_skips={} local_items={}",
+                                    "{} [cycle:{}] SYNC_CYCLE_COMPLETE downloaded={} uploaded={} upload_failures={} matched={} baseline_refreshes={} conflict_copies={} local_deleted={} remote_deleted={} local_folders={} remote_folders={} remote_pages={} remote_items={} remote_unresolved={} local_items={} name_issues={}",
                                     stats.account_prefix,
                                     stats.cycle_id,
                                     stats.downloaded_files,
                                     stats.uploaded_files,
                                     stats.upload_failures,
-                                    stats.upload_cooldown_skips,
+                                    stats.matched_files,
+                                    stats.baseline_refreshes,
+                                    stats.conflict_copies,
                                     stats.deleted_local,
                                     stats.deleted_remote,
+                                    stats.created_local_folders,
                                     stats.created_remote_folders,
                                     stats.remote_pages,
                                     stats.remote_items_received,
-                                    stats.remote_items_skipped_missing,
+                                    stats.remote_items_skipped_unresolved,
                                     stats.local_items_seen,
+                                    stats.name_issues,
                                 );
                             }
                             Err(error) => {

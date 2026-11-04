@@ -30,6 +30,9 @@ tauri-plugin-opener = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
 clap = { version = "4", features = ["derive"] }
+base64 = "0.22"
+trash = "5"
+unicode-normalization = "0.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # GTK prgname = Wayland app_id; must be set before any GTK use (platform::linux).

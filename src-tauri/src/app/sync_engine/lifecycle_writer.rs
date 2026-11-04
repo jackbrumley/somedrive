@@ -221,16 +221,6 @@ fn persist_lifecycle_operational_state(
     persist_sync_lifecycle_operational_state(profile_id, state)
 }
 
-fn runtime_record_remote_discovered(
-    runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
-    profile_id: &str,
-    item_id: &str,
-) {
-    if let Ok(mut runtime_map) = runtime.lock() {
-        sync_runtime::record_remote_discovered(&mut runtime_map, profile_id, item_id);
-    }
-}
-
 fn runtime_record_remote_download_completed(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
@@ -472,7 +462,6 @@ mod lifecycle_writer_tests {
             built.current_activity.progress_mode
         );
         assert_eq!(hydrated.remote_scan_complete, built.remote_scan_complete);
-        assert_eq!(hydrated.two_way_ready, built.two_way_ready);
         assert_eq!(
             hydrated.remote_download_planned_total,
             built.remote_download_planned_total

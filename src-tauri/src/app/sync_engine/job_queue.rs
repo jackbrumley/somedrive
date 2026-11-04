@@ -2,9 +2,6 @@ use crate::app::sync_runtime::{SyncRuntimeRecentItem, SyncRuntimeTransfer};
 
 const DOWNLOAD_JOB_DIRECTION: &str = "download";
 const UPLOAD_JOB_DIRECTION: &str = "upload";
-const DELETE_REMOTE_JOB_DIRECTION: &str = "delete_remote";
-const DELETE_LOCAL_JOB_DIRECTION: &str = "delete_local";
-const CONFLICT_JOB_DIRECTION: &str = "conflict";
 const DOWNLOAD_JOB_STATE_QUEUED: &str = "queued";
 const DOWNLOAD_JOB_STATE_IN_PROGRESS: &str = "in_progress";
 const DOWNLOAD_JOB_STATE_RETRY_WAIT: &str = "retry_wait";
@@ -22,8 +19,6 @@ struct ClaimedDownloadJob {
     job_id: i64,
     item_id: String,
     path: String,
-    remote_size: u64,
-    remote_modified_ts: i64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -95,9 +90,6 @@ struct ThrottleCounters {
 
 #[derive(Debug, Clone)]
 struct SyncLifecycleStateRow {
-    two_way_ready: bool,
-    bootstrap_scan_initialized: bool,
-    bootstrap_full_scan_completed: bool,
     delta_link: Option<String>,
     active_delta_next_link: Option<String>,
     last_cycle_at: Option<String>,
@@ -126,9 +118,6 @@ struct LargeDeleteGuardState {
 
 #[derive(Debug, Clone, Default)]
 struct SyncLifecycleOperationalState {
-    two_way_ready: bool,
-    bootstrap_scan_initialized: bool,
-    bootstrap_full_scan_completed: bool,
     delta_link: Option<String>,
     active_delta_next_link: Option<String>,
     last_cycle_at: Option<String>,
@@ -137,9 +126,6 @@ struct SyncLifecycleOperationalState {
 impl Default for SyncLifecycleStateRow {
     fn default() -> Self {
         Self {
-            two_way_ready: false,
-            bootstrap_scan_initialized: false,
-            bootstrap_full_scan_completed: false,
             delta_link: None,
             active_delta_next_link: None,
             last_cycle_at: None,
@@ -177,7 +163,7 @@ pub struct RetryAllFailedDownloadJobsReport {
 
 include!("job_queue_db.rs");
 include!("job_queue_lifecycle_store.rs");
-include!("job_queue_state_store.rs");
+include!("sync_files_store.rs");
 include!("job_queue_download_store.rs");
 include!("job_queue_upload_store.rs");
 include!("job_queue_activity_projection.rs");

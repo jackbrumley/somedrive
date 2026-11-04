@@ -1,9 +1,29 @@
+/// How an upload may treat an item already at its path in OneDrive.
+#[derive(Debug, Clone)]
+enum UploadTarget {
+    /// A new file: fail if something appeared at the path since the plan.
+    New,
+    /// Replace the synced version; an upload session only proceeds if the
+    /// cloud still holds `base_etag`.
+    Replace { base_etag: Option<String> },
+}
+
+impl UploadTarget {
+    fn conflict_behavior(&self) -> &'static str {
+        match self {
+            Self::New => "fail",
+            Self::Replace { .. } => "replace",
+        }
+    }
+}
+
 async fn upload_file_by_path(
     graph: &mut GraphContext,
     sync_root: &Path,
     relative_path: &str,
+    target: &UploadTarget,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<DriveItemResponse, String> {
+) -> Result<GraphDriveItem, String> {
     ensure_not_cancelled(cancel_flag)?;
     let local_path = sync_root.join(path_to_local(relative_path));
     let metadata = std::fs::metadata(&local_path).map_err(|error| {
@@ -57,6 +77,7 @@ async fn upload_file_by_path(
             graph,
             upload_job_id,
             relative_path,
+            target,
             content,
             content_len,
             transfer_id.as_deref(),
@@ -100,6 +121,7 @@ async fn upload_file_by_path(
         graph,
         upload_job_id,
         relative_path,
+        target,
         &local_path,
         content_len,
         transfer_id.as_deref(),
@@ -166,17 +188,25 @@ fn resolve_upload_retry_delay(attempt_count: u32) -> Duration {
     Duration::from_secs(retry_seconds.max(1))
 }
 
+// the upload needs the job, the path, the target, the bytes and the transfer
+// row; an upload request struct is tracked with the cycle context.
+#[allow(clippy::too_many_arguments)]
 async fn upload_small_file_simple(
     graph: &mut GraphContext,
     upload_job_id: i64,
     relative_path: &str,
+    target: &UploadTarget,
     content: Vec<u8>,
     content_len: u64,
     transfer_id: Option<&str>,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<DriveItemResponse, String> {
+) -> Result<GraphDriveItem, String> {
     let encoded_path = encode_graph_path(relative_path);
-    let url = format!("{GRAPH_ROOT}/me/drive/root:/{}:/content", encoded_path);
+    let url = format!(
+        "{GRAPH_ROOT}/me/drive/root:/{}:/content?@microsoft.graph.conflictBehavior={}",
+        encoded_path,
+        target.conflict_behavior()
+    );
     let client = graph_http_client()?;
     let mut refreshed = false;
     loop {
@@ -248,7 +278,7 @@ async fn upload_small_file_simple(
                 relative_path, status, snippet
             ));
         }
-        let parsed = serde_json::from_str::<DriveItemResponse>(&text)
+        let parsed = serde_json::from_str::<GraphDriveItem>(&text)
             .map_err(|error| format!("Failed decoding upload response JSON: {error}"))?;
         let _ = update_upload_job_progress(
             &graph.profile_id,
@@ -282,16 +312,19 @@ async fn upload_small_file_simple(
     }
 }
 
+// see upload_small_file_simple.
+#[allow(clippy::too_many_arguments)]
 async fn upload_large_file_session(
     graph: &mut GraphContext,
     upload_job_id: i64,
     relative_path: &str,
+    target: &UploadTarget,
     local_path: &Path,
     content_len: u64,
     transfer_id: Option<&str>,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<DriveItemResponse, String> {
-    let upload_url = create_upload_session(graph, relative_path, cancel_flag).await?;
+) -> Result<GraphDriveItem, String> {
+    let upload_url = create_upload_session(graph, relative_path, target, cancel_flag).await?;
     let chunk_size = resolve_upload_chunk_bytes();
     let client = graph_http_client()?;
     let mut file = std::fs::File::open(local_path).map_err(|error| {
@@ -396,7 +429,7 @@ async fn upload_large_file_session(
             }
 
             if status.is_success() {
-                let parsed = serde_json::from_str::<DriveItemResponse>(&text).map_err(|error| {
+                let parsed = serde_json::from_str::<GraphDriveItem>(&text).map_err(|error| {
                     format!("Failed decoding upload-session completion response JSON: {error}")
                 })?;
                 let _ = update_upload_job_progress(
@@ -452,9 +485,12 @@ async fn upload_large_file_session(
     ))
 }
 
+/// Starts an upload session. `If-Match` is sent only here (never on chunk
+/// uploads, where the eTag changes as the session runs).
 async fn create_upload_session(
     graph: &mut GraphContext,
     relative_path: &str,
+    target: &UploadTarget,
     cancel_flag: &Arc<AtomicBool>,
 ) -> Result<String, String> {
     let encoded_path = encode_graph_path(relative_path);
@@ -464,9 +500,13 @@ async fn create_upload_session(
     );
     let payload = serde_json::json!({
         "item": {
-            "@microsoft.graph.conflictBehavior": "replace"
+            "@microsoft.graph.conflictBehavior": target.conflict_behavior()
         }
     });
+    let if_match = match target {
+        UploadTarget::Replace { base_etag } => base_etag.clone(),
+        UploadTarget::New => None,
+    };
     let client = graph_http_client()?;
     let mut refreshed = false;
 
@@ -478,11 +518,14 @@ async fn create_upload_session(
             _ = wait_for_cancellation(Arc::clone(cancel_flag)) => {
                 return Err(SYNC_CANCELLED_ERROR.to_string());
             }
-            value = client
-                .post(&url)
-                .bearer_auth(&access_token)
-                .json(&payload)
-                .send() => {
+            value = {
+                let request = client.post(&url).bearer_auth(&access_token).json(&payload);
+                let request = match if_match.as_deref() {
+                    Some(etag) => request.header(reqwest::header::IF_MATCH, etag),
+                    None => request,
+                };
+                request.send()
+            } => {
                 value.map_err(|error| format!("Create upload session request failed: {error}"))?
             }
         };
