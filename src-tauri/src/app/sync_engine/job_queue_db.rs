@@ -153,7 +153,81 @@ pub(crate) fn sync_jobs_db_path(profile_id: &str) -> Result<PathBuf, String> {
     Ok(crate::paths::account_dir(profile_id)?.join("sync_jobs.db"))
 }
 
-pub(crate) fn open_sync_jobs_connection(profile_id: &str) -> Result<Connection, String> {
+/// Idle connections kept per account. Each worker or task that needs the
+/// database takes one and returns it when done, instead of opening the file
+/// (and setting its pragmas) for every query.
+const CONNECTION_POOL_CAPACITY_PER_ACCOUNT: usize = 8;
+
+static CONNECTION_POOL: std::sync::LazyLock<std::sync::Mutex<HashMap<String, Vec<Connection>>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
+/// A connection on loan from the account's pool; it goes back on drop.
+pub(crate) struct PooledConnection {
+    profile_id: String,
+    connection: Option<Connection>,
+}
+
+impl std::ops::Deref for PooledConnection {
+    type Target = Connection;
+    fn deref(&self) -> &Connection {
+        self.connection
+            .as_ref()
+            .expect("pooled connection present until drop")
+    }
+}
+
+impl std::ops::DerefMut for PooledConnection {
+    fn deref_mut(&mut self) -> &mut Connection {
+        self.connection
+            .as_mut()
+            .expect("pooled connection present until drop")
+    }
+}
+
+impl Drop for PooledConnection {
+    fn drop(&mut self) {
+        let Some(connection) = self.connection.take() else {
+            return;
+        };
+        // A connection still inside a transaction is never reused.
+        if !connection.is_autocommit() {
+            return;
+        }
+        if let Ok(mut pool) = CONNECTION_POOL.lock() {
+            let idle = pool.entry(self.profile_id.clone()).or_default();
+            if idle.len() < CONNECTION_POOL_CAPACITY_PER_ACCOUNT {
+                idle.push(connection);
+            }
+        }
+    }
+}
+
+/// Idle pooled connections for `profile_id` (tests).
+#[cfg(test)]
+pub(crate) fn idle_pooled_connections(profile_id: &str) -> usize {
+    CONNECTION_POOL
+        .lock()
+        .map(|pool| pool.get(profile_id).map_or(0, Vec::len))
+        .unwrap_or(0)
+}
+
+pub(crate) fn open_sync_jobs_connection(profile_id: &str) -> Result<PooledConnection, String> {
+    let pooled = CONNECTION_POOL
+        .lock()
+        .map_err(|_| "Sync database pool lock is poisoned".to_string())?
+        .get_mut(profile_id)
+        .and_then(Vec::pop);
+    let connection = match pooled {
+        Some(connection) => connection,
+        None => open_new_sync_jobs_connection(profile_id)?,
+    };
+    Ok(PooledConnection {
+        profile_id: profile_id.to_string(),
+        connection: Some(connection),
+    })
+}
+
+fn open_new_sync_jobs_connection(profile_id: &str) -> Result<Connection, String> {
     let db_path = sync_jobs_db_path(profile_id)?;
     if let Some(parent) = db_path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| {

@@ -482,7 +482,8 @@ pub(crate) fn update_upload_job_progress(
 }
 
 pub(crate) fn read_upload_job_counters(profile_id: &str) -> Result<UploadJobCounters, String> {
-    query_upload_job_counters(&open_sync_jobs_connection(profile_id)?, profile_id)
+    let connection = open_sync_jobs_connection(profile_id)?;
+    query_upload_job_counters(&connection, profile_id)
 }
 
 /// The upload counters read on a caller-owned connection, so they can share

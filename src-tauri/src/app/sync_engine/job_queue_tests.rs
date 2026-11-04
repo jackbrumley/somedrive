@@ -501,3 +501,35 @@ fn upload_retry_wait_is_not_claimed_until_due() {
         .expect("claim upload retry-wait due");
     assert!(due);
 }
+
+#[test]
+fn pooled_connections_are_reused_but_never_inside_a_transaction() {
+    let profile_id = test_profile_id("connection-pool");
+    {
+        let connection = open_sync_jobs_connection(&profile_id).expect("open");
+        connection
+            .execute_batch("BEGIN; INSERT INTO sync_throttle_events (profile_id, direction, occurred_at) VALUES ('x', 'y', 1);")
+            .expect("open a transaction and leave it");
+    }
+    let idle = idle_pooled_connections(&profile_id);
+    assert_eq!(
+        idle, 0,
+        "a connection left in a transaction is dropped, not pooled"
+    );
+
+    {
+        let _connection = open_sync_jobs_connection(&profile_id).expect("open");
+    }
+    let idle = idle_pooled_connections(&profile_id);
+    assert_eq!(idle, 1, "a finished connection goes back to the pool");
+    let reused = open_sync_jobs_connection(&profile_id).expect("reuse");
+    assert!(reused.is_autocommit());
+    let events: i64 = reused
+        .query_row(
+            "SELECT COUNT(1) FROM sync_throttle_events WHERE profile_id = 'x'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count");
+    assert_eq!(events, 0, "the abandoned transaction was rolled back");
+}

@@ -426,7 +426,8 @@ pub(crate) fn reset_running_sync_jobs_for_pause(profile_id: &str) -> Result<usiz
 }
 
 pub(crate) fn read_download_job_counters(profile_id: &str) -> Result<DownloadJobCounters, String> {
-    query_download_job_counters(&open_sync_jobs_connection(profile_id)?, profile_id)
+    let connection = open_sync_jobs_connection(profile_id)?;
+    query_download_job_counters(&connection, profile_id)
 }
 
 /// The download counters read on a caller-owned connection, so they can share
