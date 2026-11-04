@@ -1,7 +1,8 @@
-import { IconChevronLeft } from "@tabler/icons-preact";
+import { PageHeader } from "../components/shell/PageHeader";
 import { DebugSettingsCard } from "../components/settings/DebugSettingsCard";
+import { SettingRow } from "../components/ui/SettingRow";
 import { ToggleSwitch } from "../components/ui/ToggleSwitch";
-import type { LogLevel, SystemInfo } from "../types/somedrive";
+import type { DownloadConcurrencySetting, LogLevel, SystemInfo } from "../types/somedrive";
 
 interface SettingsPageProps {
   autostartEnabled: boolean;
@@ -10,7 +11,7 @@ interface SettingsPageProps {
   onToggleCloseToTray: (enabled: boolean) => Promise<void>;
   rawLoggerMode: boolean;
   onToggleRawLoggerMode: (enabled: boolean) => Promise<void>;
-  syncDownloadConcurrency: number;
+  syncDownloadConcurrency: DownloadConcurrencySetting | null;
   onChangeSyncDownloadConcurrency: (value: number) => Promise<void>;
   appVersion: string;
   checkingUpdates: boolean;
@@ -52,41 +53,14 @@ export function SettingsPage({
   onGoDebug,
   onBack,
 }: SettingsPageProps) {
-  const downloadConcurrencyMin = 8;
-  const downloadConcurrencyMax = 256;
-  const concurrencyProgress = Math.min(
-    1,
-    Math.max(
-      0,
-      (syncDownloadConcurrency - downloadConcurrencyMin) /
-        (downloadConcurrencyMax - downloadConcurrencyMin)
-    )
-  );
   const lastCheckedLabel = lastCheckedAt === null ? "Not yet" : new Date(lastCheckedAt).toLocaleString();
 
   return (
     <section class="page">
-      <div class="page-chrome">
-        <div class="page-header">
-          <a
-            class="page-header-back-link"
-            href="#/accounts"
-            onClick={(event) => {
-              event.preventDefault();
-              onBack();
-            }}
-            aria-label="Back to accounts"
-            title="Back to accounts"
-          >
-            <IconChevronLeft size={36} stroke={2.2} />
-          </a>
-          <h2>Settings</h2>
-        </div>
-      </div>
+      <PageHeader title="Settings" back={{ href: "#/accounts", label: "Back to accounts", onBack }} />
       <div class="page-scroll">
         <article class="card">
           <h3>General</h3>
-          <p>Set how SomeDrive starts up and closes on this device.</p>
           <div class="settings-list">
             <ToggleSwitch
               id="autostart-toggle"
@@ -107,46 +81,34 @@ export function SettingsPage({
 
         <article class="card">
           <h3>Updates</h3>
-          <p>
-            You are running SomeDrive v{appVersion}. Updates install in place and sync resumes after the restart.
-          </p>
-          <p class="settings-update-meta">Last checked: {lastCheckedLabel}</p>
-          {updateError && <p class="settings-update-meta error">Last check failed: {updateError}</p>}
-          <div class="button-row">
-            <button onClick={onCheckForUpdates} disabled={checkingUpdates}>
-              {checkingUpdates ? "Checking…" : "Check for Updates"}
-            </button>
+          <div class="settings-list">
+            <SettingRow
+              label={`SomeDrive v${appVersion}`}
+              description={
+                <>
+                  Last checked: {lastCheckedLabel}. Updates install in place and sync resumes after the restart.
+                  {updateError && <span class="setting-row-error">Last check failed: {updateError}</span>}
+                </>
+              }
+            >
+              <button type="button" class="ghost" onClick={onCheckForUpdates} disabled={checkingUpdates}>
+                {checkingUpdates ? "Checking…" : "Check for updates"}
+              </button>
+            </SettingRow>
           </div>
         </article>
 
         <article class="card">
-          <h3>Sync Performance</h3>
-          <p>Set the number of simultaneous cloud downloads. Higher values may increase speed but can trigger retries.</p>
+          <h3>Sync performance</h3>
           <div class="settings-list">
-            <label class="settings-range-field" htmlFor="download-concurrency-slider">
-              <span class="settings-range-label">Simultaneous downloads</span>
-              <div class="settings-range-control">
-                <input
-                  id="download-concurrency-slider"
-                  type="range"
-                  min={downloadConcurrencyMin}
-                  max={downloadConcurrencyMax}
-                  step={1}
-                  value={syncDownloadConcurrency}
-                  style={{
-                    "--settings-range-progress": String(concurrencyProgress),
-                  } as Record<string, string>}
-                  onChange={(event) => {
-                    const input = event.currentTarget as HTMLInputElement;
-                    void onChangeSyncDownloadConcurrency(Number.parseInt(input.value, 10));
-                  }}
-                />
-                <output class="settings-range-value" htmlFor="download-concurrency-slider">
-                  {syncDownloadConcurrency}
-                </output>
-              </div>
-              <span class="settings-range-description">Range: 8 to 256. Changes apply to subsequent sync cycles.</span>
-            </label>
+            {syncDownloadConcurrency === null ? (
+              <SettingRow label="Simultaneous downloads" description="This setting could not be loaded." />
+            ) : (
+              <DownloadConcurrencySlider
+                setting={syncDownloadConcurrency}
+                onChange={onChangeSyncDownloadConcurrency}
+              />
+            )}
           </div>
         </article>
 
@@ -164,5 +126,40 @@ export function SettingsPage({
         />
       </div>
     </section>
+  );
+}
+
+interface DownloadConcurrencySliderProps {
+  setting: DownloadConcurrencySetting;
+  onChange: (value: number) => Promise<void>;
+}
+
+function DownloadConcurrencySlider({ setting, onChange }: DownloadConcurrencySliderProps) {
+  const progress = (setting.value - setting.min) / (setting.max - setting.min);
+  return (
+    <SettingRow
+      label="Simultaneous downloads"
+      labelFor="download-concurrency-slider"
+      description={`More is faster, but Microsoft may slow SomeDrive down. ${setting.min} to ${setting.max}; applies from the next sync cycle.`}
+    >
+      <div class="settings-range-control">
+        <input
+          id="download-concurrency-slider"
+          type="range"
+          min={setting.min}
+          max={setting.max}
+          step={1}
+          value={setting.value}
+          style={{ "--settings-range-progress": String(progress) } as Record<string, string>}
+          onChange={(event) => {
+            const input = event.currentTarget as HTMLInputElement;
+            void onChange(Number.parseInt(input.value, 10));
+          }}
+        />
+        <output class="settings-range-value" htmlFor="download-concurrency-slider">
+          {setting.value}
+        </output>
+      </div>
+    </SettingRow>
   );
 }

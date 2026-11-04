@@ -213,3 +213,10 @@ export interface ToastMessage {
   type: ToastType;
   durationMs: number;
 }
+
+/** Download concurrency with the range the backend accepts (it owns the limits). */
+export interface DownloadConcurrencySetting {
+  value: number;
+  min: number;
+  max: number;
+}

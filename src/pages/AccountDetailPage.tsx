@@ -2,12 +2,12 @@ import {
   IconAdjustments,
   IconAlertTriangleFilled,
   IconBuildingBank,
-  IconChevronLeft,
   IconPlayerPauseFilled,
   IconPlayerPlayFilled,
   IconUser,
 } from "@tabler/icons-preact";
 import { memo } from "preact/compat";
+import { PageHeader } from "../components/shell/PageHeader";
 import { AccountDetailUnifiedPanel } from "../components/accounts/AccountDetailUnifiedPanel";
 import type { AccountProfile, SyncRuntimeAccountStatus } from "../types/somedrive";
 import { computeEffectiveSyncState } from "../components/accounts/syncStateSelectors";
@@ -57,86 +57,58 @@ const AccountDetailHeader = memo(function AccountDetailHeader({
   onSetAgentState,
 }: AccountDetailHeaderProps) {
   const { syncState } = computeEffectiveSyncState(account, runtimeStatus);
-  const nextSyncState: "syncing" | "paused" = syncState === "syncing" ? "paused" : "syncing";
-  const syncStateLabel = syncState === "stopped" ? "Stopped" : syncState === "syncing" ? "Syncing" : "Paused";
-  const syncButtonTitle = syncState === "stopped"
-    ? "Open synchronization details"
-    : syncState === "syncing"
-      ? "Pause synchronization"
-      : "Resume synchronization";
-  const accountKindLabel = account.kind.charAt(0).toUpperCase() + account.kind.slice(1);
-  const accountKindIcon = account.kind === "business" ? <IconBuildingBank size={15} /> : <IconUser size={15} />;
+  const accountKindLabel = account.kind === "business" ? "Business" : "Personal";
+  const accountKindIcon = account.kind === "business" ? <IconBuildingBank size={14} /> : <IconUser size={14} />;
   const isSyncView = view === "sync";
-  const backHref = isSyncView ? "#/accounts" : `#/accounts/${encodeURIComponent(account.id)}`;
-  const backLabel = isSyncView ? "Back to accounts" : "Back to synchronization";
 
-  const handleBack = () => {
-    if (isSyncView) {
-      onBack();
-      return;
-    }
-    onOpenSync(account.id);
-  };
+  // The same actions show in both views so the header never shifts.
+  const actions = (
+    <>
+      <span class="pill icon-pill account-kind-pill">
+        {accountKindIcon} {accountKindLabel}
+      </span>
+      <button
+        type="button"
+        class={isSyncView ? "ghost header-icon-btn" : "ghost header-icon-btn is-active"}
+        aria-label={isSyncView ? "Open account settings" : "Close account settings"}
+        aria-pressed={!isSyncView}
+        title={isSyncView ? "Account settings" : "Back to sync status"}
+        onClick={() => (isSyncView ? onOpenSettings(account.id) : onOpenSync(account.id))}
+      >
+        <IconAdjustments size={16} stroke={2} />
+      </button>
+      {syncState === "stopped" ? (
+        <span class="header-sync-state is-stopped" title="Sync is stopped. Details are on the sync page.">
+          <IconAlertTriangleFilled size={14} />
+          Stopped
+        </span>
+      ) : (
+        <button
+          type="button"
+          class="ghost header-sync-btn"
+          onClick={() => void onSetAgentState(account.id, syncState === "syncing" ? "paused" : "syncing")}
+        >
+          {syncState === "syncing" ? <IconPlayerPauseFilled size={14} /> : <IconPlayerPlayFilled size={14} />}
+          {syncState === "syncing" ? "Pause" : "Resume"}
+        </button>
+      )}
+    </>
+  );
 
   return (
-    <>
-      <div class="page-header account-detail-page-header">
-        <a
-          class="page-header-back-link"
-          href={backHref}
-          onClick={(event) => {
-            event.preventDefault();
-            handleBack();
-          }}
-          aria-label={backLabel}
-          title={backLabel}
-        >
-          <IconChevronLeft size={36} stroke={2.2} />
-        </a>
-        <h2>{account.displayName}</h2>
-        {isSyncView && (
-          <div class="account-detail-page-header-actions">
-            <span class="pill icon-pill account-kind-pill account-detail-kind-pill">{accountKindIcon} {accountKindLabel}</span>
-            <button
-              class="account-detail-settings-btn"
-              type="button"
-              aria-label="Open account settings"
-              title="Open account settings"
-              onClick={() => onOpenSettings(account.id)}
-            >
-              <IconAdjustments size={16} stroke={2.2} />
-            </button>
-            <div class="account-sync-nav-control">
-              <button
-                class={syncState === "stopped" ? "account-sync-nav-btn account-sync-nav-btn-stopped" : "account-sync-nav-btn"}
-                type="button"
-                aria-label={syncButtonTitle}
-                title={syncButtonTitle}
-                onClick={() => {
-                  if (syncState === "stopped") {
-                    return;
-                  }
-                  void onSetAgentState(account.id, nextSyncState);
-                }}
-              >
-                {syncState === "stopped" ? (
-                  <IconAlertTriangleFilled size={24} class="sync-stopped-icon" />
-                ) : syncState === "syncing" ? (
-                  <IconPlayerPauseFilled size={24} />
-                ) : (
-                  <IconPlayerPlayFilled size={24} />
-                )}
-              </button>
-              <span class="account-sync-state-label">{syncStateLabel}</span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <p class="page-subtitle account-detail-subtitle">
-        {isSyncView ? "Synchronization status and transfer activity." : "Account configuration and profile controls."}
-      </p>
-    </>
+    <PageHeader
+      title={account.displayName}
+      back={
+        isSyncView
+          ? { href: "#/accounts", label: "Back to accounts", onBack }
+          : {
+              href: `#/accounts/${encodeURIComponent(account.id)}`,
+              label: "Back to sync status",
+              onBack: () => onOpenSync(account.id),
+            }
+      }
+      actions={actions}
+    />
   );
 });
 
@@ -167,11 +139,7 @@ export function AccountDetailPage({
   if (!account) {
     return (
       <section class="page account-detail-page">
-        <div class="page-chrome">
-          <div class="page-header">
-            <h2>Account Not Found</h2>
-          </div>
-        </div>
+        <PageHeader title="Account not found" back={{ href: "#/accounts", label: "Back to accounts", onBack }} />
         <div class="page-scroll">
           <article class="card">
             <p>This account does not exist anymore. Return to the account list.</p>
@@ -184,17 +152,15 @@ export function AccountDetailPage({
 
   return (
     <section class="page account-detail-page">
-      <div class="page-chrome">
-        <AccountDetailHeader
-          account={account}
-          runtimeStatus={runtimeStatus}
-          view={view}
-          onBack={onBack}
-          onOpenSettings={onOpenSettings}
-          onOpenSync={onOpenSync}
-          onSetAgentState={onSetAgentState}
-        />
-      </div>
+      <AccountDetailHeader
+        account={account}
+        runtimeStatus={runtimeStatus}
+        view={view}
+        onBack={onBack}
+        onOpenSettings={onOpenSettings}
+        onOpenSync={onOpenSync}
+        onSetAgentState={onSetAgentState}
+      />
       <div class="page-scroll">
         <AccountDetailUnifiedPanel
           account={account}

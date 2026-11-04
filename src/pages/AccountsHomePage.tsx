@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { PageHeader } from "../components/shell/PageHeader";
 import { IconBrandGithub, IconHeart } from "@tabler/icons-preact";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { AddAccountCard } from "../components/accounts/AddAccountCard";
@@ -29,11 +30,7 @@ export function AccountsHomePage({
 
   return (
     <section class="page accounts-page">
-      <div class="page-chrome">
-        <div class="page-header">
-          <h2>Accounts</h2>
-        </div>
-      </div>
+      <PageHeader title="Accounts" />
       <div class="page-scroll accounts-page-scroll">
         <div class="accounts-grid">
           {accounts.map((account) => (

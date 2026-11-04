@@ -1,43 +1,25 @@
-@media (prefers-reduced-motion: reduce) {
-  .sync-icon-spinning {
-    animation: none;
-  }
-}
+
 
 @media (max-width: 860px) {
   .title-bar {
     cursor: move;
   }
 
-  .shell-actions {
-    justify-content: flex-start;
-    margin-left: 0;
-  }
-
   .window-controls {
     justify-content: flex-end;
-  }
-
-  .detail-header {
-    flex-direction: column;
-  }
-
-  .account-detail-unified-grid {
-    grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 700px) {
   .page-chrome {
-    padding: 12px 12px 8px;
+    padding: 10px 12px;
   }
 
   .page-scroll {
     padding: 10px 12px 12px;
   }
 
-  .button-row,
-  .inline-form-row {
+  .button-row {
     flex-direction: column;
   }
 

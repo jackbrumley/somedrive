@@ -1,74 +1,116 @@
+/*
+ * Design tokens. The palette follows the install site's dark theme
+ * (docs/assets/page.css): deep navy page, translucent panels, blue to teal
+ * accent. Every colour in src/styles/ comes from here.
+ */
 :root {
-  --font-main: "IBM Plex Sans", "Noto Sans", sans-serif;
-  --bg-page: #e9edf3;
-  --bg-surface: #f4f7fb;
-  --bg-card: #f7f9fc;
-  --bg-elevated: #eef3f9;
-  --line-soft: #cfd9e5;
-  --line-strong: #bdc9d8;
-  --text-main: #1d2735;
-  --text-muted: #667a92;
+  color-scheme: dark;
 
-  --brand-primary: #1475c6;
-  --brand-strong: #1a57d3;
+  --font-main: "Inter Variable", "Inter", system-ui, "Noto Sans", sans-serif;
+
+  --bg-page: #0d121b;
+  --bg-page-wash:
+    radial-gradient(ellipse 60% 70% at 92% -10%, rgba(34, 193, 195, 0.14) 0%, transparent 70%),
+    radial-gradient(ellipse 70% 80% at -5% -15%, rgba(29, 78, 216, 0.2) 0%, transparent 70%),
+    linear-gradient(180deg, #0f1a2b 0%, #0d121b 100%);
+  /* The install site's hexagon art, drawn faintly behind the top right of every page. */
+  --bg-page-art: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 420 340'%3E%3Cdefs%3E%3ClinearGradient id='a' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%231d4ed8' stop-opacity='0.55'/%3E%3Cstop offset='1' stop-color='%2322c1c3' stop-opacity='0.08'/%3E%3C/linearGradient%3E%3ClinearGradient id='b' x1='1' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%2322c1c3' stop-opacity='0.45'/%3E%3Cstop offset='1' stop-color='%231a57d3' stop-opacity='0.04'/%3E%3C/linearGradient%3E%3ClinearGradient id='c' x1='0' y1='1' x2='1' y2='0'%3E%3Cstop offset='0' stop-color='%230891b2' stop-opacity='0.04'/%3E%3Cstop offset='1' stop-color='%231a57d3' stop-opacity='0.3'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpolygon points='250,40 362.6,105 362.6,235 250,300 137.4,235 137.4,105' fill='url%28%23c%29'/%3E%3Cpolygon points='150,150 219.3,190 219.3,270 150,310 80.7,270 80.7,190' fill='url%28%23a%29'/%3E%3Cpolygon points='350,30 402,60 402,120 350,150 298,120 298,60' fill='url%28%23b%29'/%3E%3Cpolyline points='137.4,105 250,40 362.6,105' fill='none' stroke='%23ffffff' stroke-opacity='0.25' stroke-width='1'/%3E%3C/svg%3E");
+  --bg-surface: #111825;
+  --bg-card: rgba(20, 27, 39, 0.88);
+  --bg-elevated: #1a2333;
+  --bg-inset: #0a0f17;
+  --bg-hover: rgba(91, 140, 255, 0.08);
+  --bg-selected: rgba(91, 140, 255, 0.16);
+  --bg-selected-hover: rgba(91, 140, 255, 0.24);
+  --line-soft: #263246;
+  --line-strong: #33425c;
+  --text-main: #f3f7ff;
+  --text-muted: #a7b6cc;
+  --text-faint: #6f8099;
+  --heading: #f3f7ff;
+
+  --brand-primary: #5b8cff;
+  --brand-strong: #1d4ed8;
   --brand-highlight: #22c1c3;
-  --brand-soft: #0891b2;
+  --brand-soft: #7aa2ff;
   --brand-on-color: #ffffff;
-  --brand-gradient: linear-gradient(to top right, #0891b2 0%, #1a57d3 54%, #1d4ed8 100%);
-  --success-gradient: linear-gradient(145deg, #28c268 0%, #22a857 100%);
+  --brand-gradient: linear-gradient(135deg, #2f5fe0 0%, #1d4ed8 55%, #1a8fb5 100%);
+  --brand-gradient-hover: linear-gradient(135deg, #3d6cf0 0%, #2a5ce8 55%, #1f9fc6 100%);
+  --accent-bar: linear-gradient(90deg, #5b8cff 0%, #22c1c3 100%);
+  --success-gradient: linear-gradient(145deg, #12b886 0%, #0e9f6e 100%);
 
-  --titlebar-bg-start: #141a24;
-  --titlebar-bg-end: #0d121b;
-  --titlebar-solid: #1475c6;
-  --titlebar-text: #ffffff;
+  --card-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  --popover-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  --control-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+  --radius-card: 14px;
+  --radius-control: 9px;
+  --radius-button: 7px;
 
-  --top-control-bg: rgba(255, 255, 255, 0.18);
-  --top-control-bg-hover: rgba(255, 255, 255, 0.3);
-  --top-control-border: rgba(255, 255, 255, 0.32);
-  --top-control-text: #ffffff;
-  --top-control-active-border: rgba(255, 255, 255, 0.3);
+  --titlebar-bg-start: #0b1019;
+  --titlebar-bg-end: #0b1019;
+  --titlebar-solid: #1d4ed8;
+  --titlebar-text: #f3f7ff;
 
-  --control-muted-bg: #eef3f9;
-  --control-muted-bg-hover: #e5edf7;
-  --control-muted-border: #c7d3e2;
-  --control-muted-text: #2b3c54;
-  --control-selected-border: rgba(29, 78, 216, 0.35);
-  --focus-ring: rgba(34, 193, 195, 0.25);
+  --top-control-bg: rgba(255, 255, 255, 0.06);
+  --top-control-bg-hover: rgba(255, 255, 255, 0.12);
+  --top-control-border: rgba(255, 255, 255, 0.12);
+  --top-control-text: #f3f7ff;
+  --top-control-active-border: rgba(91, 140, 255, 0.55);
+  --window-close-bg: #e0617f;
+  --window-close-bg-hover: #ec7590;
 
-  --field-bg: #f9fbfe;
-  --field-bg-elevated: #ffffff;
-  --field-border: #c7d3e2;
-  --field-border-hover: #9fb3cc;
+  --control-muted-bg: #1a2333;
+  --control-muted-bg-hover: #212c40;
+  --control-muted-border: #2c3a52;
+  --control-muted-text: #d6e0f0;
+  --control-selected-border: rgba(91, 140, 255, 0.55);
+  --focus-ring: rgba(91, 140, 255, 0.35);
 
-  --danger-strong: #ba3a58;
-  --danger-border: #b43853;
+  --field-bg: #0f1520;
+  --field-bg-elevated: #141b27;
+  --field-border: #2c3a52;
+  --field-border-hover: #3d4f6d;
 
-  --sync-tone-info-text: #1c4f7a;
-  --sync-tone-info-detail: #3d6388;
-  --sync-tone-info-border: #bed5ee;
-  --sync-tone-info-bg: #eef6ff;
+  --overlay-backdrop: rgba(5, 8, 13, 0.7);
 
-  --sync-tone-caution-text: #8f5f1d;
-  --sync-tone-caution-detail: #986d33;
-  --sync-tone-caution-border: #e6c88d;
-  --sync-tone-caution-bg: #fff8ed;
+  --danger: #f0647f;
+  --danger-strong: #ff8399;
+  --danger-border: #c84a64;
+  --success: #10b981;
+  --success-strong: #34d399;
 
-  --sync-tone-warning-text: #7b2935;
-  --sync-tone-warning-detail: #8f3a47;
-  --sync-tone-warning-border: #ebc4ca;
-  --sync-tone-warning-bg: #fff2f4;
+  --sync-tone-info-text: #a9c4ff;
+  --sync-tone-info-detail: #a7b6cc;
+  --sync-tone-info-border: rgba(91, 140, 255, 0.35);
+  --sync-tone-info-bg: rgba(91, 140, 255, 0.1);
 
-  --sync-tone-success-text: #236548;
-  --sync-tone-success-detail: #3b7158;
-  --sync-tone-success-border: #b8dec7;
-  --sync-tone-success-bg: #ecf8f0;
+  --sync-tone-caution-text: #f5c977;
+  --sync-tone-caution-detail: #d9bd8a;
+  --sync-tone-caution-border: rgba(245, 180, 80, 0.35);
+  --sync-tone-caution-bg: rgba(245, 180, 80, 0.08);
+
+  --sync-tone-warning-text: #ff9aa8;
+  --sync-tone-warning-detail: #e7a9b2;
+  --sync-tone-warning-border: rgba(240, 100, 127, 0.4);
+  --sync-tone-warning-bg: rgba(240, 100, 127, 0.1);
+
+  --sync-tone-success-text: #6ee7b7;
+  --sync-tone-success-detail: #a3d9c2;
+  --sync-tone-success-border: rgba(16, 185, 129, 0.35);
+  --sync-tone-success-bg: rgba(16, 185, 129, 0.1);
+
+  --heart: #e5707f;
+  --heart-hover: #ff8a9b;
+
+  --add-card-text: #a3d9c2;
+  --add-card-border: rgba(16, 185, 129, 0.35);
+  --add-card-border-hover: rgba(52, 211, 153, 0.6);
+  --add-card-bg: rgba(16, 185, 129, 0.06);
+  --add-card-bg-hover: rgba(16, 185, 129, 0.12);
 
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
-
-  --success: #28c268;
-  --success-strong: #22a857;
-  --danger: #d54d69;
+  --space-5: 24px;
 }

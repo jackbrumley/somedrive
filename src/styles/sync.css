@@ -1,0 +1,430 @@
+/* Account sync page: overview, issues and activity (AccountSyncActivityPanel). */
+
+/* Fills the page so the activity list can take whatever height is left. */
+.sync-panel {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sync-overview,
+.sync-issue-card {
+  flex: none;
+}
+
+/* Shared glass panel, matching the install site's frosted panel. */
+.sync-overview,
+.sync-issue-card,
+.sync-activity {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  box-shadow: var(--card-shadow);
+  backdrop-filter: blur(14px);
+  overflow: hidden;
+}
+
+/* Overview */
+
+.sync-overview {
+  padding: 20px 20px 18px;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.sync-overview::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--accent-bar);
+}
+
+.sync-overview-headline {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.sync-overview-icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--sync-tone-info-border);
+  background: var(--sync-tone-info-bg);
+  color: var(--sync-tone-info-text);
+}
+
+.sync-overview-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--heading);
+}
+
+.sync-overview-detail {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.sync-tone-success .sync-overview-icon {
+  border-color: var(--sync-tone-success-border);
+  background: var(--sync-tone-success-bg);
+  color: var(--sync-tone-success-text);
+}
+
+.sync-tone-caution .sync-overview-icon {
+  border-color: var(--sync-tone-caution-border);
+  background: var(--sync-tone-caution-bg);
+  color: var(--sync-tone-caution-text);
+}
+
+.sync-tone-warning .sync-overview-icon {
+  border-color: var(--sync-tone-warning-border);
+  background: var(--sync-tone-warning-bg);
+  color: var(--sync-tone-warning-text);
+}
+
+.sync-overview-progress {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.sync-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+  font-size: 0.85rem;
+}
+
+.sync-progress-label {
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.sync-progress-percent {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sync-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+
+.sync-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent-bar);
+  transition: width 400ms ease;
+}
+
+.sync-progress-meta {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sync-overview-notes {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid var(--line-soft);
+  display: grid;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.sync-overview-notes li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.sync-overview-notes svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--text-faint);
+}
+
+/* Issues */
+
+.sync-issue-card {
+  padding: 18px 20px;
+  display: grid;
+  gap: var(--space-3);
+  border-color: var(--sync-tone-warning-border);
+}
+
+.sync-issue-card h4 {
+  font-size: 1rem;
+  color: var(--heading);
+}
+
+.sync-issue-card p {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.sync-issue-card-auth {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-color: var(--control-selected-border);
+  background:
+    linear-gradient(135deg, var(--sync-tone-info-bg) 0%, transparent 70%),
+    var(--bg-card);
+}
+
+.sync-issue-message {
+  word-break: break-word;
+}
+
+.sync-issue-hint {
+  font-size: 0.8rem;
+  color: var(--text-faint);
+}
+
+.sync-issue-actions,
+.sync-section-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sync-section-header {
+  justify-content: space-between;
+}
+
+.sync-file-open:focus-visible,
+.sync-activity-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* File rows (issues and activity) */
+
+.sync-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.sync-file-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sync-file-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 7px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sync-file-open:hover {
+  background: var(--bg-hover);
+}
+
+.sync-file-icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--bg-elevated);
+  color: var(--brand-soft);
+}
+
+.sync-file-icon-error {
+  background: var(--sync-tone-warning-bg);
+  color: var(--danger);
+}
+
+.sync-file-text {
+  min-width: 0;
+  display: grid;
+}
+
+.sync-file-name,
+.sync-file-folder {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-file-name {
+  font-size: 0.88rem;
+  color: var(--text-main);
+}
+
+.sync-file-folder {
+  font-size: 0.76rem;
+  color: var(--text-faint);
+}
+
+/* Activity */
+
+.sync-activity {
+  flex: 1 1 auto;
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px 8px;
+}
+
+.sync-activity-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Absolutely placed so the list's own height never feeds back into the
+   measured body height. */
+.sync-activity-body > .sync-activity-list {
+  position: absolute;
+  inset: 0;
+}
+
+.sync-activity-tabs {
+  flex: none;
+  display: flex;
+  gap: var(--space-1);
+  padding: 6px 6px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 6px;
+}
+
+.sync-activity-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sync-activity-tab:hover {
+  color: var(--text-main);
+}
+
+.sync-activity-tab.is-active {
+  background: var(--bg-elevated);
+  color: var(--text-main);
+}
+
+.sync-activity-count {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--line-soft);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.sync-activity-tab.is-active .sync-activity-count {
+  background: var(--sync-tone-info-bg);
+  color: var(--sync-tone-info-text);
+}
+
+.sync-activity-row {
+  width: 100%;
+  height: 52px;
+}
+
+/* Fixed-width right column so sizes and progress bars line up row to row. */
+.sync-activity-size {
+  flex: none;
+  width: 150px;
+  margin-left: auto;
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sync-activity-mini-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+
+.sync-activity-mini-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent-bar);
+}
+
+.sync-activity-state {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  color: var(--brand-soft);
+}
+
+.sync-activity-state.is-done {
+  color: var(--success);
+}
+
+.sync-activity-empty {
+  padding: 18px 12px 14px;
+  color: var(--text-faint);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+/* Thin scrollbars, as in the other apps */
+
+.sync-activity-list,
+.sync-file-list,
+.page-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+@media (max-width: 720px) {
+  .sync-issue-card-auth {
+    grid-template-columns: 1fr;
+  }
+
+  .sync-activity-size {
+    width: 104px;
+  }
+}

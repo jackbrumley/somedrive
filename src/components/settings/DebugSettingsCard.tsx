@@ -1,5 +1,6 @@
 import type { LogLevel, SystemInfo } from "../../types/somedrive";
 import { SelectField, type SelectFieldOption } from "../ui/SelectField";
+import { SettingRow } from "../ui/SettingRow";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 
 interface DebugSettingsCardProps {
@@ -37,60 +38,43 @@ export function DebugSettingsCard({
   onCopySystemInfo,
   onGoDebug,
 }: DebugSettingsCardProps) {
+  const systemSummary = systemInfo
+    ? `${systemInfo.appName} v${systemInfo.appVersion} (${systemInfo.buildProfile}) · ${systemInfo.distribution} · ${systemInfo.architecture} · ${systemInfo.desktop} (${systemInfo.sessionType})`
+    : "System info unavailable.";
+
   return (
     <article class="card">
       <h3>Debug</h3>
-      <h4>Logs</h4>
-      <p>For a bug report, attach the copied log and system info.</p>
-      <div class="button-row">
-        <button onClick={() => void onCopyLog()}>Copy log</button>
-        <button class="ghost" onClick={() => void onOpenLog()}>
-          Open log
-        </button>
-        <button class="ghost" onClick={() => void onOpenLogFolder()}>
-          Open log folder
-        </button>
-      </div>
-
-      <h4>System info</h4>
-      {systemInfo ? (
-        <dl class="system-info">
-          <dt>Version</dt>
-          <dd>
-            {systemInfo.appName} v{systemInfo.appVersion} ({systemInfo.buildProfile})
-          </dd>
-          <dt>OS</dt>
-          <dd>
-            {systemInfo.distribution} ({systemInfo.os})
-          </dd>
-          <dt>Architecture</dt>
-          <dd>{systemInfo.architecture}</dd>
-          <dt>Desktop</dt>
-          <dd>
-            {systemInfo.desktop} ({systemInfo.sessionType})
-          </dd>
-        </dl>
-      ) : (
-        <p>System info unavailable.</p>
-      )}
-      <div class="button-row">
-        <button class="ghost" onClick={() => void onCopySystemInfo()}>
-          Copy system info
-        </button>
-      </div>
-
-      <label class="field-label" for="log-level-select">
-        Log level
-      </label>
-      <SelectField
-        id="log-level-select"
-        name="log-level"
-        value={logLevel}
-        options={logLevelOptions}
-        onValueChange={(next) => void onChangeLogLevel(next as LogLevel)}
-      />
-
       <div class="settings-list">
+        <SettingRow label="Logs" description="For a bug report, attach the copied log and system info.">
+          <button type="button" class="ghost" onClick={() => void onCopyLog()}>
+            Copy log
+          </button>
+          <button type="button" class="ghost" onClick={() => void onOpenLog()}>
+            Open log
+          </button>
+          <button type="button" class="ghost" onClick={() => void onOpenLogFolder()}>
+            Open folder
+          </button>
+        </SettingRow>
+        <SettingRow label="System info" description={systemSummary}>
+          <button type="button" class="ghost" disabled={!systemInfo} onClick={() => void onCopySystemInfo()}>
+            Copy
+          </button>
+        </SettingRow>
+        <SettingRow
+          label="Log level"
+          labelFor="log-level-select"
+          description="How much detail the session log records. Info is right for everyday use."
+        >
+          <SelectField
+            id="log-level-select"
+            name="log-level"
+            value={logLevel}
+            options={logLevelOptions}
+            onValueChange={(next) => void onChangeLogLevel(next as LogLevel)}
+          />
+        </SettingRow>
         <ToggleSwitch
           id="raw-logger-mode-toggle"
           label="Raw logger mode"
@@ -98,11 +82,11 @@ export function DebugSettingsCard({
           checked={rawLoggerMode}
           onChange={onToggleRawLoggerMode}
         />
-      </div>
-      <div class="button-row">
-        <button class="ghost" onClick={onGoDebug}>
-          Open Debug Tools
-        </button>
+        <SettingRow label="Debug tools" description="Sync diagnostics for each account, the UI Lab and per-account logs.">
+          <button type="button" class="ghost" onClick={onGoDebug}>
+            Open
+          </button>
+        </SettingRow>
       </div>
     </article>
   );

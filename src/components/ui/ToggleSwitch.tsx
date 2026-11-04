@@ -21,10 +21,10 @@ export function ToggleSwitch({
   };
 
   return (
-    <label class={`toggle-field${disabled ? " is-disabled" : ""}`} for={id}>
-      <span class="toggle-copy">
-        <span class="toggle-label">{label}</span>
-        {description ? <span class="toggle-description">{description}</span> : null}
+    <label class={`setting-row toggle-field${disabled ? " is-disabled" : ""}`} for={id}>
+      <span class="setting-row-copy">
+        <span class="setting-row-label">{label}</span>
+        {description ? <span class="setting-row-description">{description}</span> : null}
       </span>
       <span class="toggle-control">
         <input

@@ -1,0 +1,99 @@
+/* Sync page Details tab: the engine's raw state (AccountSyncDetails). */
+
+.sync-details {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  padding: 4px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+.diagnostics-issue {
+  padding: 10px 12px;
+  border: 1px solid var(--sync-tone-warning-border);
+  border-radius: 10px;
+  background: var(--sync-tone-warning-bg);
+  color: var(--sync-tone-warning-text);
+  font-size: 0.84rem;
+  word-break: break-word;
+}
+
+.diagnostics-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+
+.diagnostics-group {
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--bg-surface);
+}
+
+.diagnostics-group-title {
+  margin-bottom: 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+summary.diagnostics-group-title {
+  cursor: pointer;
+}
+
+.diagnostics-metrics {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.diagnostics-metric {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: 0.8rem;
+}
+
+.diagnostics-metric dt {
+  color: var(--text-muted);
+}
+
+.diagnostics-metric dd {
+  margin: 0;
+  color: var(--text-main);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  word-break: break-word;
+}
+
+.diagnostics-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+  font-size: 0.78rem;
+}
+
+.diagnostics-list li {
+  display: grid;
+}
+
+.diagnostics-path {
+  color: var(--text-main);
+  word-break: break-all;
+}
+
+.diagnostics-meta {
+  color: var(--text-faint);
+}

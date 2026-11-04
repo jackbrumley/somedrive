@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
-import { IconChevronLeft } from "@tabler/icons-preact";
+import { PageHeader } from "../components/shell/PageHeader";
 import { AccountCard } from "../components/accounts/AccountCard";
 import { AccountDetailPage } from "./AccountDetailPage";
 import type {
@@ -351,23 +351,7 @@ export function UiLabPage({ onBack }: UiLabPageProps) {
 
   return (
     <section class="page">
-      <div class="page-chrome">
-        <div class="page-header">
-          <a
-            class="page-header-back-link"
-            href="#/debug"
-            onClick={(event) => {
-              event.preventDefault();
-              onBack();
-            }}
-            aria-label="Back to debug tools"
-            title="Back to debug tools"
-          >
-            <IconChevronLeft size={36} stroke={2.2} />
-          </a>
-          <h2>UI Lab</h2>
-        </div>
-      </div>
+      <PageHeader title="UI Lab" back={{ href: "#/debug", label: "Back to debug tools", onBack }} />
       <div class="page-scroll">
         {accounts.length === 0 ? (
           <p>No accounts configured yet. Show setup call-to-action.</p>

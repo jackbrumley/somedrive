@@ -1,32 +1,41 @@
 import type { SyncRuntimeAccountStatus } from "../../types/somedrive";
 
-type SyncModeTone = "info" | "success" | "warning" | "caution";
+export type SyncModeTone = "info" | "success" | "warning" | "caution";
 
-interface SyncModeMessage {
+export interface SyncModeMessage {
   title: string;
   detail: string;
   tone: SyncModeTone;
 }
 
-function isDeletionGuardIssue(runtimeStatus: SyncRuntimeAccountStatus | null): boolean {
-  if (!runtimeStatus) {
-    return false;
-  }
+function isDeletionGuardIssue(runtimeStatus: SyncRuntimeAccountStatus): boolean {
   if (runtimeStatus.issueCode === "large_delete_guard") {
     return true;
   }
   return runtimeStatus.issueActions.includes("confirm_large_delete") || runtimeStatus.issueActions.includes("keep_cloud_files");
 }
 
+function hasActiveTransfers(runtimeStatus: SyncRuntimeAccountStatus): boolean {
+  return (runtimeStatus.remoteDownloadInFlight ?? 0) > 0 || (runtimeStatus.uploadInFlight ?? 0) > 0;
+}
+
+/** The one-line, plain-language headline for an account's sync state. */
 export function syncModeMessage(
   runtimeStatus: SyncRuntimeAccountStatus | null,
   hasCompletedInitialSync: boolean
 ): SyncModeMessage {
   if (!runtimeStatus) {
+    return { title: "Connecting", detail: "Waiting for the first status update from the sync engine.", tone: "info" };
+  }
+
+  if (runtimeStatus.authReady === false) {
     return {
-      title: "Runtime status",
-      detail: "null",
-      tone: "info",
+      title: "Sign-in needed",
+      detail:
+        runtimeStatus.issueCode === "auth_required" && runtimeStatus.issueMessage
+          ? runtimeStatus.issueMessage
+          : "Sign in to Microsoft to start syncing this account.",
+      tone: "warning",
     };
   }
 
@@ -38,63 +47,48 @@ export function syncModeMessage(
     };
   }
 
-  const phase = runtimeStatus?.phase ?? "idle";
+  const phase = runtimeStatus.phase;
+  if (phase === "error") {
+    return {
+      title: "Sync stopped",
+      detail: runtimeStatus.issueMessage ?? "A problem stopped sync. Details are below.",
+      tone: "warning",
+    };
+  }
+
   if (!hasCompletedInitialSync) {
-    if (phase === "error") {
-      return {
-        title: "Initial sync needs attention",
-        detail: runtimeStatus?.issueMessage ?? "A blocking issue interrupted initial sync.",
-        tone: "warning",
-      };
-    }
-    const failedDownloads = runtimeStatus?.remoteDownloadFailedTotal ?? 0;
+    const failedDownloads = runtimeStatus.remoteDownloadFailedTotal ?? 0;
     if (failedDownloads > 0) {
       return {
-        title: "Two-way sync blocked",
-        detail: `Cannot enable two-way sync until ${failedDownloads} failed cloud download${failedDownloads === 1 ? " is" : "s are"} resolved.`,
+        title: "Some files could not be downloaded",
+        detail: `Two-way sync starts once ${failedDownloads} failed download${failedDownloads === 1 ? " is" : "s are"} resolved.`,
         tone: "warning",
-      };
-    }
-    if (phase === "scanning_local" || phase === "applying_local" || phase === "preparing_two_way_baseline") {
-      return {
-        title: "Preparing two-way sync",
-        detail: "Cloud files are still in control. Local adds/deletes won't sync yet.",
-        tone: "caution",
       };
     }
     if (phase === "paused") {
+      return { title: "Paused", detail: "The first sync is paused. Resume when you're ready.", tone: "caution" };
+    }
+    if (phase === "scanning_local" || phase === "applying_local" || phase === "preparing_two_way_baseline") {
       return {
-        title: "Initial sync paused",
-        detail: "Initial sync runs in cloud-files-only mode.",
+        title: "Getting ready for two-way sync",
+        detail: "Checking this device before local changes start syncing to OneDrive.",
         tone: "caution",
       };
     }
     return {
-      title: "Initial sync in progress",
-      detail: "Downloading cloud files first. Local adds/deletes won't sync yet.",
+      title: "Downloading your files",
+      detail: "The first sync copies everything from OneDrive. Changes on this device sync once it finishes.",
       tone: "caution",
     };
   }
 
   if (phase === "paused") {
-    return {
-      title: "Two-way sync paused",
-      detail: "Resume sync to keep this device and cloud files aligned.",
-      tone: "info",
-    };
+    return { title: "Paused", detail: "Resume to keep this device and OneDrive in step.", tone: "info" };
   }
 
-  if (phase === "error") {
-    return {
-      title: "Sync needs attention",
-      detail: runtimeStatus?.issueMessage ?? "An issue is blocking two-way sync.",
-      tone: "warning",
-    };
+  if (hasActiveTransfers(runtimeStatus)) {
+    return { title: "Syncing", detail: "Changes on this device and in OneDrive are being synced.", tone: "success" };
   }
 
-  return {
-    title: "Two-way sync is active",
-    detail: "Changes on this device and in cloud stay in sync.",
-    tone: "success",
-  };
+  return { title: "Up to date", detail: "Changes on this device and in OneDrive stay in step.", tone: "success" };
 }

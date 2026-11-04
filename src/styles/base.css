@@ -19,10 +19,11 @@ body {
   font-weight: 400;
   color: var(--text-main);
   overflow: hidden;
-  background:
-    radial-gradient(980px 620px at -12% 108%, rgba(34, 193, 195, 0.08) 0%, rgba(34, 193, 195, 0) 62%),
-    radial-gradient(860px 520px at 108% -10%, rgba(8, 145, 178, 0.08) 0%, rgba(8, 145, 178, 0) 60%),
-    linear-gradient(180deg, #f1f4f8 0%, #e7ecf3 55%, #dde4ed 100%);
+  background-color: var(--bg-page);
+  background-image: var(--bg-page-art), var(--bg-page-wash);
+  background-repeat: no-repeat;
+  background-position: right -40px top 10px, center;
+  background-size: 360px auto, cover;
 }
 
 h1,
@@ -67,5 +68,5 @@ a {
 }
 
 .error {
-  color: #c73f61;
+  color: var(--danger);
 }

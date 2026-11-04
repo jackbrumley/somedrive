@@ -8,9 +8,9 @@
 .page-chrome {
   position: relative;
   z-index: 5;
-  padding: 14px 14px 10px;
-  background: var(--bg-page);
-  border-bottom: 1px solid rgba(189, 201, 216, 0.62);
+  padding: 10px 14px;
+  background: transparent;
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .page-scroll {
@@ -21,64 +21,71 @@
   padding: 12px 14px 14px;
 }
 
-.page h2 {
-  margin: 0 0 4px;
-  color: var(--titlebar-solid);
-  text-align: center;
-}
-
+/* PageHeader: fixed height, three columns, so the back control, title and
+   actions sit in the same place on every page. */
 .page-header {
-  position: relative;
+  height: 40px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
   margin: 0;
 }
 
-.page-header h2 {
+.page-header-start,
+.page-header-end {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.page-header-end {
+  justify-content: flex-end;
+}
+
+.page-header-title {
   margin: 0;
+  max-width: 46vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: center;
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--heading);
 }
 
 .page-header-back-link {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  padding: 2px;
-  background: transparent;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-button);
   color: var(--text-muted);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   text-decoration: none;
-  line-height: 0;
-  transition: color 140ms ease, transform 140ms ease;
+  transition: color 140ms ease, background 140ms ease;
 }
 
 .page-header-back-link:hover {
   color: var(--text-main);
-  transform: translate(-1px, -50%);
+  background: var(--bg-hover);
 }
 
 .page-header-back-link:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--focus-ring);
-  border-radius: 5px;
-}
-
-.page-subtitle {
-  margin: 0 0 12px;
-  color: var(--text-muted);
-  font-weight: 400;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
 }
 
 .card {
   background: var(--bg-card);
   border: 1px solid var(--line-soft);
-  border-radius: 12px;
-  padding: 14px;
+  border-radius: var(--radius-card);
+  padding: 18px;
   margin-bottom: 12px;
-  box-shadow: 0 8px 20px rgba(24, 39, 75, 0.08);
+  box-shadow: var(--card-shadow);
+  backdrop-filter: blur(14px);
 }
 
 .card > * + * {
@@ -91,5 +98,56 @@
 
 .card h3,
 .card h4 {
-  color: var(--titlebar-solid);
+  color: var(--heading);
+}
+
+/* Compact controls for PageHeader actions. */
+.header-icon-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+.header-icon-btn.is-active {
+  color: var(--brand-primary);
+  border-color: var(--control-selected-border);
+}
+
+.header-sync-btn {
+  min-width: 92px;
+}
+
+.header-sync-state {
+  min-width: 92px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--sync-tone-warning-border);
+  border-radius: var(--radius-button);
+  background: var(--sync-tone-warning-bg);
+  color: var(--danger);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+/* Read-only facts shown as label over value, in a responsive grid. */
+.facts-grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.facts-grid dt {
+  font-size: 0.75rem;
+  color: var(--text-faint);
+}
+
+.facts-grid dd {
+  margin: 2px 0 0;
+  color: var(--text-main);
+  overflow-wrap: anywhere;
 }

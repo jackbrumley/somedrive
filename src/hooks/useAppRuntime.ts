@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { routeStateFromHash, type AppRouteState } from "../routes/appRoutes";
 import type {
+  DownloadConcurrencySetting,
   ActivityEvent,
   AppStatusSnapshot,
   SyncStatusEvent,
@@ -51,7 +52,8 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
   const [closeToTray, setCloseToTray] = useState(true);
   const [logLevel, setLogLevel] = useState<LogLevel>("info");
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
-  const [syncDownloadConcurrency, setSyncDownloadConcurrency] = useState(12);
+  const [syncDownloadConcurrency, setSyncDownloadConcurrency] =
+    useState<DownloadConcurrencySetting | null>(null);
 
   const navigation = useMemo(() => createNavigationActions({ setRouteState }), [setRouteState]);
   const refreshActions = useMemo(
@@ -240,7 +242,7 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
 
   const updateSyncDownloadConcurrency = async (value: number) => {
     const updated = await systemActions.setSyncDownloadConcurrency(value);
-    if (typeof updated === "number") {
+    if (updated !== null) {
       setSyncDownloadConcurrency(updated);
     }
   };

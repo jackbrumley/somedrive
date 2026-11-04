@@ -4,7 +4,12 @@ import {
   enable as enableAutostart,
   isEnabled as isAutostartEnabled,
 } from "@tauri-apps/plugin-autostart";
-import type { LogLevel, SystemInfo, ToastType } from "../../types/somedrive";
+import type {
+  DownloadConcurrencySetting,
+  LogLevel,
+  SystemInfo,
+  ToastType,
+} from "../../types/somedrive";
 
 interface SystemActionsFactoryParams {
   showToast: (message: string, type?: ToastType) => void;
@@ -180,19 +185,19 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
 
   const fetchSyncDownloadConcurrency = async () => {
     try {
-      return await invoke<number>("get_sync_download_concurrency");
+      return await invoke<DownloadConcurrencySetting>("get_sync_download_concurrency");
     } catch (error) {
       showToast(`Failed to read download concurrency setting: ${error}`, "error");
-      return 12;
+      return null;
     }
   };
 
   const setSyncDownloadConcurrency = async (value: number) => {
     try {
-      const updated = await invoke<number>("set_sync_download_concurrency", {
+      const updated = await invoke<DownloadConcurrencySetting>("set_sync_download_concurrency", {
         value,
       });
-      showToast(`Download concurrency set to ${updated}.`, "success");
+      showToast(`Download concurrency set to ${updated.value}.`, "success");
       return updated;
     } catch (error) {
       showToast(`Failed to update download concurrency: ${error}`, "error");

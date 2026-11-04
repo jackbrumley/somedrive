@@ -56,21 +56,21 @@
 }
 
 .accounts-page-footer-icon-btn:hover {
-  background: rgba(127, 139, 157, 0.22);
+  background: var(--bg-hover);
   color: var(--text-main);
   transform: translateY(-1px);
 }
 
 .accounts-page-footer-heart-btn {
-  color: #d96874;
+  color: var(--heart);
 }
 
 .accounts-page-footer-github-btn:hover {
-  color: #0f1115;
+  color: var(--text-main);
 }
 
 .accounts-page-footer-heart-btn:hover {
-  color: #e11d48;
+  color: var(--heart-hover);
 }
 
 .accounts-page-footer-version {
@@ -89,11 +89,11 @@
   border: 2px solid var(--line-soft);
   border-radius: 10px;
   padding: 12px;
-  background: #f8fbff;
+  background: var(--bg-card);
 }
 
 .account-home-card {
-  background: #f8fbff;
+  background: var(--bg-card);
 }
 
 .account-home-button {
@@ -111,8 +111,8 @@
 
 .account-home-button:hover {
   border-color: var(--brand-primary);
-  background: #f4f9ff;
-  box-shadow: 0 4px 10px rgba(20, 117, 198, 0.12);
+  background: var(--bg-elevated);
+  box-shadow: var(--card-shadow);
 }
 
 .account-home-button:focus-visible {
@@ -182,18 +182,6 @@
   font-weight: 500;
 }
 
-.account-meta-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.account-sync-preview-anchor {
-  position: relative;
-  flex-shrink: 0;
-}
-
 .sync-state-btn {
   width: 30px;
   height: 30px;
@@ -202,26 +190,17 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #2dbd8f;
-  color: #ffffff;
+  background: var(--success);
+  color: var(--brand-on-color);
 }
 
 .sync-state-btn:hover {
-  background: #22a579;
+  background: var(--success-strong);
 }
 
 .sync-state-btn:disabled {
-  background: rgba(255, 255, 255, 0.22);
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.sync-icon-spinning {
-  animation: sync-spin 1.2s linear infinite;
-}
-
-.account-sync-preview-floating {
-  position: fixed;
-  z-index: 40;
+  background: var(--control-muted-bg);
+  color: var(--text-faint);
 }
 
 .account-sync-nav-btn {
@@ -233,17 +212,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #dcecff;
-  color: var(--titlebar-solid);
-}
-
-.account-sync-nav-control {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 4px;
-  width: 108px;
+  background: var(--control-muted-bg);
+  border: 1px solid var(--control-muted-border);
+  color: var(--brand-primary);
 }
 
 .account-sync-state-label {
@@ -256,28 +227,18 @@
 }
 
 .account-sync-nav-btn:hover {
-  background: #cfe4ff;
+  background: var(--control-muted-bg-hover);
 }
 
 .account-sync-nav-btn-stopped {
-  background: #ffe7e9;
-  color: #b42335;
+  background: var(--sync-tone-warning-bg);
+  border-color: var(--sync-tone-warning-border);
+  color: var(--danger);
 }
 
 .account-sync-nav-btn-stopped:hover {
-  background: #ffd8dd;
-}
-
-.account-sync-nav-btn-syncing {
-}
-
-.account-sync-nav-btn-warning {
-  background: #fff1dd;
-  color: #d2791f;
-}
-
-.account-sync-nav-btn-warning:hover {
-  background: #fee8cb;
+  background: var(--sync-tone-warning-bg);
+  border-color: var(--danger-border);
 }
 
 .account-sync-issue-badge {
@@ -291,560 +252,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #cf3748;
-  color: #ffffff;
+  background: var(--danger-border);
+  color: var(--brand-on-color);
   font-size: 0.64rem;
   font-weight: 700;
   line-height: 1;
 }
 
 .sync-stopped-icon {
-  color: #cf3748;
-}
-
-.account-sync-preview-popover {
-  width: min(560px, 90vw);
-  max-height: min(78vh, 820px);
-  overflow: auto;
-  border-radius: 10px;
-  border: 1px solid #bdd2ea;
-  background: linear-gradient(170deg, #fbfdff 0%, #f2f7fd 100%);
-  box-shadow: 0 14px 28px rgba(23, 44, 76, 0.2);
-  padding: 9px;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transition: opacity 120ms ease, transform 120ms ease;
-}
-
-.account-sync-activity-panel {
-  width: min(560px, 90vw);
-  max-height: min(78vh, 820px);
-  overflow: auto;
-  border-radius: 10px;
-  border: 1px solid #bdd2ea;
-  background: linear-gradient(170deg, #fbfdff 0%, #f2f7fd 100%);
-  box-shadow: 0 14px 28px rgba(23, 44, 76, 0.2);
-  padding: 9px;
-}
-
-.account-sync-preview-popover-top {
-  transform: translateY(2px);
-}
-
-.account-sync-preview-popover-bottom {
-  transform: translateY(-2px);
-}
-
-.account-sync-preview-popover-visible {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-  transform: translateY(0);
-}
-
-.account-sync-preview-popover-conflict {
-  border-color: #e3b76d;
-  box-shadow: 0 14px 28px rgba(125, 86, 26, 0.22);
-}
-
-.account-sync-preview-popover-conflict .account-sync-preview-subtitle {
-  color: #8a5a12;
-}
-
-.account-sync-preview-subtitle {
-  margin: 0 0 6px;
-  color: var(--text-muted);
-  font-size: 0.76rem;
-}
-
-.account-sync-lane-meta {
-  margin: 2px 0 0;
-  color: #5e7690;
-  font-size: 0.68rem;
-}
-
-.account-sync-mode-banner {
-  border: 1px solid var(--sync-tone-info-border);
-  border-radius: 10px;
-  background: var(--sync-tone-info-bg);
-  padding: 8px 10px;
-  margin: 0 0 8px;
-}
-
-.account-sync-mode-banner-title {
-  margin: 0;
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: var(--sync-tone-info-text);
-}
-
-.account-sync-mode-banner-detail {
-  margin: 2px 0 0;
-  font-size: 0.74rem;
-  color: var(--sync-tone-info-detail);
-}
-
-.account-sync-mode-banner-success {
-  border-color: var(--sync-tone-success-border);
-  background: var(--sync-tone-success-bg);
-}
-
-.account-sync-mode-banner-success .account-sync-mode-banner-title {
-  color: var(--sync-tone-success-text);
-}
-
-.account-sync-mode-banner-success .account-sync-mode-banner-detail {
-  color: var(--sync-tone-success-detail);
-}
-
-.account-sync-mode-banner-caution {
-  border-color: var(--sync-tone-caution-border);
-  background: var(--sync-tone-caution-bg);
-}
-
-.account-sync-mode-banner-caution .account-sync-mode-banner-title {
-  color: var(--sync-tone-caution-text);
-}
-
-.account-sync-mode-banner-caution .account-sync-mode-banner-detail {
-  color: var(--sync-tone-caution-detail);
-}
-
-.account-sync-mode-banner-warning {
-  border-color: var(--sync-tone-warning-border);
-  background: var(--sync-tone-warning-bg);
-}
-
-.account-sync-mode-banner-warning .account-sync-mode-banner-title {
-  color: var(--sync-tone-warning-text);
-}
-
-.account-sync-mode-banner-warning .account-sync-mode-banner-detail {
-  color: var(--sync-tone-warning-detail);
-}
-
-.account-sync-current-activity {
-  border: 1px solid rgba(78, 116, 152, 0.22);
-  border-radius: 10px;
-  background: rgba(229, 239, 249, 0.64);
-  padding: 8px 10px;
-  margin: 0 0 8px;
-}
-
-.account-sync-current-activity-label {
-  margin: 0;
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #5a7896;
-}
-
-.account-sync-current-activity-title {
-  margin: 2px 0 0;
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: #214667;
-}
-
-.account-sync-current-activity-detail {
-  margin: 2px 0 0;
-  font-size: 0.74rem;
-  color: #3c5e7f;
-}
-
-.account-sync-current-activity-progress {
-  margin: 4px 0 0;
-  font-size: 0.73rem;
-  color: #285072;
-  font-weight: 600;
-}
-
-.account-sync-current-activity-track {
-  position: relative;
-  overflow: hidden;
-  margin-top: 6px;
-  width: 100%;
-  height: 7px;
-  border-radius: 999px;
-  background: rgba(112, 150, 183, 0.24);
-}
-
-.account-sync-current-activity-fill {
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #2e84c6 0%, #36b0b7 100%);
-  transition: width 220ms ease;
-}
-
-.account-sync-current-activity-fill-indeterminate {
-  animation: account-sync-current-activity-indeterminate 1.1s ease-in-out infinite;
-}
-
-@keyframes account-sync-current-activity-indeterminate {
-  0% {
-    transform: translateX(-120%);
-  }
-
-  100% {
-    transform: translateX(340%);
-  }
-}
-
-.account-sync-preview-phase-line {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: #385875;
-}
-
-.account-sync-preview-stats-stack {
-  margin: 2px 0 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.account-sync-preview-stats-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.account-sync-preview-stats-section {
-  margin: 2px 0 1px;
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: #476a8f;
-}
-
-.account-sync-preview-metrics-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-auto-rows: minmax(26px, auto);
-  margin: 0;
-  padding: 0;
-  row-gap: 2px;
-  column-gap: 6px;
-}
-
-.account-sync-preview-metric {
-  margin: 0;
-  padding: 0;
-  min-height: 26px;
-  border: 1px solid rgba(91, 123, 156, 0.18);
-  background: rgba(233, 243, 253, 0.46);
-  border-radius: 6px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  align-self: stretch;
-  gap: 8px;
-  box-sizing: border-box;
-}
-
-.account-sync-preview-metric-label {
-  min-width: 0;
-  padding: 1px 5px 2px;
-  color: #456789;
-  font-size: 0.69rem;
-  line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.account-sync-preview-metric-value {
-  display: block;
-  flex-shrink: 0;
-  padding: 1px 5px 2px;
-  color: #244765;
-  font-size: 0.72rem;
-  font-weight: 700;
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-@media (max-width: 860px) {
-  .account-sync-preview-metrics-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 400px) {
-  .account-sync-preview-metrics-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.account-sync-preview-empty {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 0.8rem;
-}
-
-.account-sync-preview-section-label {
-  margin: 8px 0 6px;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #476a8f;
-}
-
-.account-sync-preview-issues {
-  border: 1px solid #ebc4ca;
-  border-radius: 8px;
-  background: #fff4f6;
-  padding: 6px;
-  margin-bottom: 8px;
-}
-
-.account-sync-preview-issues-warning {
-  border-color: #e6c88d;
-  background: #fff8ed;
-}
-
-.account-sync-preview-issues-integrity {
-  border-color: #e7b27a;
-  background: #fff6ec;
-}
-
-.account-sync-preview-issues-warning .account-sync-preview-section-label {
-  color: #9a6d2e;
-}
-
-.account-sync-preview-issues-warning .account-sync-preview-issue-warning-note,
-.account-sync-preview-issues-warning .account-sync-preview-issue-cooldown {
-  color: #7f5a24;
-}
-
-.account-sync-preview-issue-warning-note {
-  margin: 0;
-  font-size: 0.73rem;
-}
-
-.account-sync-preview-issue-summary {
-  margin: 0;
-  color: #7d2734;
-  font-size: 0.74rem;
-}
-
-.account-sync-preview-issue-cooldown {
-  margin: 6px 0 0;
-  color: #7d2734;
-  font-size: 0.73rem;
-}
-
-.account-sync-preview-issue-cooldown-path {
-  border: none;
-  background: transparent;
-  padding: 0;
-  margin: 0;
-  cursor: pointer;
-  color: inherit;
-  text-align: left;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  font-weight: 600;
-}
-
-.account-sync-preview-issue-cooldown-path:hover {
-  color: #63202b;
-}
-
-.account-sync-preview-issue-cooldown-path:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--focus-ring);
-  border-radius: 4px;
-}
-
-.account-sync-preview-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 8px 0;
-}
-
-.account-sync-preview-action-btn {
-  border-radius: 999px;
-  padding: 5px 10px;
-  font-size: 0.74rem;
-  line-height: 1;
-}
-
-.account-sync-preview-action-btn-conflict {
-  background: #d88924;
-}
-
-.account-sync-preview-action-btn-conflict:hover {
-  background: #c47719;
-}
-
-.account-sync-preview-action-btn-warning {
-  background: #cc4b5e;
-}
-
-.account-sync-preview-action-btn-warning:hover {
-  background: #b63a4c;
-}
-
-.account-sync-preview-delete-review {
-  margin-top: 6px;
-  border-top: 1px solid #e7ccd1;
-  padding-top: 6px;
-}
-
-.account-sync-preview-delete-review-title {
-  margin: 0 0 4px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #7d2734;
-}
-
-.account-sync-preview-delete-review-actions {
-  margin: 0 0 6px;
-}
-
-.account-sync-preview-delete-review-more {
-  margin: 5px 0 0;
-  font-size: 0.7rem;
-  color: #8f3a47;
-}
-
-.account-sync-preview-list {
-  display: grid;
-  gap: 0;
-}
-
-.account-sync-preview-list-terminal {
-  gap: 2px;
-}
-
-.account-sync-preview-list-terminal .account-sync-preview-item-button {
-  padding: 4px 6px;
-}
-
-.account-sync-preview-list-terminal .account-sync-preview-row {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: flex-start;
-}
-
-.account-sync-preview-activity-scroll {
-  margin-top: 8px;
-}
-
-.account-sync-preview-list-errors {
-}
-
-.account-sync-preview-item {
-  margin: 0;
-}
-
-.account-sync-preview-item-with-action {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.account-sync-preview-item:not(:last-child) {
-  border-bottom: 1px solid #d9e5f3;
-}
-
-.account-sync-preview-item-button {
-  width: 100%;
-  text-align: left;
-  appearance: none;
-  -webkit-appearance: none;
-  font: inherit;
-  font-weight: 400;
-  border: none;
-  background: transparent;
-  color: inherit;
-  padding: 5px 2px;
-  border-radius: 4px;
-}
-
-.account-sync-preview-item-retry-btn {
-  border-radius: 999px;
-  padding: 4px 10px;
-  font-size: 0.72rem;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.account-sync-preview-item-button:hover {
-  background: rgba(29, 78, 216, 0.08);
-}
-
-.account-sync-preview-item-button:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--focus-ring);
-}
-
-.account-sync-preview-row {
-  display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) auto;
-  gap: 6px;
-  align-items: center;
-}
-
-.account-sync-preview-file-icon,
-.account-sync-preview-status-icon,
-.account-sync-preview-direction-icon {
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.account-sync-preview-file-icon {
-  color: #5a6f88;
-}
-
-.account-sync-preview-file-icon svg {
-  stroke-width: 1.3;
-}
-
-.account-sync-preview-right-icons {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.account-sync-preview-status-icon {
-  color: #245a8a;
-}
-
-.account-sync-preview-direction-icon {
-  color: #3d6d97;
-}
-
-.account-sync-preview-content {
-  min-width: 0;
-}
-
-.account-sync-preview-path {
-  margin: 0;
-  font-size: 0.76rem;
-  font-weight: 400;
-  color: #1d2d43;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.account-sync-preview-meta {
-  margin: 1px 0 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.7rem;
-  color: #5d728b;
+  color: var(--danger);
 }

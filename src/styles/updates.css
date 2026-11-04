@@ -16,7 +16,7 @@
 }
 
 .update-modal-versions strong {
-  color: var(--titlebar-solid);
+  color: var(--heading);
 }
 
 .update-modal-status {
@@ -25,13 +25,4 @@
   border: 1px solid var(--control-selected-border);
   background: var(--bg-elevated);
   color: var(--text-main);
-}
-
-.settings-update-meta {
-  font-size: 0.9rem;
-  color: var(--text-muted);
-}
-
-.settings-update-meta.error {
-  color: #c73f61;
 }
