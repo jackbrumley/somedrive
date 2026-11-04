@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::app::sync_engine::{
-    persist_sync_lifecycle_agent_state, persist_sync_lifecycle_last_sync_at,
-    read_sync_lifecycle_profile_metadata,
+    ensure_sync_lifecycle_row, persist_sync_lifecycle_agent_state,
+    persist_sync_lifecycle_last_sync_at, read_sync_lifecycle_profile_metadata,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,7 +66,25 @@ pub fn load_profiles() -> Result<Vec<AccountProfile>, String> {
                 profile.agent_state = agent_state;
                 profile.last_sync_at = last_sync_at;
             }
-            Ok(None) => {}
+            // A new or rebuilt sync database: recreate the account's
+            // lifecycle row from its saved profile.
+            Ok(None) => match ensure_sync_lifecycle_row(
+                &profile.id,
+                &profile.agent_state,
+                profile.last_sync_at.as_deref(),
+            ) {
+                Ok(true) => log::info!(
+                    "[acct:{}] SYNC_LIFECYCLE_ROW_CREATED agent_state={} reason=missing_from_database",
+                    crate::app::log_context::account_identity_from_parts(&profile.id, &profile.email),
+                    profile.agent_state
+                ),
+                Ok(false) => {}
+                Err(error) => log::warn!(
+                    "[acct:{}] SYNC_LIFECYCLE_ROW_CREATE_FAILED error={}",
+                    crate::app::log_context::account_identity_from_parts(&profile.id, &profile.email),
+                    error
+                ),
+            },
             Err(error) => {
                 log::warn!(
                     "{} PROFILE_METADATA_DB_HYDRATE_FAILED error={}",
