@@ -23,7 +23,12 @@ interface ActivityRow {
   kind: RowKind;
   direction: string;
   path: string;
-  sizeText: string;
+  /** What happened or is happening, short: "Downloaded · 1.2 MB". */
+  detail: string;
+  /** The second line when there is no progress bar: the time. */
+  when: string;
+  /** The full explanation, shown on hover. */
+  explanation: string;
   progressPercent: number | null;
 }
 
@@ -36,10 +41,17 @@ interface AccountSyncActivityListProps {
   onOpenItemFolder: (relativePath: string) => Promise<void>;
 }
 
-/** What a finished delete did (mirrors `sync_history_store`). */
-const DELETE_LABELS: Record<string, string> = {
-  trash_local: "Deleted in OneDrive · moved to Trash",
-  delete_remote: "Deleted here · removed from OneDrive",
+/** What a finished delete did (mirrors `sync_history_store`): a short label
+ *  and the full explanation. */
+const DELETE_LABELS: Record<string, { label: string; explanation: string }> = {
+  trash_local: {
+    label: "Moved to Trash",
+    explanation: "Deleted in OneDrive, so moved to the Trash on this device.",
+  },
+  delete_remote: {
+    label: "Deleted from OneDrive",
+    explanation: "Deleted on this device, so deleted in OneDrive (its recycle bin keeps it).",
+  },
 };
 
 function runningRows(runtimeStatus: SyncRuntimeAccountStatus): ActivityRow[] {
@@ -49,41 +61,64 @@ function runningRows(runtimeStatus: SyncRuntimeAccountStatus): ActivityRow[] {
   return runtimeStatus.inProgress
     .filter((transfer) => transfer.state !== "queued")
     .sort((left, right) => Date.parse(left.startedAt) - Date.parse(right.startedAt) || left.path.localeCompare(right.path))
-    .map((transfer) => ({
-      id: transfer.id,
-      kind: "running",
-      direction: transfer.direction,
-      path: transfer.path,
-      sizeText:
-        transfer.bytesTotal === null
-          ? "Size unknown"
-          : transfer.bytesDone > 0
-            ? `${formatBytes(transfer.bytesDone)} of ${formatBytes(transfer.bytesTotal)}`
-            : formatBytes(transfer.bytesTotal),
-      progressPercent: percentOf(transfer.bytesDone, transfer.bytesTotal),
-    }));
+    .map((transfer) => {
+      const verb = transfer.direction.toLowerCase() === "upload" ? "Uploading" : "Downloading";
+      return {
+        id: transfer.id,
+        kind: "running",
+        direction: transfer.direction,
+        path: transfer.path,
+        detail:
+          transfer.bytesTotal === null
+            ? "Size unknown"
+            : transfer.bytesDone > 0
+              ? `${formatBytes(transfer.bytesDone)} of ${formatBytes(transfer.bytesTotal)}`
+              : formatBytes(transfer.bytesTotal),
+        when: "",
+        explanation: `${verb} ${transfer.path}`,
+        progressPercent: percentOf(transfer.bytesDone, transfer.bytesTotal),
+      };
+    });
 }
 
 function finishedRow(item: SyncRuntimeRecentItem, failed: boolean): ActivityRow {
   const when = formatClockTime(item.finishedAt);
   const isUpload = item.direction.toLowerCase() === "upload";
   if (failed) {
+    const verb = isUpload ? "upload" : "download";
     return {
       id: `failed-${item.id}`,
       kind: "failed",
       direction: item.direction,
       path: item.path,
-      sizeText: `Couldn't ${isUpload ? "upload" : "download"} · see Sync problems · ${when}`,
+      detail: `Couldn't ${verb}`,
+      when,
+      explanation: `Couldn't ${verb} ${item.path}. Details and Retry are in Sync problems.`,
       progressPercent: null,
     };
   }
-  const deleteLabel = DELETE_LABELS[item.direction];
+  const deleted = DELETE_LABELS[item.direction];
+  if (deleted) {
+    return {
+      id: item.id,
+      kind: "deleted",
+      direction: item.direction,
+      path: item.path,
+      detail: deleted.label,
+      when,
+      explanation: `${item.path}: ${deleted.explanation}`,
+      progressPercent: null,
+    };
+  }
+  const verb = isUpload ? "Uploaded" : "Downloaded";
   return {
     id: item.id,
-    kind: deleteLabel ? "deleted" : "done",
+    kind: "done",
     direction: item.direction,
     path: item.path,
-    sizeText: `${deleteLabel ?? `${isUpload ? "Uploaded" : "Downloaded"} · ${formatBytes(item.bytesTotal)}`} · ${when}`,
+    detail: `${verb} · ${formatBytes(item.bytesTotal)}`,
+    when,
+    explanation: `${verb} ${item.path}`,
     progressPercent: null,
   };
 }
@@ -118,7 +153,12 @@ function RowStateIcon({ row }: { row: ActivityRow }) {
 function ActivityRowView({ row, onOpen }: { row: ActivityRow; onOpen: (path: string) => Promise<void> }) {
   const { name, folder } = splitSyncPath(row.path);
   return (
-    <button type="button" class="sync-file-open sync-activity-row" title={row.path} onClick={() => void onOpen(row.path)}>
+    <button
+      type="button"
+      class="sync-file-open sync-activity-row"
+      title={row.explanation}
+      onClick={() => void onOpen(row.path)}
+    >
       <span class="sync-file-icon">
         <FileTypeIcon path={row.path} size={20} />
       </span>
@@ -127,11 +167,13 @@ function ActivityRowView({ row, onOpen }: { row: ActivityRow; onOpen: (path: str
         <span class="sync-file-folder">{folder || "OneDrive"}</span>
       </span>
       <span class="sync-activity-size">
-        {row.sizeText}
-        {row.progressPercent !== null && (
+        <span class="sync-activity-detail">{row.detail}</span>
+        {row.progressPercent !== null ? (
           <span class="sync-activity-mini-track">
             <span class="sync-activity-mini-fill" style={{ width: `${row.progressPercent.toFixed(0)}%` }} />
           </span>
+        ) : (
+          row.when && <span class="sync-activity-when">{row.when}</span>
         )}
       </span>
       <span class={`sync-activity-state is-${row.kind}`}>
