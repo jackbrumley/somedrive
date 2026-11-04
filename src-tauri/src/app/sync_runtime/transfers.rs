@@ -29,7 +29,7 @@ pub fn start_transfer(
     }
     status.updated_at = now_rfc3339();
     bump_runtime_revision();
-    emit_status_event_for_account(runtime_map, profile_id, StatusEventEmitMode::Immediate);
+    request_status_event(profile_id, StatusEventEmitMode::Immediate);
     transfer_id
 }
 
@@ -54,7 +54,7 @@ pub fn update_transfer_progress(
     }
     status.updated_at = now_rfc3339();
     bump_runtime_revision();
-    emit_status_event_for_account(runtime_map, profile_id, StatusEventEmitMode::Throttled);
+    request_status_event(profile_id, StatusEventEmitMode::Throttled);
 }
 
 pub fn finish_transfer_success(
@@ -85,7 +85,7 @@ pub fn finish_transfer_success(
         sync_upload_in_flight(status);
         status.updated_at = now_rfc3339();
         bump_runtime_revision();
-        emit_status_event_for_account(runtime_map, profile_id, StatusEventEmitMode::Immediate);
+        request_status_event(profile_id, StatusEventEmitMode::Immediate);
     }
 }
 
@@ -118,7 +118,7 @@ pub fn finish_transfer_error(
         sync_upload_in_flight(status);
         status.updated_at = now_rfc3339();
         bump_runtime_revision();
-        emit_status_event_for_account(runtime_map, profile_id, StatusEventEmitMode::Immediate);
+        request_status_event(profile_id, StatusEventEmitMode::Immediate);
     }
 }
 
@@ -162,7 +162,7 @@ pub fn set_remote_download_counters(
     );
     status.updated_at = now_rfc3339();
     bump_runtime_revision();
-    emit_status_event_for_account(runtime_map, profile_id, StatusEventEmitMode::Throttled);
+    request_status_event(profile_id, StatusEventEmitMode::Throttled);
 }
 
 pub fn set_upload_counters(
@@ -177,7 +177,7 @@ pub fn set_upload_counters(
     let _ = (planned_total, completed_total, failed_total, in_flight);
     status.updated_at = now_rfc3339();
     bump_runtime_revision();
-    emit_status_event_for_account(runtime_map, profile_id, StatusEventEmitMode::Throttled);
+    request_status_event(profile_id, StatusEventEmitMode::Throttled);
 }
 
 pub fn set_upload_planned_total(
@@ -189,7 +189,7 @@ pub fn set_upload_planned_total(
     let _ = planned_total;
     status.updated_at = now_rfc3339();
     bump_runtime_revision();
-    emit_status_event_for_account(runtime_map, profile_id, StatusEventEmitMode::Throttled);
+    request_status_event(profile_id, StatusEventEmitMode::Throttled);
 }
 
 pub fn record_remote_download_completed(
@@ -201,7 +201,7 @@ pub fn record_remote_download_completed(
     let status = ensure_account_status(runtime_map, profile_id);
     status.updated_at = now_rfc3339();
     bump_runtime_revision();
-    emit_status_event_for_account(runtime_map, profile_id, StatusEventEmitMode::Throttled);
+    request_status_event(profile_id, StatusEventEmitMode::Throttled);
 }
 
 pub fn record_remote_download_failed(
@@ -213,5 +213,5 @@ pub fn record_remote_download_failed(
     let status = ensure_account_status(runtime_map, profile_id);
     status.updated_at = now_rfc3339();
     bump_runtime_revision();
-    emit_status_event_for_account(runtime_map, profile_id, StatusEventEmitMode::Immediate);
+    request_status_event(profile_id, StatusEventEmitMode::Immediate);
 }

@@ -27,29 +27,15 @@ pub(crate) fn spawn_remote_download_dispatcher(
                 continue;
             }
 
-            let counters = match read_download_job_counters(&dispatcher_graph.profile_id) {
-                Ok(value) => value,
-                Err(error) => {
-                    log::warn!(
-                        "{} [cycle:{}] DOWNLOAD_DISPATCHER_COUNTER_READ_FAILED error={}",
-                        dispatcher_graph.account_prefix,
-                        dispatcher_graph.cycle_id,
-                        error
-                    );
-                    continue;
-                }
-            };
-            if counters.remaining == 0 {
-                continue;
-            }
-
+            // No queue count here: the claim itself finds nothing when the
+            // queue is empty, and counting 15,000 jobs 20 times a second
+            // cost a third of a core.
             match dispatch_claimed_download_jobs(
                 &dispatcher_graph,
                 &dispatcher_sync_root,
                 &dispatcher_download_tx,
                 available_slots,
                 pending,
-                counters.remaining,
             )
             .await
             {
