@@ -8,6 +8,7 @@ struct SyncCycleStats {
     baseline_refreshes: usize,
     matched_files: usize,
     conflict_copies: usize,
+    conflicts_held: usize,
     deleted_local: usize,
     deleted_remote: usize,
     created_local_folders: usize,
@@ -22,6 +23,9 @@ struct SyncCycleStats {
 enum RemoteDownloadOutcome {
     /// The file is in place; `entry` is its state on disk afterwards.
     Downloaded(LocalEntry),
+    /// The local file changed after the download was planned, so it was not
+    /// replaced: the path is held as a conflict for the user.
+    HeldAsConflict,
     /// Graph returned 404/410: the item may be gone. Nothing changes until a
     /// delta page confirms it; the job retries later.
     NotFoundOnCloud,

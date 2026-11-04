@@ -104,8 +104,9 @@ async fn tick_sync_cycle(
     runtime_set_upload_planned_total(&graph.sync_runtime, profile_id, counters.need_upload_total);
     let planned = collect_planned_actions(profile_id)?;
 
-    // 4. Apply it.
+    // 4. Apply it, starting with the user's conflict choices.
     runtime_set_phase(&graph.sync_runtime, profile_id, "applying_local", "Applying changes");
+    apply_conflict_resolutions(&mut graph, &sync_root, &mut stats, cancel_flag).await?;
     let planned_action_count = planned.verify.len()
         + planned.conflicts.len()
         + planned.create_local_folders.len()
@@ -127,8 +128,8 @@ async fn tick_sync_cycle(
     forget_rows(profile_id, &planned.forget)?;
     create_local_folders(&graph, &sync_root, &planned.create_local_folders, &mut stats)?;
     create_remote_folders(&mut graph, &sync_root, &planned.create_remote_folders, &mut stats, cancel_flag).await?;
-    reconcile_both_sides(&graph, &sync_root, &planned.verify, &mut stats, cancel_flag).await?;
-    reconcile_both_sides(&graph, &sync_root, &planned.conflicts, &mut stats, cancel_flag).await?;
+    reconcile_both_sides(&graph, &sync_root, &planned.verify, ISSUE_CONFLICT_BOTH_NEW, &mut stats, cancel_flag).await?;
+    reconcile_both_sides(&graph, &sync_root, &planned.conflicts, ISSUE_CONFLICT_BOTH_CHANGED, &mut stats, cancel_flag).await?;
     materialize_planner_upload_jobs(profile_id)?;
     upload_planned_files(&mut graph, &sync_root, &mut stats, cancel_flag).await?;
     apply_deletes_through_guard(&mut graph, &sync_root, &planned, &mut stats, cancel_flag).await?;
@@ -139,11 +140,12 @@ async fn tick_sync_cycle(
     update_profile_last_sync(profiles_lock, profile_id)?;
 
     let summary = format!(
-        "Sync cycle complete (downloaded {}, uploaded {}, matched {}, refreshed {}, conflict copies {}, cloud deletes {}, local deletes {}, upload failures {}, name issues {})",
+        "Sync cycle complete (downloaded {}, uploaded {}, matched {}, refreshed {}, conflicts held {}, conflict copies {}, cloud deletes {}, local deletes {}, upload failures {}, name issues {})",
         stats.downloaded_files,
         stats.uploaded_files,
         stats.matched_files,
         stats.baseline_refreshes,
+        stats.conflicts_held,
         stats.conflict_copies,
         stats.deleted_remote,
         stats.deleted_local,

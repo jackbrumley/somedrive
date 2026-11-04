@@ -49,6 +49,8 @@ pub fn run(launch: LaunchOptions) {
             keep_cloud_files_after_large_delete,
             retry_failed_download,
             retry_all_failed_downloads,
+            list_sync_problems,
+            resolve_sync_conflicts,
             get_account_large_delete_preview,
             export_account_large_delete_preview,
             pause_all_accounts,

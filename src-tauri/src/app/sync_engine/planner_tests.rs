@@ -329,6 +329,45 @@ mod planner_tests {
     }
 
     #[test]
+    fn held_conflicts_take_a_choice_and_other_problems_do_not() {
+        let profile_id = test_profile_id("problems");
+        let both = RowSpec { cloud: Some((12, "hash-b")), local: Some((11, 200)), base: BASE, ..RowSpec::default() };
+        insert_row(&profile_id, "report.docx", &both);
+        insert_row(&profile_id, "bad:name.txt", &RowSpec { local: Some((5, 1)), ..RowSpec::default() });
+        record_sync_file_issue(&profile_id, "report.docx", ISSUE_CONFLICT_BOTH_CHANGED, "both changed").expect("hold");
+        record_sync_file_issue(&profile_id, "bad:name.txt", "name_invalid", "invalid").expect("issue");
+
+        recompute_sync_file_actions(&profile_id).expect("plan");
+        assert_eq!(action_for(&profile_id, "report.docx"), PLANNER_ACTION_NONE, "a held file is not synced");
+
+        let recorded = set_conflict_resolution(
+            &profile_id,
+            &["report.docx".to_string(), "bad:name.txt".to_string()],
+            RESOLUTION_KEEP_CLOUD,
+        )
+        .expect("resolve");
+        assert_eq!(recorded, 1, "only the held conflict takes a choice");
+        let choices = list_conflict_resolutions(&profile_id).expect("choices");
+        assert_eq!(choices.len(), 1);
+        assert_eq!(choices[0].resolution, RESOLUTION_KEEP_CLOUD);
+        assert_eq!(choices[0].chosen_local_mtime_ns, Some(200));
+
+        let problems = list_file_problems(&profile_id).expect("problems");
+        assert_eq!(problems.len(), 2);
+        let conflict = problems.iter().find(|problem| problem.path == "report.docx").expect("conflict");
+        assert!(conflict.is_conflict);
+        assert_eq!(conflict.local_size, Some(11));
+        assert_eq!(conflict.cloud_size, Some(12));
+        assert!(!problems.iter().find(|problem| problem.path == "bad:name.txt").expect("name").is_conflict);
+
+        assert!(set_conflict_resolution(&profile_id, &["report.docx".to_string()], "delete_everything").is_err());
+
+        clear_sync_file_issue(&profile_id, "report.docx").expect("clear");
+        recompute_sync_file_actions(&profile_id).expect("replan");
+        assert_eq!(action_for(&profile_id, "report.docx"), PLANNER_ACTION_CONFLICT, "unheld, the plan sees the conflict again");
+    }
+
+    #[test]
     fn local_names_onedrive_rejects_become_issues() {
         assert!(invalid_onedrive_name_reason("report:final.docx").is_some());
         assert!(invalid_onedrive_name_reason("trailing.").is_some());

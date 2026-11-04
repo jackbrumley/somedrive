@@ -8,7 +8,7 @@ use crate::app::state::AppState;
 use crate::app::sync_runtime::{self, SyncRuntimeMap};
 use futures_util::StreamExt;
 use reqwest::StatusCode;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -150,6 +150,31 @@ pub fn keep_cloud_files_after_large_delete(
         "Keeping files - restoring them",
     );
     Ok(())
+}
+
+/// Everything on this account that needs the user: held conflicts, items
+/// SomeDrive cannot sync, and downloads that failed for good.
+pub fn list_sync_problems(profile_id: &str) -> Result<Vec<SyncProblem>, String> {
+    let mut problems = list_file_problems(profile_id)?;
+    problems.extend(list_failed_download_problems(profile_id)?);
+    Ok(problems)
+}
+
+/// Records the user's choice for held conflicts; the next cycle applies it.
+pub fn resolve_sync_conflicts(
+    profile_id: &str,
+    paths: &[String],
+    resolution: &str,
+) -> Result<usize, String> {
+    let resolved = set_conflict_resolution(profile_id, paths, resolution)?;
+    log::info!(
+        "{} CONFLICT_RESOLUTION_CHOSEN resolution={} requested={} recorded={}",
+        log_context::account_prefix(profile_id),
+        resolution,
+        paths.len(),
+        resolved
+    );
+    Ok(resolved)
 }
 
 pub fn get_large_delete_pending_paths(profile_id: &str) -> Result<Vec<String>, String> {

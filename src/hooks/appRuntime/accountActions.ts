@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import type {
+  ConflictResolution,
+  SyncProblem,
   AccountKind,
   AccountProfile,
   CreateAccountProfileInput,
@@ -160,6 +162,24 @@ export function createAccountActions({
     }
   };
 
+  const fetchSyncProblems = async (profileId: string): Promise<SyncProblem[]> => {
+    try {
+      return await invoke<SyncProblem[]>("list_sync_problems", { profileId });
+    } catch (error) {
+      showToast(`Failed to read sync problems: ${error}`, "error");
+      return [];
+    }
+  };
+
+  const resolveSyncConflicts = async (profileId: string, paths: string[], resolution: ConflictResolution) => {
+    try {
+      const recorded = await invoke<number>("resolve_sync_conflicts", { profileId, paths, resolution });
+      showToast(`${recorded} file${recorded === 1 ? "" : "s"} will be resolved on the next sync.`, "success");
+    } catch (error) {
+      showToast(`Failed to resolve: ${error}`, "error");
+    }
+  };
+
   const retryAllFailedDownloads = async (profileId: string) => {
     try {
       const response = await invoke<{
@@ -248,6 +268,8 @@ export function createAccountActions({
     retryAccountSync,
     retryFailedDownload,
     retryAllFailedDownloads,
+    fetchSyncProblems,
+    resolveSyncConflicts,
     confirmAccountLargeDelete,
     keepCloudFilesAfterLargeDelete,
     fetchAccountLargeDeletePreview,

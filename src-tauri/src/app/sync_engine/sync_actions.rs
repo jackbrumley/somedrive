@@ -71,8 +71,30 @@ async fn create_remote_folders(
     Ok(())
 }
 
+fn conflict_detail(conflict_code: &str) -> &'static str {
+    if conflict_code == ISSUE_CONFLICT_BOTH_NEW {
+        "This file is on this device and in OneDrive with different content."
+    } else {
+        "This file changed on this device and in OneDrive since the last sync."
+    }
+}
+
+/// Holds `path` as a conflict: it stops syncing until the user chooses.
+fn hold_conflict(graph: &GraphContext, path: &str, conflict_code: &str) -> Result<(), String> {
+    record_sync_file_issue(&graph.profile_id, path, conflict_code, conflict_detail(conflict_code))?;
+    log::warn!(
+        "{} [cycle:{}] CONFLICT_HELD path={} code={}",
+        graph.account_prefix,
+        graph.cycle_id,
+        path,
+        conflict_code
+    );
+    Ok(())
+}
+
 /// Keeps the local version as a conflict copy and records that the cloud
-/// version should now be fetched into the original name.
+/// version should now be fetched into the original name (the user chose
+/// "Keep both").
 fn keep_both_versions(graph: &GraphContext, row: &SyncFileRow, local_path: &Path, entry: &LocalEntry, stats: &mut SyncCycleStats) -> Result<(), String> {
     let copy = preserve_conflict_copy(local_path)?;
     mark_conflict_preserved(&graph.profile_id, &row.path, entry)?;
@@ -88,12 +110,14 @@ fn keep_both_versions(graph: &GraphContext, row: &SyncFileRow, local_path: &Path
 }
 
 /// Items on both sides with no baseline (first sync, or a rebuilt database)
-/// and items changed on both sides: identical content is adopted, anything
-/// else keeps both versions.
+/// and items changed on both sides: identical content is adopted; anything
+/// else is held as a conflict for the user to resolve. Nothing is copied or
+/// overwritten.
 async fn reconcile_both_sides(
     graph: &GraphContext,
     sync_root: &Path,
     rows: &[SyncFileRow],
+    conflict_code: &str,
     stats: &mut SyncCycleStats,
     cancel_flag: &Arc<AtomicBool>,
 ) -> Result<(), String> {
@@ -120,7 +144,8 @@ async fn reconcile_both_sides(
             commit_baseline(&graph.profile_id, &row.path, &row.cloud_version(), &entry)?;
             stats.matched_files += 1;
         } else {
-            keep_both_versions(graph, row, &local_path, &entry, stats)?;
+            hold_conflict(graph, &row.path, conflict_code)?;
+            stats.conflicts_held += 1;
         }
     }
     Ok(())
@@ -287,6 +312,91 @@ async fn delete_remote_items(
         forget_sync_file(&graph.profile_id, &row.path)?;
         record_throttle_event(&graph.profile_id, DELETE_EVENT_DIRECTION)?;
         stats.deleted_remote += 1;
+    }
+    Ok(())
+}
+
+/// Carries out the user's choices for held conflicts. Each choice applies
+/// only if the local file is as it was when they chose; otherwise the choice
+/// is withdrawn and the file stays held for a fresh decision.
+async fn apply_conflict_resolutions(
+    graph: &mut GraphContext,
+    sync_root: &Path,
+    stats: &mut SyncCycleStats,
+    cancel_flag: &Arc<AtomicBool>,
+) -> Result<(), String> {
+    for choice in list_conflict_resolutions(&graph.profile_id)? {
+        ensure_not_cancelled(cancel_flag)?;
+        let row = &choice.row;
+        let local_path = local_path_for(sync_root, &row.path);
+        let entry = read_local_entry(&local_path)?.filter(|entry| !entry.is_dir);
+        if entry.as_ref().map(|entry| entry.mtime_ns) != choice.chosen_local_mtime_ns {
+            withdraw_conflict_resolution(&graph.profile_id, &row.path)?;
+            log::info!(
+                "{} [cycle:{}] CONFLICT_CHOICE_WITHDRAWN path={} reason=changed_since_choice",
+                graph.account_prefix,
+                graph.cycle_id,
+                row.path
+            );
+            continue;
+        }
+        match (choice.resolution.as_str(), entry) {
+            (RESOLUTION_KEEP_LOCAL, Some(entry)) => {
+                ensure_accepting_new_transfers()?;
+                let local_size = entry.size;
+                upsert_upload_job_queued(&graph.profile_id, &row.path, local_size, entry.mtime_ns)?;
+                if !claim_upload_job_path(&graph.profile_id, &row.path, &graph.cycle_id)? {
+                    continue;
+                }
+                let target = if row.cloud_present {
+                    UploadTarget::Replace { base_etag: None }
+                } else {
+                    UploadTarget::New
+                };
+                let uploaded = upload_file_by_path(graph, sync_root, &row.path, &target, cancel_flag).await?;
+                if read_local_entry(&local_path)?.as_ref() == Some(&entry) {
+                    commit_baseline_from_upload(&graph.profile_id, &uploaded.to_cloud_item(row.path.clone()), &entry)?;
+                    clear_sync_file_issue(&graph.profile_id, &row.path)?;
+                    stats.uploaded_files += 1;
+                }
+            }
+            (RESOLUTION_KEEP_CLOUD, local_entry) => {
+                if local_entry.is_some() {
+                    trash::delete(&local_path).map_err(|error| {
+                        format!("Failed moving '{}' to the Trash: {error}", local_path.display())
+                    })?;
+                    record_local_absent(&graph.profile_id, &row.path)?;
+                }
+                // With no baseline the next plan downloads OneDrive's version
+                // (or, if OneDrive deleted it, there is nothing left to do).
+                forget_sync_file(&graph.profile_id, &row.path)?;
+                clear_sync_file_issue(&graph.profile_id, &row.path)?;
+            }
+            (RESOLUTION_KEEP_BOTH, Some(entry)) => {
+                if row.cloud_present {
+                    keep_both_versions(graph, row, &local_path, &entry, stats)?;
+                } else {
+                    forget_sync_file(&graph.profile_id, &row.path)?;
+                }
+                clear_sync_file_issue(&graph.profile_id, &row.path)?;
+            }
+            (_, None) => {
+                // The local file is gone and the choice needed it: OneDrive's
+                // version (if any) comes back through the normal plan.
+                forget_sync_file(&graph.profile_id, &row.path)?;
+                clear_sync_file_issue(&graph.profile_id, &row.path)?;
+            }
+            (resolution, Some(_)) => {
+                return Err(format!("Unknown conflict resolution '{resolution}' for '{}'", row.path));
+            }
+        }
+        log::info!(
+            "{} [cycle:{}] CONFLICT_RESOLVED path={} resolution={}",
+            graph.account_prefix,
+            graph.cycle_id,
+            row.path,
+            choice.resolution
+        );
     }
     Ok(())
 }

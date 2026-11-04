@@ -1,5 +1,6 @@
 import {
   IconAlertTriangle,
+  IconArrowsDiff,
   IconCircleCheck,
   IconClockPause,
   IconCloudDownload,
@@ -15,6 +16,7 @@ interface AccountSyncOverviewProps {
   hasCompletedInitialSync: boolean;
   downloadBytesPerSecond: number;
   uploadBytesPerSecond: number;
+  openConflictCount: number;
 }
 
 interface TransferProgress {
@@ -83,6 +85,7 @@ export function AccountSyncOverview({
   hasCompletedInitialSync,
   downloadBytesPerSecond,
   uploadBytesPerSecond,
+  openConflictCount,
 }: AccountSyncOverviewProps) {
   const message = syncModeMessage(runtimeStatus, hasCompletedInitialSync);
   const ToneIcon = TONE_ICONS[message.tone];
@@ -138,8 +141,17 @@ export function AccountSyncOverview({
         </div>
       )}
 
-      {(engineRunning || throttledRecently || retryWaiting > 0) && (
+      {(engineRunning || throttledRecently || retryWaiting > 0 || openConflictCount > 0) && (
         <ul class="sync-overview-notes">
+          {openConflictCount > 0 && (
+            <li class="sync-overview-note-attention">
+              <IconArrowsDiff size={15} />
+              <span>
+                {openConflictCount.toLocaleString()} file{openConflictCount === 1 ? " needs" : "s need"} your decision in
+                Sync problems. Nothing has been changed or duplicated.
+              </span>
+            </li>
+          )}
           {engineRunning && stepLabel && (
             <li>
               <IconHourglassHigh size={15} />

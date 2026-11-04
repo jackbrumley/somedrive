@@ -162,6 +162,10 @@ fn apply_remote_download_result(
             runtime_record_remote_download_completed(&graph.sync_runtime, &graph.profile_id, &result.item_id);
             stats.downloaded_files += 1;
         }
+        RemoteDownloadResultStatus::Success(RemoteDownloadOutcome::HeldAsConflict) => {
+            mark_download_job_done(&graph.profile_id, result.job_id, true)?;
+            stats.conflicts_held += 1;
+        }
         RemoteDownloadResultStatus::Success(RemoteDownloadOutcome::NotFoundOnCloud) => {
             mark_download_job_retry_wait(
                 &graph.profile_id,

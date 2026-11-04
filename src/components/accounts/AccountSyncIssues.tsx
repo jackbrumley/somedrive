@@ -1,8 +1,6 @@
-import { IconAlertCircle, IconLogin2 } from "@tabler/icons-preact";
-import { useState } from "preact/hooks";
-import type { SyncRuntimeRecentItem } from "../../types/somedrive";
+import { IconLogin2 } from "@tabler/icons-preact";
 import { FileTypeIcon } from "./FileTypeIcon";
-import { formatClockTime, splitSyncPath } from "./syncFormatting";
+import { splitSyncPath } from "./syncFormatting";
 
 const DELETE_PREVIEW_LIMIT = 40;
 
@@ -12,14 +10,11 @@ interface AccountSyncIssuesProps {
   issueActions: string[];
   issuePath: string | null;
   issueSecondaryPath: string | null;
-  recentFailed: SyncRuntimeRecentItem[];
   largeDeletePreviewPaths: string[];
   onOpenItemFolder: (relativePath: string) => Promise<void>;
   onOpenSyncRootFolder: () => Promise<void>;
   onReauthenticate: () => Promise<unknown>;
   onRetrySync: () => Promise<void>;
-  onRetryFailedDownload: (recentItemId: string, path: string) => Promise<void>;
-  onRetryAllFailedDownloads: () => Promise<void>;
   onConfirmLargeDelete: () => Promise<void>;
   onKeepCloudFiles: () => Promise<void>;
   onExportLargeDeletePreview: () => Promise<void>;
@@ -41,97 +36,17 @@ function SignInPrompt({ message, onReauthenticate }: { message: string | null; o
   );
 }
 
-function FailedTransfers({
-  items,
-  onOpenItemFolder,
-  onRetryFailedDownload,
-  onRetryAllFailedDownloads,
-}: {
-  items: SyncRuntimeRecentItem[];
-  onOpenItemFolder: (relativePath: string) => Promise<void>;
-  onRetryFailedDownload: (recentItemId: string, path: string) => Promise<void>;
-  onRetryAllFailedDownloads: () => Promise<void>;
-}) {
-  const [retryAllInFlight, setRetryAllInFlight] = useState(false);
-  const [retryingIds, setRetryingIds] = useState<Record<string, boolean>>({});
-
-  const retryOne = (item: SyncRuntimeRecentItem) => {
-    if (retryAllInFlight || retryingIds[item.id]) {
-      return;
-    }
-    setRetryingIds((current) => ({ ...current, [item.id]: true }));
-    void onRetryFailedDownload(item.id, item.path).finally(() => {
-      setRetryingIds((current) => {
-        const next = { ...current };
-        delete next[item.id];
-        return next;
-      });
-    });
-  };
-
-  return (
-    <section class="sync-issue-card">
-      <div class="sync-section-header">
-        <h4>
-          {items.length} file{items.length === 1 ? "" : "s"} could not sync
-        </h4>
-        <button
-          type="button"
-          class="ghost"
-          disabled={retryAllInFlight}
-          onClick={() => {
-            setRetryAllInFlight(true);
-            void onRetryAllFailedDownloads().finally(() => setRetryAllInFlight(false));
-          }}
-        >
-          {retryAllInFlight ? "Retrying…" : "Retry all"}
-        </button>
-      </div>
-      <ul class="sync-file-list">
-        {items.map((item) => {
-          const { name, folder } = splitSyncPath(item.path);
-          return (
-            <li key={item.id} class="sync-file-row">
-              <button type="button" class="sync-file-open" onClick={() => void onOpenItemFolder(item.path)}>
-                <span class="sync-file-icon sync-file-icon-error">
-                  <IconAlertCircle size={20} />
-                </span>
-                <span class="sync-file-text">
-                  <span class="sync-file-name">{name}</span>
-                  <span class="sync-file-folder">{item.error ?? "Transfer failed"} · {formatClockTime(item.finishedAt)}</span>
-                  {folder && <span class="sync-file-folder">{folder}</span>}
-                </span>
-              </button>
-              <button
-                type="button"
-                class="ghost"
-                disabled={retryAllInFlight || Boolean(retryingIds[item.id])}
-                onClick={() => retryOne(item)}
-              >
-                {retryingIds[item.id] ? "Retrying…" : "Retry"}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-}
-
 export function AccountSyncIssues({
   issueMessage,
   issueKind,
   issueActions,
   issuePath,
   issueSecondaryPath,
-  recentFailed,
   largeDeletePreviewPaths,
   onOpenItemFolder,
   onOpenSyncRootFolder,
   onReauthenticate,
   onRetrySync,
-  onRetryFailedDownload,
-  onRetryAllFailedDownloads,
   onConfirmLargeDelete,
   onKeepCloudFiles,
   onExportLargeDeletePreview,
@@ -209,14 +124,6 @@ export function AccountSyncIssues({
         </section>
       )}
 
-      {recentFailed.length > 0 && (
-        <FailedTransfers
-          items={recentFailed}
-          onOpenItemFolder={onOpenItemFolder}
-          onRetryFailedDownload={onRetryFailedDownload}
-          onRetryAllFailedDownloads={onRetryAllFailedDownloads}
-        />
-      )}
     </>
   );
 }

@@ -129,11 +129,31 @@ file's modified time to the cloud time. Before the rename: `fsync` the temp
 file, check its size (and `quickXorHash` when Graph supplies one); after:
 `fsync` the directory (fixes A2, A8).
 
-### 6.2 Conflicts
-Never pick a winner. The cloud version keeps the original name; the local
-version is renamed `name (conflict YYYY-MM-DD HHMM on <hostname>).ext` and
-uploaded as a new file, so both appear on every device. A conflict is
-recorded once, logged, and listed in the UI; it never repeats (fixes B8).
+### 6.2 Conflicts: hold and ask
+Never pick a winner, and never fill the folder with copies (the OneDrive
+client's `-PCNAME` copies are how people end up with thousands of
+duplicates). A file that changed on both sides (row 4), or is on both sides
+with different content and no baseline (row 12), is **held**: nothing is
+copied or overwritten, and that one path stops syncing while everything
+else carries on. The same happens when a local file changes after a
+download was planned: the download is discarded and the path held.
+
+Held files are listed in the account's **Sync problems** tab with both
+versions' size and time. The user chooses, for one file or many at once:
+
+- **Keep this device's version:** it is uploaded; OneDrive's version stays
+  in OneDrive's version history.
+- **Keep OneDrive's version:** the local file goes to the Trash and
+  OneDrive's version is downloaded.
+- **Keep both:** only then is a copy made, `name (conflict YYYY-MM-DD HHMM
+  on <hostname>).ext`, holding the local version; the original name takes
+  OneDrive's version.
+
+The choice is applied on the next cycle, and only if the local file is as it
+was when the user chose; if it changed again, the choice is withdrawn and the
+file stays held. The tab also lists names OneDrive cannot hold, OneNote
+notebooks, malware-flagged files and downloads that failed for good, so
+everything that needs the user is in one place.
 
 ### 6.3 Uploads
 Uploads of an existing item send `If-Match: <baseline eTag>`. A 412 means the
@@ -251,8 +271,9 @@ sections above and win where they differ:
   the cycle stops with an issue instead of acting.
 - **Folder deletes in the cloud** happen only when a fresh children listing
   shows the folder empty (Graph deletes recursively).
-- **Conflict copies** are made by copying the local file and checking the
-  copy before the original is replaced.
+- **Conflict copies** (only when the user picks "Keep both") are made by
+  copying the local file and checking the copy before the original is
+  replaced.
 - **Times:** after setting a downloaded file's time, the file is read back and
   that value is the baseline (OneDrive keeps whole seconds).
 - **Excluded items** (per-file issues, never synced or deleted): OneNote

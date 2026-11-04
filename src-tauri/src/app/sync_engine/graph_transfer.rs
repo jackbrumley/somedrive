@@ -148,56 +148,6 @@ async fn graph_get(
     }
 }
 
-/// The item as OneDrive holds it right now; `None` when it no longer exists.
-async fn fetch_remote_item(
-    graph: &GraphContext,
-    item_id: &str,
-    cancel_flag: &Arc<AtomicBool>,
-) -> Result<Option<GraphDriveItem>, String> {
-    let url = format!("{GRAPH_ROOT}/me/drive/items/{item_id}");
-    let Some(text) = graph_get_text_if_exists(graph, &url, cancel_flag).await? else {
-        return Ok(None);
-    };
-    serde_json::from_str::<GraphDriveItem>(&text)
-        .map(Some)
-        .map_err(|error| format!("Failed decoding item {item_id}: {error}"))
-}
-
-/// The item at `relative_path` in OneDrive; `None` when there is none.
-async fn fetch_remote_item_by_path(
-    graph: &GraphContext,
-    relative_path: &str,
-    cancel_flag: &Arc<AtomicBool>,
-) -> Result<Option<GraphDriveItem>, String> {
-    let url = format!("{GRAPH_ROOT}/me/drive/root:/{}", encode_graph_path(relative_path));
-    let Some(text) = graph_get_text_if_exists(graph, &url, cancel_flag).await? else {
-        return Ok(None);
-    };
-    serde_json::from_str::<GraphDriveItem>(&text)
-        .map(Some)
-        .map_err(|error| format!("Failed decoding item at '{relative_path}': {error}"))
-}
-
-/// Whether the cloud folder currently has any children (a fresh listing,
-/// not the stored state; Graph deletes folders recursively).
-async fn remote_folder_has_children(
-    graph: &GraphContext,
-    item_id: &str,
-    cancel_flag: &Arc<AtomicBool>,
-) -> Result<bool, String> {
-    #[derive(Deserialize)]
-    struct ChildrenPage {
-        value: Vec<serde_json::Value>,
-    }
-    let url = format!("{GRAPH_ROOT}/me/drive/items/{item_id}/children?$top=1&$select=id");
-    let Some(text) = graph_get_text_if_exists(graph, &url, cancel_flag).await? else {
-        return Ok(false);
-    };
-    let page: ChildrenPage = serde_json::from_str(&text)
-        .map_err(|error| format!("Failed decoding children of {item_id}: {error}"))?;
-    Ok(!page.value.is_empty())
-}
-
 fn is_transient_request_error(error: &str) -> bool {
     let normalized = error.to_lowercase();
     normalized.contains("timed out")
@@ -722,7 +672,11 @@ async fn download_remote_item_content(
         }
 
         let placed_entry = match place_downloaded_file(graph, relative_path, &temp_path, local_path) {
-            Ok(entry) => entry,
+            Ok(Some(entry)) => entry,
+            Ok(None) => {
+                runtime_finish_transfer_cancelled(&graph.sync_runtime, &graph.profile_id, &transfer_id);
+                return Ok(RemoteDownloadOutcome::HeldAsConflict);
+            }
             Err(reason) => {
                 if handle_download_retry(
                     graph,
@@ -770,94 +724,6 @@ async fn download_remote_item_content(
         );
         return Ok(RemoteDownloadOutcome::Downloaded(placed_entry));
     }
-}
-
-/// A download is only accepted when its size matches what the server said it
-/// was sending (`Content-Length`, or the planned size without one; SharePoint
-/// sizes can differ from the listed size) and, when OneDrive supplied one,
-/// its QuickXorHash matches.
-fn verify_downloaded_content(
-    version: &CloudVersion,
-    content_length: Option<u64>,
-    downloaded_bytes: u64,
-    hasher: &QuickXorHasher,
-) -> Result<(), String> {
-    let expected_size = content_length.unwrap_or(version.size);
-    if downloaded_bytes != expected_size {
-        return Err(format!(
-            "Downloaded size {downloaded_bytes} does not match the expected {expected_size} bytes"
-        ));
-    }
-    if let Some(expected) = version.quick_xor_hash.as_deref() {
-        let actual = hasher.finish_base64();
-        if actual != expected {
-            return Err(format!(
-                "Downloaded content hash {actual} does not match OneDrive's {expected}"
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn set_file_modified_seconds(file: &std::fs::File, unix_seconds: i64) {
-    if unix_seconds <= 0 {
-        return;
-    }
-    let modified = std::time::UNIX_EPOCH + Duration::from_secs(unix_seconds as u64);
-    if let Err(error) = file.set_modified(modified) {
-        log::warn!("DOWNLOAD_SET_MTIME_FAILED error={}", error);
-    }
-}
-
-/// Moves a verified download into place. The file currently at the target is
-/// only replaced when it still matches the baseline (or the plan expected
-/// nothing there); anything else is kept as a conflict copy first, so a local
-/// edit made since the plan is never lost.
-fn place_downloaded_file(
-    graph: &GraphContext,
-    relative_path: &str,
-    temp_path: &Path,
-    local_path: &Path,
-) -> Result<LocalEntry, String> {
-    if let Some(existing) = read_local_entry(local_path)? {
-        if existing.is_dir {
-            return Err(format!(
-                "A folder is in the way of '{relative_path}'; the file is not downloaded"
-            ));
-        }
-        let replaceable = read_sync_file_row(&graph.profile_id, relative_path)?
-            .is_some_and(|row| row.local_matches_baseline(&existing));
-        if !replaceable {
-            let copy = preserve_conflict_copy(local_path)?;
-            log::warn!(
-                "{} [cycle:{}] CONFLICT_LOCAL_PRESERVED path={} copy={}",
-                graph.account_prefix,
-                graph.cycle_id,
-                relative_path,
-                copy.display()
-            );
-        }
-    }
-    std::fs::rename(temp_path, local_path).map_err(|error| {
-        format!(
-            "Failed moving '{}' to '{}': {error}",
-            temp_path.display(),
-            local_path.display()
-        )
-    })?;
-    if let Some(parent) = local_path.parent() {
-        if let Err(error) = std::fs::File::open(parent).and_then(|folder| folder.sync_all()) {
-            log::warn!(
-                "{} [cycle:{}] DOWNLOAD_DIR_SYNC_FAILED path={} error={}",
-                graph.account_prefix,
-                graph.cycle_id,
-                relative_path,
-                error
-            );
-        }
-    }
-    read_local_entry(local_path)?
-        .ok_or_else(|| format!("'{relative_path}' is missing right after it was downloaded"))
 }
 
 async fn create_remote_folder(

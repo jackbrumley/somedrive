@@ -21,6 +21,8 @@ include!("sync_engine/download_lane.rs");
 include!("sync_engine/sync_actions.rs");
 include!("sync_engine/upload_lane.rs");
 include!("sync_engine/graph_transfer.rs");
+include!("sync_engine/graph_item_queries.rs");
+include!("sync_engine/download_finalize.rs");
 include!("sync_engine/graph_download_diagnostics.rs");
 include!("sync_engine/path_state.rs");
 include!("sync_engine/planner_tests.rs");

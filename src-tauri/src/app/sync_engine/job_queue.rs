@@ -164,6 +164,8 @@ pub struct RetryAllFailedDownloadJobsReport {
 include!("job_queue_db.rs");
 include!("job_queue_lifecycle_store.rs");
 include!("sync_files_store.rs");
+include!("cloud_state_store.rs");
+include!("sync_problems_store.rs");
 include!("job_queue_download_store.rs");
 include!("job_queue_upload_store.rs");
 include!("job_queue_activity_projection.rs");

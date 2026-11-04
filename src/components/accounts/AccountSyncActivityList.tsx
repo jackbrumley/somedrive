@@ -1,4 +1,5 @@
 import { IconCircleCheckFilled, IconDownload, IconUpload } from "@tabler/icons-preact";
+import type { ComponentChildren } from "preact";
 import { useRef, useState } from "preact/hooks";
 import { useElementHeight } from "../../hooks/useElementHeight";
 import type { SyncRuntimeAccountStatus } from "../../types/somedrive";
@@ -11,7 +12,7 @@ const ROW_HEIGHT_PX = 52;
 const MIN_VISIBLE_ROWS = 4;
 const RECENT_LIMIT = 64;
 
-type ActivityTab = "now" | "recent" | "details";
+type ActivityTab = "now" | "recent" | "problems" | "details";
 
 interface ActivityRow {
   id: string;
@@ -24,6 +25,8 @@ interface ActivityRow {
 
 interface AccountSyncActivityListProps {
   runtimeStatus: SyncRuntimeAccountStatus | null;
+  problemCount: number;
+  problems: ComponentChildren;
   onOpenItemFolder: (relativePath: string) => Promise<void>;
 }
 
@@ -93,7 +96,12 @@ function ActivityRowView({ row, onOpen }: { row: ActivityRow; onOpen: (path: str
   );
 }
 
-export function AccountSyncActivityList({ runtimeStatus, onOpenItemFolder }: AccountSyncActivityListProps) {
+export function AccountSyncActivityList({
+  runtimeStatus,
+  problemCount,
+  problems,
+  onOpenItemFolder,
+}: AccountSyncActivityListProps) {
   const [selectedTab, setSelectedTab] = useState<ActivityTab>("now");
   const listBodyRef = useRef<HTMLDivElement>(null);
   const listBodyHeight = useElementHeight(listBodyRef);
@@ -126,6 +134,16 @@ export function AccountSyncActivityList({ runtimeStatus, onOpenItemFolder }: Acc
         <button
           type="button"
           role="tab"
+          aria-selected={tab === "problems"}
+          class={tab === "problems" ? "sync-activity-tab is-active" : "sync-activity-tab"}
+          onClick={() => setSelectedTab("problems")}
+        >
+          Sync problems{" "}
+          <span class={problemCount > 0 ? "sync-activity-count is-attention" : "sync-activity-count"}>{problemCount}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={tab === "details"}
           class={tab === "details" ? "sync-activity-tab is-active" : "sync-activity-tab"}
           onClick={() => setSelectedTab("details")}
@@ -134,7 +152,9 @@ export function AccountSyncActivityList({ runtimeStatus, onOpenItemFolder }: Acc
         </button>
       </div>
       <div class="sync-activity-body" ref={listBodyRef}>
-        {tab === "details" ? (
+        {tab === "problems" ? (
+          <div class="sync-tab-scroll">{problems}</div>
+        ) : tab === "details" ? (
           runtimeStatus ? (
             <AccountSyncDetails runtimeStatus={runtimeStatus} />
           ) : (

@@ -62,6 +62,8 @@ export function AppWorkspace({ runtime, updates }: AppWorkspaceProps) {
           onKeepCloudFiles={runtime.keepCloudFilesAfterLargeDelete}
           onFetchLargeDeletePreview={runtime.fetchAccountLargeDeletePreview}
           onExportLargeDeletePreview={runtime.exportAccountLargeDeletePreview}
+          onFetchSyncProblems={runtime.fetchSyncProblems}
+          onResolveSyncConflicts={runtime.resolveSyncConflicts}
         />
       )}
       renderSettings={() => (

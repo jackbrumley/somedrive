@@ -276,6 +276,8 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
     retryAccountSync: accountActions.retryAccountSync,
     retryFailedDownload: accountActions.retryFailedDownload,
     retryAllFailedDownloads: accountActions.retryAllFailedDownloads,
+    fetchSyncProblems: accountActions.fetchSyncProblems,
+    resolveSyncConflicts: accountActions.resolveSyncConflicts,
     confirmAccountLargeDelete: accountActions.confirmAccountLargeDelete,
     keepCloudFilesAfterLargeDelete: accountActions.keepCloudFilesAfterLargeDelete,
     fetchAccountLargeDeletePreview: accountActions.fetchAccountLargeDeletePreview,

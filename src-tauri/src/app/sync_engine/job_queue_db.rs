@@ -75,6 +75,8 @@ const SYNC_SCHEMA_SQL: &str = "
         desired_action TEXT NOT NULL DEFAULT 'none',
         issue_code TEXT,
         issue_detail TEXT,
+        resolution TEXT,
+        resolution_local_mtime_ns INTEGER,
         updated_at INTEGER NOT NULL,
         UNIQUE(profile_id, path)
     );
