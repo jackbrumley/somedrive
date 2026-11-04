@@ -180,6 +180,33 @@ its id" (fixes A6, A9).
 - A missing or empty sync root is never "everything deleted": the cycle
   stops with a "sync folder unavailable" issue (fixes the unmounted-drive
   case).
+- Deletes the user confirmed inside SomeDrive (the Clean up tab, after
+  typing "delete") are recorded in `sync_approved_deletes`. The guard lets
+  them through without asking again and does not count them towards its
+  limit; other deletes in the same cycle are still held as usual. An
+  approval lasts a day and ends as soon as its path is no longer tracked.
+- A folder deleted here whose every cloud item is a planned delete goes to
+  OneDrive with **one** request instead of a check and a delete per file
+  (which would hit Microsoft's request limits for a big folder). The folder
+  is read again first: it must still have the eTag the cloud changes last
+  reported and exactly the expected bytes, and the delete itself is
+  conditional on that eTag (`If-Match`). Anything that does not line up,
+  or any untracked, skipped or excluded item inside, falls back to per-item
+  deletes (`remote_deletes.rs`).
+
+### 6.4a Clean up
+The account page's Clean up tab suggests identical copies and lists large
+files, worked out from the sync database alone (`cleanup_finder.rs`): a
+copy has the same name and the same OneDrive hash and size as a file that
+stays. Suggestions go as high up the folder tree as possible (a whole
+folder; else the identical part of a folder that is at least 90% copies;
+else the copies in one folder), and a greedy pass guarantees one copy of
+every file stays even if every suggestion is deleted. Folders named "old",
+"copy" or "duplicates", and the older of two snapshots, are suggested
+first. Hidden paths are left out of matching altogether. A delete works the
+suggestion out again, compares every file byte for byte with the copy that
+stays, refuses if a folder holds anything else on disk, then moves it to
+the Trash and approves the deletes for the guard (`cleanup_delete.rs`).
 
 ### 6.5 Names
 - Two local names that differ only by case (`a.txt`, `A.txt`) cannot both

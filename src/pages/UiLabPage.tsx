@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import { PageHeader } from "../components/shell/PageHeader";
 import { AccountCard } from "../components/accounts/AccountCard";
 import { AccountDetailPage } from "./AccountDetailPage";
+import { previewCleanupActions } from "./uiLabCleanupPreview";
 import type {
   AccountProfile,
   NotSyncedItem,
@@ -407,6 +408,7 @@ export function UiLabPage({ onBack }: UiLabPageProps) {
         onExportLargeDeletePreview={async () => undefined}
         onFetchSyncProblems={async () => ({ problems: previewSyncProblems, notSynced: previewNotSynced })}
         onResolveSyncConflicts={async () => undefined}
+        cleanupActions={previewCleanupActions}
       />
     );
   }

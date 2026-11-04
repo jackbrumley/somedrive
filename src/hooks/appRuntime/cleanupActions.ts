@@ -1,0 +1,52 @@
+import { invoke } from "@tauri-apps/api/core";
+import { formatBytes } from "../../components/accounts/syncFormatting";
+import type { CleanupActions, CleanupDeleteResult, CleanupView, ToastType } from "../../types/somedrive";
+
+interface CleanupActionsFactoryParams {
+  showToast: (message: string, type?: ToastType) => void;
+  refreshActivity: () => Promise<void>;
+}
+
+/** The Clean up tab's calls. Reading and deleting reject with the reason,
+ *  which the tab and its confirmation dialog show in place. */
+export function createCleanupActions({ showToast, refreshActivity }: CleanupActionsFactoryParams): CleanupActions {
+  const announceDeleted = async (result: CleanupDeleteResult) => {
+    const files = `${result.fileCount} file${result.fileCount === 1 ? "" : "s"}`;
+    showToast(
+      `Deleted ${files} (${formatBytes(result.bytes)}). They're in the Trash, and OneDrive keeps them in its recycle bin.`,
+      "success"
+    );
+    await refreshActivity();
+  };
+
+  return {
+    list: (accountId: string) => invoke<CleanupView>("list_cleanup", { profileId: accountId }),
+    deleteDuplicates: async (accountId: string, suggestionId: string) => {
+      const result = await invoke<CleanupDeleteResult>("delete_cleanup_duplicates", {
+        profileId: accountId,
+        suggestionId,
+      });
+      await announceDeleted(result);
+      return result;
+    },
+    deleteLargeFile: async (accountId: string, path: string) => {
+      const result = await invoke<CleanupDeleteResult>("delete_cleanup_large_file", { profileId: accountId, path });
+      await announceDeleted(result);
+      return result;
+    },
+    hide: async (accountId: string, path: string) => {
+      try {
+        await invoke("hide_cleanup_path", { profileId: accountId, path });
+      } catch (error) {
+        showToast(`Failed to hide '${path}': ${error}`, "error");
+      }
+    },
+    unhide: async (accountId: string, path: string) => {
+      try {
+        await invoke("unhide_cleanup_path", { profileId: accountId, path });
+      } catch (error) {
+        showToast(`Failed to show '${path}' again: ${error}`, "error");
+      }
+    },
+  };
+}

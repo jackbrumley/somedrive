@@ -1,0 +1,193 @@
+/* The account's Clean up tab: identical copies and large files, and the
+   typed confirmation before a delete. Rows reuse the sync problem list. */
+
+.cleanup-section {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.cleanup-heading {
+  margin: var(--space-2) 0 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.cleanup-icon {
+  color: var(--text-muted);
+}
+
+.cleanup-item .sync-problem-name {
+  flex: 1;
+}
+
+.cleanup-item .sync-file-name,
+.cleanup-item .sync-file-folder {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cleanup-size {
+  flex: none;
+  margin-left: auto;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-main);
+}
+
+.cleanup-kept,
+.cleanup-confirm-safe,
+.cleanup-confirm-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--sync-tone-success-detail);
+}
+
+.cleanup-kept svg,
+.cleanup-confirm-safe svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--sync-tone-success-text);
+}
+
+.cleanup-confirm-warning {
+  color: var(--sync-tone-warning-detail);
+}
+
+.cleanup-confirm-warning svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--sync-tone-warning-text);
+}
+
+.cleanup-pairs {
+  list-style: none;
+  margin: 0;
+  padding: 6px 8px;
+  display: grid;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  font-size: 0.78rem;
+}
+
+.cleanup-pairs li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-2);
+}
+
+.cleanup-pair-path,
+.cleanup-pair-kept {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cleanup-pair-path {
+  color: var(--text-main);
+}
+
+.cleanup-pair-kept {
+  grid-column: 1;
+  color: var(--text-faint);
+}
+
+.cleanup-pair-size {
+  grid-column: 2;
+  grid-row: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.cleanup-pairs-more {
+  color: var(--text-faint);
+}
+
+.cleanup-toggle {
+  justify-self: start;
+}
+
+.cleanup-hidden summary {
+  cursor: pointer;
+}
+
+.cleanup-hidden-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.cleanup-hidden-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: 0.8rem;
+}
+
+.cleanup-hidden-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.cleanup-confirm {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.cleanup-confirm-summary {
+  display: grid;
+  gap: var(--space-2);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.cleanup-confirm-summary p {
+  margin: 0;
+}
+
+.cleanup-confirm-label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.cleanup-confirm-busy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--sync-tone-info-text);
+}
+
+.cleanup-confirm-error {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--sync-tone-warning-border);
+  border-radius: 8px;
+  background: var(--sync-tone-warning-bg);
+  font-size: 0.85rem;
+  color: var(--sync-tone-warning-text);
+}
+
+.cleanup-confirm-actions {
+  justify-content: flex-end;
+}

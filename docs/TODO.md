@@ -42,6 +42,14 @@ review, 2026-11-04). Design: `docs/sync-engine.md`. Built on branch
     informational line instead of a sync problem per section; the 403
     diagnostics (item metadata and permissions look-ups) are refused with 401
     InvalidAuthenticationToken, so they explain nothing.
+14. [x] Clean up tab (`docs/sync-engine.md` section 6.4a): identical copies
+    suggested as whole folders where possible and large files, deleted after
+    a typed confirmation and a byte-for-byte check; confirmed deletes skip
+    the delete guard's second prompt, and a deleted folder goes to OneDrive
+    in one request.
+15. [ ] Clean up follow-ups: "Keep this copy instead" on a suggestion (swap
+    which copy stays); suggest identical content under different names only
+    where the name carries no meaning (photos, documents).
 
 ### Project-owned Microsoft Entra app registration
 SomeDrive must not ship with a third-party client ID.

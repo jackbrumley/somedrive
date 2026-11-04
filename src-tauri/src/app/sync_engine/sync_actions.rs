@@ -401,60 +401,6 @@ pub(crate) fn delete_local_items(
     Ok(())
 }
 
-/// Deletes cloud items the plan deletes (OneDrive keeps them in its recycle
-/// bin). Each item is read again first: a file whose content changed since
-/// the baseline, or a folder that is not empty, is left alone.
-pub(crate) async fn delete_remote_items(
-    graph: &mut GraphContext,
-    rows: &[SyncFileRow],
-    stats: &mut SyncCycleStats,
-    cancel_flag: &Arc<AtomicBool>,
-) -> SyncResult<()> {
-    for row in rows {
-        ensure_not_cancelled(cancel_flag)?;
-        let Some(item_id) = row.remote_item_id.clone() else {
-            continue;
-        };
-        let Some(current) = fetch_remote_item(graph, &item_id, cancel_flag).await? else {
-            record_cloud_absent(&graph.profile_id, &row.path)?;
-            forget_sync_file(&graph.profile_id, &row.path)?;
-            continue;
-        };
-        let unchanged = if row.is_dir {
-            !remote_folder_has_children(graph, &item_id, cancel_flag).await?
-        } else {
-            current.size.unwrap_or(0) == row.base_cloud_size
-                && match (current.quick_xor_hash(), row.base_hash.as_deref()) {
-                    (Some(current_hash), Some(base_hash)) => current_hash == base_hash,
-                    _ => current.c_tag.is_some() && current.c_tag == row.cloud_ctag,
-                }
-        };
-        if !unchanged {
-            log::info!(
-                "{} [cycle:{}] REMOTE_DELETE_SKIPPED path={} reason=changed_since_plan",
-                graph.account_prefix,
-                graph.cycle_id,
-                row.path
-            );
-            continue;
-        }
-        delete_remote_item(graph, &item_id, cancel_flag).await?;
-        record_cloud_absent(&graph.profile_id, &row.path)?;
-        forget_sync_file(&graph.profile_id, &row.path)?;
-        record_throttle_event(&graph.profile_id, DELETE_EVENT_DIRECTION)?;
-        if !row.is_dir {
-            record_finished_delete(
-                &graph.profile_id,
-                HISTORY_DELETED_REMOTELY,
-                &row.path,
-                row.base_cloud_size,
-            )?;
-        }
-        stats.deleted_remote += 1;
-    }
-    Ok(())
-}
-
 /// Carries out the user's choices for held conflicts. Each choice applies
 /// only if the local file is as it was when they chose; otherwise the choice
 /// is withdrawn and the file stays held for a fresh decision.

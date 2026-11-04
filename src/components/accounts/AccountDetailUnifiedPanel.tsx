@@ -5,6 +5,7 @@ import type {
   AccountProfile,
   ConflictResolution,
   SyncProblemsView,
+  CleanupActions,
   SyncRuntimeAccountStatus,
 } from "../../types/somedrive";
 import { computeEffectiveSyncState, computeHasCompletedInitialSync } from "./syncStateSelectors";
@@ -29,6 +30,7 @@ interface AccountDetailUnifiedPanelProps {
   onFetchLargeDeletePreview: (accountId: string) => Promise<string[]>;
   onExportLargeDeletePreview: (accountId: string) => Promise<void>;
   onFetchSyncProblems: (accountId: string) => Promise<SyncProblemsView>;
+  cleanupActions: CleanupActions;
   onResolveSyncConflicts: (accountId: string, paths: string[], resolution: ConflictResolution) => Promise<void>;
 }
 
@@ -52,6 +54,7 @@ export function AccountDetailUnifiedPanel({
   onFetchLargeDeletePreview,
   onExportLargeDeletePreview,
   onFetchSyncProblems,
+  cleanupActions,
   onResolveSyncConflicts,
 }: AccountDetailUnifiedPanelProps) {
   const [largeDeletePreviewPaths, setLargeDeletePreviewPaths] = useState<string[]>([]);
@@ -111,6 +114,7 @@ export function AccountDetailUnifiedPanel({
         largeDeletePreviewPaths={largeDeletePreviewPaths}
         onExportLargeDeletePreview={() => onExportLargeDeletePreview(account.id)}
         onFetchSyncProblems={onFetchSyncProblems}
+        cleanupActions={cleanupActions}
         onResolveSyncConflicts={onResolveSyncConflicts}
       />
     );

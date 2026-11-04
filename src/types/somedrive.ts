@@ -253,5 +253,67 @@ export interface SyncProblemsView {
   notSynced: NotSyncedItem[];
 }
 
+/** Mirrors `sync_engine::KeptLocation`: where identical copies stay. */
+export interface KeptLocation {
+  path: string;
+  fileCount: number;
+}
+
+/** Mirrors `sync_engine::DuplicatePair`: a file to delete and the identical
+ *  copy that stays. */
+export interface DuplicatePair {
+  path: string;
+  keptPath: string;
+  size: number;
+}
+
+/** Mirrors `sync_engine::DuplicateSuggestion`. `folder`: the whole folder;
+ *  `partial`: the identical part of a folder; `files`: identical files
+ *  directly in a folder. */
+export interface DuplicateSuggestion {
+  id: string;
+  kind: "folder" | "partial" | "files";
+  path: string;
+  deletePaths: string[];
+  fileCount: number;
+  bytes: number;
+  folderFileCount: number;
+  keptIn: KeptLocation[];
+  keptInMore: number;
+  pairs: DuplicatePair[];
+}
+
+/** Mirrors `sync_engine::LargeFile`. */
+export interface LargeFile {
+  path: string;
+  size: number;
+  modified: number;
+  copies: string[];
+}
+
+/** Mirrors `sync_engine::CleanupView`. */
+export interface CleanupView {
+  duplicates: DuplicateSuggestion[];
+  largeFiles: LargeFile[];
+  duplicateBytes: number;
+  hidden: string[];
+}
+
+/** Mirrors `sync_engine::CleanupDeleteResult`. */
+export interface CleanupDeleteResult {
+  fileCount: number;
+  bytes: number;
+}
+
+/** The Clean up tab's backend calls. The deletes reject with the reason
+ *  when nothing was deleted. */
+export interface CleanupActions {
+  list: (accountId: string) => Promise<CleanupView>;
+  deleteDuplicates: (accountId: string, suggestionId: string) => Promise<CleanupDeleteResult>;
+  deleteLargeFile: (accountId: string, path: string) => Promise<CleanupDeleteResult>;
+  hide: (accountId: string, path: string) => Promise<void>;
+  unhide: (accountId: string, path: string) => Promise<void>;
+}
+
 /** Mirrors `app_settings::ConflictPolicy`. */
 export type ConflictPolicy = "ask" | "keep_newest";

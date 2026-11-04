@@ -141,10 +141,24 @@ pub(crate) const SYNC_SCHEMA_SQL: &str = "
         last_sync_at TEXT,
         updated_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS sync_approved_deletes (
+        profile_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        approved_at INTEGER NOT NULL,
+        PRIMARY KEY(profile_id, path)
+    );
+    CREATE TABLE IF NOT EXISTS cleanup_hidden (
+        profile_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        hidden_at INTEGER NOT NULL,
+        PRIMARY KEY(profile_id, path)
+    );
 ";
 
 /// Tables of the pre-baseline engine, dropped when an old database is found.
-pub(crate) const LEGACY_SYNC_TABLES: [&str; 7] = [
+pub(crate) const LEGACY_SYNC_TABLES: [&str; 9] = [
+    "sync_approved_deletes",
+    "cleanup_hidden",
     "sync_local_moves",
     "sync_jobs",
     "sync_files",

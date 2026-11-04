@@ -20,6 +20,13 @@ pub(crate) use std::sync::Arc;
 pub(crate) use std::time::Duration;
 pub(crate) use tokio::sync::mpsc;
 
+mod approved_deletes_store;
+mod cleanup_delete;
+mod cleanup_finder;
+#[cfg(test)]
+mod cleanup_finder_tests;
+mod cleanup_store;
+mod cleanup_suggestions;
 mod cloud_state_store;
 #[cfg(test)]
 mod cloud_state_tests;
@@ -27,6 +34,7 @@ mod conflict_copy;
 mod content_check;
 mod cycle;
 mod cycle_orchestrator;
+mod delete_guard;
 mod delta_resync_store;
 mod download_finalize;
 mod download_lane;
@@ -71,6 +79,9 @@ mod planner_transitions;
 mod preamble;
 mod quick_xor_hash;
 mod remote_changes;
+mod remote_deletes;
+#[cfg(test)]
+mod remote_deletes_tests;
 mod remote_delta_producer;
 mod remote_download_dispatcher;
 mod remote_download_workers;
@@ -85,11 +96,16 @@ mod sync_shutdown;
 mod upload_lane;
 mod worker_lifecycle;
 
+pub(crate) use approved_deletes_store::*;
+pub use cleanup_delete::*;
+pub use cleanup_finder::*;
+pub use cleanup_store::*;
 pub(crate) use cloud_state_store::*;
 pub(crate) use conflict_copy::*;
 pub(crate) use content_check::*;
 pub(crate) use cycle::*;
 pub(crate) use cycle_orchestrator::*;
+pub(crate) use delete_guard::*;
 pub(crate) use delta_resync_store::*;
 pub(crate) use download_finalize::*;
 pub(crate) use download_lane::*;
@@ -122,6 +138,7 @@ pub(crate) use planner_transitions::*;
 pub use preamble::*;
 pub(crate) use quick_xor_hash::*;
 pub(crate) use remote_changes::*;
+pub(crate) use remote_deletes::*;
 pub(crate) use remote_delta_producer::*;
 pub(crate) use remote_download_dispatcher::*;
 pub(crate) use remote_download_workers::*;

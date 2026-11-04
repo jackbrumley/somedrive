@@ -122,7 +122,7 @@ pub(crate) async fn delete_remote_item(
         graph.cycle_id,
         item_id
     );
-    graph_delete(graph, &url).await?;
+    graph_delete(graph, &url, None).await?;
     log::info!(
         "{} [cycle:{}] REMOTE_DELETE_RESULT item_id={} status=ok",
         graph.account_prefix,
@@ -130,4 +130,26 @@ pub(crate) async fn delete_remote_item(
         item_id
     );
     Ok(())
+}
+
+/// Deletes a whole cloud folder with one request, only while its eTag is
+/// still `etag` (OneDrive changes a folder's eTag when anything inside it
+/// changes). Graph deletes folders recursively into the recycle bin.
+pub(crate) async fn delete_remote_folder_if_unchanged(
+    graph: &mut GraphContext,
+    item_id: &str,
+    etag: &str,
+    cancel_flag: &Arc<AtomicBool>,
+) -> SyncResult<GraphDeleteOutcome> {
+    ensure_not_cancelled(cancel_flag)?;
+    let url = format!("{GRAPH_ROOT}/me/drive/items/{item_id}");
+    let outcome = graph_delete(graph, &url, Some(etag)).await?;
+    log::info!(
+        "{} [cycle:{}] REMOTE_FOLDER_DELETE_RESULT item_id={} outcome={:?}",
+        graph.account_prefix,
+        graph.cycle_id,
+        item_id,
+        outcome
+    );
+    Ok(outcome)
 }

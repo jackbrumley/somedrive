@@ -316,6 +316,33 @@ pub(crate) fn forget_sync_file(profile_id: &str, path: &str) -> Result<(), Strin
     delete_untracked_rows(&connection, profile_id)
 }
 
+/// A cloud folder and everything inside it were deleted in one request:
+/// forget the folder and its contents in one transaction.
+pub(crate) fn forget_folder_tree(profile_id: &str, folder: &str) -> Result<(), String> {
+    let mut connection = open_sync_jobs_connection(profile_id)?;
+    let transaction = connection
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|error| format!("Failed starting folder forget transaction: {error}"))?;
+    transaction
+        .execute(
+            "UPDATE sync_files
+             SET cloud_present = 0, cloud_size = 0, cloud_mtime = 0, cloud_etag = NULL,
+                 cloud_ctag = NULL, cloud_hash = NULL, remote_item_id = NULL,
+                 remote_parent_id = NULL,
+                 base_present = 0, base_size = 0, base_cloud_size = 0, base_local_mtime_ns = 0,
+                 base_etag = NULL, base_ctag = NULL, base_hash = NULL, desired_action = 'none',
+                 updated_at = ?3
+             WHERE profile_id = ?1
+               AND (path = ?2 OR (path > ?2 || '/' AND path < ?2 || '0'))",
+            params![profile_id, folder, current_unix_seconds()],
+        )
+        .map_err(|error| format!("Failed forgetting folder '{folder}': {error}"))?;
+    delete_untracked_rows(&transaction, profile_id)?;
+    transaction
+        .commit()
+        .map_err(|error| format!("Failed committing folder forget: {error}"))
+}
+
 /// The local file at `path` is gone (deleted to Trash or renamed aside).
 pub(crate) fn record_local_absent(profile_id: &str, path: &str) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
@@ -328,6 +355,42 @@ pub(crate) fn record_local_absent(profile_id: &str, path: &str) -> Result<(), St
         )
         .map_err(|error| format!("Failed recording local removal of '{path}': {error}"))?;
     Ok(())
+}
+
+/// `path` and everything recorded inside it are gone from this device (the
+/// Clean up tab moved them to the Trash).
+pub(crate) fn record_local_tree_absent(profile_id: &str, path: &str) -> Result<(), String> {
+    let connection = open_sync_jobs_connection(profile_id)?;
+    connection
+        .execute(
+            "UPDATE sync_files
+             SET local_present = 0, local_size = 0, local_mtime_ns = 0, updated_at = ?3
+             WHERE profile_id = ?1
+               AND (path = ?2 OR (path > ?2 || '/' AND path < ?2 || '0'))",
+            params![profile_id, path, current_unix_seconds()],
+        )
+        .map_err(|error| format!("Failed recording local removal of '{path}': {error}"))?;
+    Ok(())
+}
+
+/// `path` and every tracked file and folder inside it.
+pub(crate) fn list_tracked_paths_at_or_inside(
+    profile_id: &str,
+    path: &str,
+) -> Result<Vec<String>, String> {
+    let connection = open_sync_jobs_connection(profile_id)?;
+    let mut statement = connection
+        .prepare(
+            "SELECT path FROM sync_files
+             WHERE profile_id = ?1
+               AND (path = ?2 OR (path > ?2 || '/' AND path < ?2 || '0'))",
+        )
+        .map_err(|error| format!("Failed preparing tracked paths query: {error}"))?;
+    let rows = statement
+        .query_map(params![profile_id, path], |row| row.get::<_, String>(0))
+        .map_err(|error| format!("Failed querying tracked paths: {error}"))?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| format!("Failed reading tracked paths: {error}"))
 }
 
 /// A cloud delete of `path` succeeded.

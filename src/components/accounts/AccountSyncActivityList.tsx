@@ -13,7 +13,7 @@ const MIN_VISIBLE_ROWS = 4;
 /** Finished rows shown at most (the engine sends the last 10 minutes). */
 const FINISHED_LIMIT = 200;
 
-type ActivityTab = "activity" | "problems" | "notSynced" | "details";
+type ActivityTab = "activity" | "problems" | "notSynced" | "cleanup" | "details";
 
 /** What a feed row is: still running, or how it finished. */
 type RowKind = "running" | "done" | "deleted" | "failed";
@@ -38,6 +38,7 @@ interface AccountSyncActivityListProps {
   problems: ComponentChildren;
   notSyncedCount: number;
   notSynced: ComponentChildren;
+  cleanup: ComponentChildren;
   onOpenItemFolder: (relativePath: string) => Promise<void>;
 }
 
@@ -216,6 +217,7 @@ export function AccountSyncActivityList({
   problems,
   notSyncedCount,
   notSynced,
+  cleanup,
   onOpenItemFolder,
 }: AccountSyncActivityListProps) {
   const [tab, setTab] = useState<ActivityTab>("activity");
@@ -246,6 +248,14 @@ export function AccountSyncActivityList({
         >
           Not synced <span class="sync-activity-count">{notSyncedCount}</span>
         </TabButton>
+        <TabButton
+          tab="cleanup"
+          current={tab}
+          onSelect={setTab}
+          title="Identical copies and large files you could delete to free up OneDrive space"
+        >
+          Clean up
+        </TabButton>
         <TabButton tab="details" current={tab} onSelect={setTab}>
           Details
         </TabButton>
@@ -255,6 +265,8 @@ export function AccountSyncActivityList({
           <div class="sync-tab-scroll">{problems}</div>
         ) : tab === "notSynced" ? (
           <div class="sync-tab-scroll">{notSynced}</div>
+        ) : tab === "cleanup" ? (
+          <div class="sync-tab-scroll">{cleanup}</div>
         ) : tab === "details" ? (
           runtimeStatus ? (
             <AccountSyncDetails runtimeStatus={runtimeStatus} />

@@ -7,7 +7,6 @@ use super::*;
 /// Below this many synced files a missing sync folder cannot be told apart
 /// from a small drive the user emptied, so the check does not apply.
 pub(crate) const MISSING_ROOT_MIN_TRACKED_FILES: usize = 20;
-pub(crate) const DELETE_GUARD_WINDOW_SECONDS: i64 = 24 * 60 * 60;
 
 pub(crate) async fn tick_sync_cycle(
     profiles_lock: &Arc<std::sync::Mutex<()>>,
@@ -261,102 +260,4 @@ pub(crate) fn ensure_sync_root_available(profile_id: &str, sync_root: &Path) -> 
         )));
     }
     Ok(())
-}
-
-/// Applies the plan's deletes, holding them for review when a cycle (with
-/// the last 24 hours of deletes) would remove more than the threshold: 10
-/// files or 10% of synced files, whichever is larger, in either direction.
-/// An approval covers only paths that were on the reviewed list and are
-/// still planned for deletion now.
-pub(crate) async fn apply_deletes_through_guard(
-    graph: &mut GraphContext,
-    sync_root: &Path,
-    planned: &PlannedActions,
-    stats: &mut SyncCycleStats,
-    cancel_flag: &Arc<AtomicBool>,
-) -> SyncResult<()> {
-    let mut guard_state = read_large_delete_guard_state(&graph.profile_id)?;
-    let planned_paths: Vec<String> = planned
-        .delete_local
-        .iter()
-        .chain(planned.delete_remote.iter())
-        .map(|row| row.path.clone())
-        .collect();
-    if planned_paths.is_empty() {
-        if !guard_state.pending_paths.is_empty() {
-            persist_large_delete_guard_state(&graph.profile_id, &LargeDeleteGuardState::default())?;
-            runtime_clear_issue(&graph.sync_runtime, &graph.profile_id);
-        }
-        return Ok(());
-    }
-
-    let tracked_files = count_tracked_files(&graph.profile_id)?;
-    let threshold = resolve_large_delete_guard_threshold().max(tracked_files / 10);
-    let recent_deletes = count_events_since(
-        &graph.profile_id,
-        DELETE_EVENT_DIRECTION,
-        current_unix_seconds() - DELETE_GUARD_WINDOW_SECONDS,
-    )?;
-    let within_limit = planned_paths.len() + recent_deletes <= threshold;
-
-    let allowed: HashSet<String> = if within_limit {
-        planned_paths.iter().cloned().collect()
-    } else if guard_state.approved {
-        let reviewed: HashSet<&String> = guard_state.pending_paths.iter().collect();
-        planned_paths
-            .iter()
-            .filter(|path| reviewed.contains(path))
-            .cloned()
-            .collect()
-    } else {
-        guard_state.pending_paths = planned_paths.clone();
-        persist_large_delete_guard_state(&graph.profile_id, &guard_state)?;
-        log::warn!(
-            "{} [cycle:{}] LARGE_DELETE_GUARD_HELD planned={} recent_24h={} threshold={}",
-            graph.account_prefix,
-            graph.cycle_id,
-            planned_paths.len(),
-            recent_deletes,
-            threshold
-        );
-        runtime_set_issue(
-            &graph.sync_runtime,
-            &graph.profile_id,
-            "large_delete_guard",
-            &large_delete_guard_issue_message(planned_paths.len()),
-            &["confirm_large_delete", "keep_cloud_files", "open_sync_root"],
-            None,
-            None,
-        );
-        return Ok(());
-    };
-
-    let mut delete_local: Vec<SyncFileRow> = planned
-        .delete_local
-        .iter()
-        .filter(|row| allowed.contains(&row.path))
-        .cloned()
-        .collect();
-    let mut delete_remote: Vec<SyncFileRow> = planned
-        .delete_remote
-        .iter()
-        .filter(|row| allowed.contains(&row.path))
-        .cloned()
-        .collect();
-    // Deepest first, so a folder is only reached after its contents.
-    delete_local.sort_by_key(|row| std::cmp::Reverse(row.path.matches('/').count()));
-    delete_remote.sort_by_key(|row| std::cmp::Reverse(row.path.matches('/').count()));
-    delete_local_items(graph, sync_root, &delete_local, stats)?;
-    delete_remote_items(graph, &delete_remote, stats, cancel_flag).await?;
-
-    if guard_state.approved || !guard_state.pending_paths.is_empty() {
-        persist_large_delete_guard_state(&graph.profile_id, &LargeDeleteGuardState::default())?;
-    }
-    Ok(())
-}
-
-pub(crate) fn large_delete_guard_issue_message(pending_count: usize) -> String {
-    format!(
-        "{pending_count} files would be deleted. Review them, then confirm the deletion or keep the files."
-    )
 }

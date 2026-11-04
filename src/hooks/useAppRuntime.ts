@@ -16,6 +16,7 @@ import type {
 } from "../types/somedrive";
 import { computeEffectiveSyncState } from "../components/accounts/syncStateSelectors";
 import { createAccountActions } from "./appRuntime/accountActions";
+import { createCleanupActions } from "./appRuntime/cleanupActions";
 import { createNavigationActions } from "./appRuntime/navigation";
 import { createRefreshActions } from "./appRuntime/refresh";
 import { createSystemActions } from "./appRuntime/systemActions";
@@ -78,6 +79,10 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
         openAccount: navigation.openAccount,
       }),
     [navigation.openAccount, refreshActions.refreshActivity, refreshActions.refreshStatus, showToast]
+  );
+  const cleanupActions = useMemo(
+    () => createCleanupActions({ showToast, refreshActivity: refreshActions.refreshActivity }),
+    [refreshActions.refreshActivity, showToast]
   );
   const systemActions = useMemo(() => createSystemActions({ showToast }), [showToast]);
 
@@ -301,6 +306,7 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
     keepCloudFilesAfterLargeDelete: accountActions.keepCloudFilesAfterLargeDelete,
     fetchAccountLargeDeletePreview: accountActions.fetchAccountLargeDeletePreview,
     exportAccountLargeDeletePreview: accountActions.exportAccountLargeDeletePreview,
+    cleanupActions,
     autostartEnabled,
     toggleAutostart,
     closeToTray,

@@ -63,6 +63,7 @@ export function AppWorkspace({ runtime, updates }: AppWorkspaceProps) {
           onFetchLargeDeletePreview={runtime.fetchAccountLargeDeletePreview}
           onExportLargeDeletePreview={runtime.exportAccountLargeDeletePreview}
           onFetchSyncProblems={runtime.fetchSyncProblems}
+          cleanupActions={runtime.cleanupActions}
           onResolveSyncConflicts={runtime.resolveSyncConflicts}
         />
       )}

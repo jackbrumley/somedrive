@@ -166,14 +166,31 @@ pub(crate) fn is_transient_reqwest_error(error: &reqwest::Error) -> bool {
     error.is_connect() || error.is_timeout() || error.is_request() || error.is_body()
 }
 
-pub(crate) async fn graph_delete(graph: &GraphContext, url: &str) -> Result<(), String> {
+/// What a Graph DELETE did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GraphDeleteOutcome {
+    /// Deleted (or already gone).
+    Deleted,
+    /// The item no longer matched the `If-Match` eTag, so nothing was deleted.
+    ChangedSinceRead,
+}
+
+/// Deletes `url`. With `if_match`, OneDrive deletes only while the item's
+/// eTag is still that value.
+pub(crate) async fn graph_delete(
+    graph: &GraphContext,
+    url: &str,
+    if_match: Option<&str>,
+) -> Result<GraphDeleteOutcome, String> {
     let client = graph.http.clone();
     let mut refreshed = false;
     loop {
         let access_token = graph.current_access_token().await;
-        let response = client
-            .delete(url)
-            .bearer_auth(&access_token)
+        let mut request = client.delete(url).bearer_auth(&access_token);
+        if let Some(etag) = if_match {
+            request = request.header(reqwest::header::IF_MATCH, etag);
+        }
+        let response = request
             .send()
             .await
             .map_err(|error| format!("Graph DELETE failed: {error}"))?;
@@ -190,7 +207,10 @@ pub(crate) async fn graph_delete(graph: &GraphContext, url: &str) -> Result<(), 
         }
 
         if status.is_success() || status.as_u16() == 404 {
-            return Ok(());
+            return Ok(GraphDeleteOutcome::Deleted);
+        }
+        if status.as_u16() == 412 && if_match.is_some() {
+            return Ok(GraphDeleteOutcome::ChangedSinceRead);
         }
 
         let text = response.text().await.unwrap_or_default();

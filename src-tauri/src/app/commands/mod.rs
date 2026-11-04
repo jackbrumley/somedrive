@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod activity;
 pub mod auth;
+pub mod cleanup;
 pub mod status;
 pub mod sync_problems;
 pub mod sync_runtime;
@@ -11,6 +12,7 @@ pub mod window;
 pub use accounts::*;
 pub use activity::*;
 pub use auth::*;
+pub use cleanup::*;
 pub use status::*;
 pub use sync_problems::*;
 pub use sync_runtime::*;
