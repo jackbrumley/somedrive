@@ -83,8 +83,11 @@ pub fn remove_account_profile(
     Ok(())
 }
 
+/// Async so it runs off the UI thread: pausing writes to the sync database,
+/// which can wait on the engine's write lock, and a synchronous command
+/// would freeze the window meanwhile.
 #[tauri::command]
-pub fn set_account_agent_state(
+pub async fn set_account_agent_state(
     state: tauri::State<'_, AppState>,
     input: SetAccountAgentStateInput,
 ) -> Result<AccountProfile, String> {

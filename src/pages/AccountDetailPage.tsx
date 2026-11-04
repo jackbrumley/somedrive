@@ -2,11 +2,13 @@ import {
   IconAdjustments,
   IconAlertTriangleFilled,
   IconBuildingBank,
+  IconLoader2,
   IconPlayerPauseFilled,
   IconPlayerPlayFilled,
   IconUser,
 } from "@tabler/icons-preact";
 import { memo } from "preact/compat";
+import { agentStateRequestLabel, useAgentStateRequest } from "../hooks/useAgentStateRequest";
 import { PageHeader } from "../components/shell/PageHeader";
 import { AccountDetailUnifiedPanel } from "../components/accounts/AccountDetailUnifiedPanel";
 import type { AccountProfile, ConflictResolution, SyncProblem, SyncRuntimeAccountStatus } from "../types/somedrive";
@@ -59,6 +61,7 @@ const AccountDetailHeader = memo(function AccountDetailHeader({
   onSetAgentState,
 }: AccountDetailHeaderProps) {
   const { syncState } = computeEffectiveSyncState(account, runtimeStatus);
+  const { pendingState, requestAgentState } = useAgentStateRequest(account.id, onSetAgentState);
   const accountKindLabel = account.kind === "business" ? "Business" : "Personal";
   const accountKindIcon = account.kind === "business" ? <IconBuildingBank size={14} /> : <IconUser size={14} />;
   const isSyncView = view === "sync";
@@ -88,10 +91,21 @@ const AccountDetailHeader = memo(function AccountDetailHeader({
         <button
           type="button"
           class="ghost header-sync-btn"
-          onClick={() => void onSetAgentState(account.id, syncState === "syncing" ? "paused" : "syncing")}
+          disabled={pendingState !== null}
+          aria-busy={pendingState !== null}
+          onClick={() => void requestAgentState(syncState === "syncing" ? "paused" : "syncing")}
         >
-          {syncState === "syncing" ? <IconPlayerPauseFilled size={14} /> : <IconPlayerPlayFilled size={14} />}
-          {syncState === "syncing" ? "Pause" : "Resume"}
+          {pendingState !== null ? (
+            <>
+              <IconLoader2 size={14} class="spin" />
+              {agentStateRequestLabel(pendingState)}
+            </>
+          ) : (
+            <>
+              {syncState === "syncing" ? <IconPlayerPauseFilled size={14} /> : <IconPlayerPlayFilled size={14} />}
+              {syncState === "syncing" ? "Pause" : "Resume"}
+            </>
+          )}
         </button>
       )}
     </>
