@@ -12,9 +12,22 @@ use std::path::PathBuf;
 const APP_DIR_NAME: &str = "somedrive";
 
 /// `~/.config/somedrive`, not created.
+#[cfg(not(test))]
 pub fn config_root() -> Result<PathBuf, String> {
     let base = dirs::config_dir().ok_or("Could not resolve the config directory")?;
     Ok(base.join(APP_DIR_NAME))
+}
+
+/// Tests never touch the real `~/.config/somedrive`: each test process gets
+/// its own root under the system temp directory.
+#[cfg(test)]
+pub fn config_root() -> Result<PathBuf, String> {
+    Ok(test_root().join("config").join(APP_DIR_NAME))
+}
+
+#[cfg(test)]
+fn test_root() -> PathBuf {
+    std::env::temp_dir().join(format!("somedrive-test-{}", std::process::id()))
 }
 
 fn ensure_dir(dir: PathBuf) -> Result<PathBuf, String> {
@@ -50,7 +63,13 @@ pub fn debug_dir() -> Result<PathBuf, String> {
 }
 
 /// Where new accounts sync by default: `~/SomeDrive`.
+#[cfg(not(test))]
 pub fn default_sync_roots_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("Could not resolve the home directory")?;
     Ok(home.join("SomeDrive"))
+}
+
+#[cfg(test)]
+pub fn default_sync_roots_dir() -> Result<PathBuf, String> {
+    Ok(test_root().join("SomeDrive"))
 }
