@@ -86,6 +86,15 @@ const SYNC_SCHEMA_SQL: &str = "
     CREATE INDEX IF NOT EXISTS idx_sync_files_remote_item
         ON sync_files(profile_id, remote_item_id);
 
+    -- Cloud renames and moves waiting to be repeated on disk.
+    CREATE TABLE IF NOT EXISTS sync_local_moves (
+        profile_id TEXT NOT NULL,
+        old_path TEXT NOT NULL,
+        new_path TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY(profile_id, old_path)
+    );
+
     CREATE TABLE IF NOT EXISTS sync_issue_state (
         profile_id TEXT PRIMARY KEY,
         issue_code TEXT NOT NULL,
@@ -129,7 +138,8 @@ const SYNC_SCHEMA_SQL: &str = "
 ";
 
 /// Tables of the pre-baseline engine, dropped when an old database is found.
-const LEGACY_SYNC_TABLES: [&str; 6] = [
+const LEGACY_SYNC_TABLES: [&str; 7] = [
+    "sync_local_moves",
     "sync_jobs",
     "sync_files",
     "sync_issue_state",

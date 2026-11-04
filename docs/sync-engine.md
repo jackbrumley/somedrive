@@ -224,9 +224,7 @@ Implementation notes (2026-11-04):
 - Cycle order: local scan first, then cloud delta pages (downloads stream
   while pages arrive, planned with the local state already known), then the
   full plan and execution.
-- Cloud renames and moves, first version: the cloud columns move to the new
-  path, so the old path plans "delete locally" (to Trash, guarded) and the
-  new path plans "download". A true local rename is a later optimisation.
+- Cloud renames and moves are repeated locally as renames (section 8a).
 - Row 12 ("both new") plans a `verify` action that hashes the local file
   with QuickXorHash and compares it with the cloud hash.
 
@@ -286,9 +284,13 @@ sections above and win where they differ:
   that differ only by case from another item.
 - **Zero-byte files** have no hash: equal size 0 is a match. A non-empty file
   without a hash on either side is never assumed equal (conflict copy).
-- **Cloud folder renames** still plan "delete old + download new" in the first
-  version, so a rename of more than the guard threshold asks before acting.
-  A true local rename by item ID is the next robustness step.
+- **Cloud renames and moves** are repeated on this device as a rename: the
+  item's whole record (cloud, local and baseline) moves to the new path and
+  the rename is queued in `sync_local_moves`, then carried out right after
+  the delta page is stored (and at the start of the next cycle if the app
+  stopped in between). Only when the new path is already taken does it fall
+  back to "download the new path, remove the old copy through the delete
+  guard".
 
 ## 9. What is removed
 

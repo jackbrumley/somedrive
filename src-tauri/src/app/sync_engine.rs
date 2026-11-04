@@ -19,6 +19,7 @@ include!("sync_engine/remote_download_workers.rs");
 include!("sync_engine/remote_download_dispatcher.rs");
 include!("sync_engine/download_lane.rs");
 include!("sync_engine/sync_actions.rs");
+include!("sync_engine/local_moves.rs");
 include!("sync_engine/upload_lane.rs");
 include!("sync_engine/graph_transfer.rs");
 include!("sync_engine/graph_item_queries.rs");

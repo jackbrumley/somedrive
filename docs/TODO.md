@@ -20,7 +20,7 @@ review, 2026-11-04). Design: `docs/sync-engine.md`. Built on branch
 4. [x] Robustness: an expired delta token (410 / `resyncRequired`) starts a
    fresh enumeration; sign-in expiring mid-download requeues the download
    instead of failing it; a failed cycle retries automatically with backoff.
-5. [ ] True local rename for cloud folder renames (today a cloud rename
+5. [x] True local rename for cloud folder renames (today a cloud rename
    re-downloads the folder and the delete guard asks before removing the
    old copy).
 6. [ ] Test-account trial run (`docs/sync-engine.md` section 11) before any

@@ -59,6 +59,9 @@ async fn tick_sync_cycle(
         &format!("{} [cycle:{}] SYNC_CYCLE_START", account_prefix, cycle_id),
     );
 
+    // Cloud renames recorded by an earlier, interrupted cycle.
+    apply_pending_local_moves(profile_id, &account_prefix, &sync_root)?;
+
     // 1. This device first, so every download decision knows what is on disk.
     runtime_set_phase(&graph.sync_runtime, profile_id, "scanning_local", "Checking this device");
     let local_snapshot = run_local_scan_with_runtime_updates(
@@ -140,13 +143,14 @@ async fn tick_sync_cycle(
     update_profile_last_sync(profiles_lock, profile_id)?;
 
     let summary = format!(
-        "Sync cycle complete (downloaded {}, uploaded {}, matched {}, refreshed {}, conflicts held {}, conflict copies {}, cloud deletes {}, local deletes {}, upload failures {}, name issues {})",
+        "Sync cycle complete (downloaded {}, uploaded {}, matched {}, refreshed {}, conflicts held {}, conflict copies {}, local moves {}, cloud deletes {}, local deletes {}, upload failures {}, name issues {})",
         stats.downloaded_files,
         stats.uploaded_files,
         stats.matched_files,
         stats.baseline_refreshes,
         stats.conflicts_held,
         stats.conflict_copies,
+        stats.local_moves,
         stats.deleted_remote,
         stats.deleted_local,
         stats.upload_failures,

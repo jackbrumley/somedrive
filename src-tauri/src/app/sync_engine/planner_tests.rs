@@ -286,32 +286,77 @@ mod planner_tests {
         assert_eq!(cloud_path_of(&profile_id, "x1"), None);
     }
 
-    #[test]
-    fn a_cloud_rename_moves_cloud_state_and_keeps_the_old_local_baseline() {
-        let profile_id = test_profile_id("delta-rename");
+    fn seed_synced_folder(profile_id: &str) {
         let mut root = graph_item("root", "root", None, true);
         root.root = Some(serde_json::json!({}));
         apply_delta_page(
-            &profile_id,
+            profile_id,
             "test",
             &[root, graph_item("f1", "Docs", Some("root"), true), graph_item("x1", "a.txt", Some("f1"), false)],
             None,
         )
         .expect("seed");
+        let entry = LocalEntry { is_dir: false, size: 5, mtime_ns: 1 };
+        apply_local_scan(
+            profile_id,
+            &HashMap::from([
+                ("Docs".to_string(), LocalEntry { is_dir: true, size: 0, mtime_ns: 1 }),
+                ("Docs/a.txt".to_string(), entry.clone()),
+            ]),
+        )
+        .expect("scan");
         commit_baseline(
-            &profile_id,
+            profile_id,
             "Docs/a.txt",
             &CloudVersion { etag: None, ctag: Some("ctag-x1".into()), quick_xor_hash: Some("hash-x1".into()), size: 5 },
-            &LocalEntry { is_dir: false, size: 5, mtime_ns: 1 },
+            &entry,
         )
         .expect("baseline");
+    }
+
+    #[test]
+    fn a_cloud_rename_is_repeated_on_disk_without_downloading_again() {
+        let profile_id = test_profile_id("rename-follow");
+        seed_synced_folder(&profile_id);
+        let sync_root = std::env::temp_dir().join(format!("somedrive-move-{}", profile_id));
+        std::fs::create_dir_all(sync_root.join("Docs")).expect("folder");
+        std::fs::write(sync_root.join("Docs/a.txt"), b"hello").expect("file");
 
         apply_delta_page(&profile_id, "test", &[graph_item("f1", "Papers", Some("root"), true)], None)
             .expect("rename");
-        assert_eq!(cloud_path_of(&profile_id, "x1").as_deref(), Some("Papers/a.txt"));
+        assert_eq!(
+            list_pending_local_moves(&profile_id).expect("moves"),
+            vec![PendingLocalMove { old_path: "Docs".into(), new_path: "Papers".into() }]
+        );
+        assert_eq!(apply_pending_local_moves(&profile_id, "test", &sync_root).expect("apply"), 1);
+        assert!(sync_root.join("Papers/a.txt").is_file());
+        assert!(!sync_root.join("Docs").exists());
+
+        recompute_sync_file_actions(&profile_id).expect("plan");
+        assert_eq!(action_for(&profile_id, "Papers/a.txt"), PLANNER_ACTION_NONE, "nothing to download again");
+        assert!(read_sync_file_row(&profile_id, "Docs/a.txt").expect("row").is_none());
+        std::fs::remove_dir_all(&sync_root).expect("clean up");
+    }
+
+    #[test]
+    fn a_rename_onto_a_taken_path_falls_back_to_download_and_guarded_delete() {
+        let profile_id = test_profile_id("rename-blocked");
+        seed_synced_folder(&profile_id);
+        let sync_root = std::env::temp_dir().join(format!("somedrive-move-{}", profile_id));
+        std::fs::create_dir_all(sync_root.join("Docs")).expect("folder");
+        std::fs::write(sync_root.join("Docs/a.txt"), b"hello").expect("file");
+        std::fs::create_dir_all(sync_root.join("Papers")).expect("taken destination");
+
+        apply_delta_page(&profile_id, "test", &[graph_item("f1", "Papers", Some("root"), true)], None)
+            .expect("rename");
+        assert_eq!(apply_pending_local_moves(&profile_id, "test", &sync_root).expect("apply"), 0);
+        assert!(list_pending_local_moves(&profile_id).expect("moves").is_empty());
+        assert!(sync_root.join("Docs/a.txt").is_file(), "the old copy is left alone");
+
         recompute_sync_file_actions(&profile_id).expect("plan");
         assert_eq!(action_for(&profile_id, "Docs/a.txt"), PLANNER_ACTION_DELETE_LOCAL);
         assert_eq!(action_for(&profile_id, "Papers/a.txt"), PLANNER_ACTION_DOWNLOAD);
+        std::fs::remove_dir_all(&sync_root).expect("clean up");
     }
 
     #[test]

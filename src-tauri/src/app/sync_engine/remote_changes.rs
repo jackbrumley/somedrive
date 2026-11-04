@@ -95,6 +95,7 @@ async fn fetch_and_apply_delta_changes(
 
     let loop_outcome = run_remote_pipeline_loop(
         graph,
+        sync_root,
         stats,
         &cycle_cancel_flag,
         &producer_alive,

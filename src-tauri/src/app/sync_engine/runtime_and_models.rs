@@ -9,6 +9,7 @@ struct SyncCycleStats {
     matched_files: usize,
     conflict_copies: usize,
     conflicts_held: usize,
+    local_moves: usize,
     deleted_local: usize,
     deleted_remote: usize,
     created_local_folders: usize,

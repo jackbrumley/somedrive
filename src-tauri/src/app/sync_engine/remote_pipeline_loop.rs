@@ -6,6 +6,7 @@ struct RemotePipelineLoopOutcome {
 #[allow(clippy::too_many_arguments)]
 async fn run_remote_pipeline_loop(
     graph: &mut GraphContext,
+    sync_root: &Path,
     stats: &mut SyncCycleStats,
     cycle_cancel_flag: &Arc<AtomicBool>,
     producer_alive: &Arc<AtomicBool>,
@@ -233,6 +234,7 @@ async fn run_remote_pipeline_loop(
                     next_link.as_deref(),
                 )?;
                 stats.remote_items_skipped_unresolved += page_summary.skipped_unresolved;
+                stats.local_moves += apply_pending_local_moves(&graph.profile_id, &graph.account_prefix, sync_root)?;
                 recompute_sync_file_actions(&graph.profile_id)?;
                 materialize_planner_download_jobs(&graph.profile_id)?;
                 let _ = sync_download_counters_from_db(graph)?;
