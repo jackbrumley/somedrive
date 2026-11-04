@@ -587,3 +587,38 @@ fn large_files_hold_only_their_lane_while_small_files_wait() {
     assert!(third.iter().all(|job| job.item_id.starts_with("big-")));
     clear_profile_rows(&profile_id);
 }
+
+#[test]
+fn a_database_from_an_older_engine_is_rebuilt_on_first_open() {
+    let profile_id = test_profile_id("schema-reset");
+    let db_path = sync_jobs_db_path(&profile_id).expect("db path");
+    std::fs::create_dir_all(db_path.parent().expect("parent")).expect("db folder");
+    {
+        let old = Connection::open(&db_path).expect("create old db");
+        old.execute_batch(
+            "CREATE TABLE sync_jobs (id INTEGER PRIMARY KEY, legacy_only TEXT);
+             PRAGMA user_version = 1;",
+        )
+        .expect("write old schema");
+    }
+
+    let connection = open_sync_jobs_connection(&profile_id).expect("open rebuilds");
+    let version: i64 = connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .expect("version");
+    assert_eq!(version, SYNC_SCHEMA_VERSION);
+    assert!(
+        connection.is_autocommit(),
+        "the rebuild transaction is closed"
+    );
+    let legacy_columns: i64 = connection
+        .query_row(
+            "SELECT COUNT(1) FROM pragma_table_info('sync_jobs') WHERE name = 'legacy_only'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("columns");
+    assert_eq!(legacy_columns, 0, "the old table was replaced");
+    // A second connection opened while the first is held must not block.
+    let _second = open_sync_jobs_connection(&profile_id).expect("second open");
+}
