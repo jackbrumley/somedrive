@@ -5,11 +5,12 @@
 
 const DELETE_EVENT_DIRECTION: &str = "delete";
 
-async fn hash_local_file(path: &Path) -> Result<String, String> {
+async fn hash_local_file(path: &Path) -> SyncResult<String>  {
     let owned = path.to_path_buf();
-    tauri::async_runtime::spawn_blocking(move || quick_xor_hash_file(&owned))
+    let hash = tauri::async_runtime::spawn_blocking(move || quick_xor_hash_file(&owned))
         .await
-        .map_err(|error| format!("Hashing task failed: {error}"))?
+        .map_err(|error| format!("Hashing task failed: {error}"))??;
+    Ok(hash)
 }
 
 fn local_path_for(sync_root: &Path, relative_path: &str) -> PathBuf {
@@ -19,7 +20,7 @@ fn local_path_for(sync_root: &Path, relative_path: &str) -> PathBuf {
 /// Whether the local file's content equals the cloud version in `row`.
 /// Empty files match without a hash; a non-empty file is never assumed equal
 /// without one.
-async fn local_matches_cloud(row: &SyncFileRow, local_path: &Path, entry: &LocalEntry) -> Result<bool, String> {
+async fn local_matches_cloud(row: &SyncFileRow, local_path: &Path, entry: &LocalEntry) -> SyncResult<bool>  {
     if entry.size == 0 && row.cloud_size == 0 {
         return Ok(true);
     }
@@ -32,18 +33,19 @@ async fn local_matches_cloud(row: &SyncFileRow, local_path: &Path, entry: &Local
     }
 }
 
-fn forget_rows(profile_id: &str, rows: &[SyncFileRow]) -> Result<(), String> {
+fn forget_rows(profile_id: &str, rows: &[SyncFileRow]) -> SyncResult<()>  {
     for row in rows {
         forget_sync_file(profile_id, &row.path)?;
     }
     Ok(())
 }
 
-fn create_local_folders(graph: &GraphContext, sync_root: &Path, rows: &[SyncFileRow], stats: &mut SyncCycleStats) -> Result<(), String> {
+fn create_local_folders(graph: &GraphContext, sync_root: &Path, rows: &[SyncFileRow], stats: &mut SyncCycleStats) -> SyncResult<()>  {
     for row in rows {
         let local_path = local_path_for(sync_root, &row.path);
-        std::fs::create_dir_all(&local_path)
-            .map_err(|error| format!("Failed creating folder '{}': {error}", local_path.display()))?;
+        std::fs::create_dir_all(&local_path).map_err(|error| {
+            SyncError::from_io(&error, format!("Failed creating folder '{}': {error}", local_path.display()))
+        })?;
         if let Some(entry) = read_local_entry(&local_path)? {
             commit_baseline(&graph.profile_id, &row.path, &row.cloud_version(), &entry)?;
             stats.created_local_folders += 1;
@@ -58,7 +60,7 @@ async fn create_remote_folders(
     rows: &[SyncFileRow],
     stats: &mut SyncCycleStats,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<(), String> {
+) -> SyncResult<()>  {
     for row in rows {
         ensure_accepting_new_transfers()?;
         let Some(entry) = read_local_entry(&local_path_for(sync_root, &row.path))? else {
@@ -88,7 +90,7 @@ fn hold_conflict(
     conflict_code: &str,
     local_mtime_ns: i64,
     cloud_mtime: i64,
-) -> Result<(), String> {
+) -> SyncResult<()>  {
     record_sync_file_issue(&graph.profile_id, path, conflict_code, conflict_detail(conflict_code))?;
     log::warn!(
         "{} [cycle:{}] CONFLICT_HELD path={} code={}",
@@ -118,7 +120,7 @@ fn hold_conflict(
 /// Keeps the local version as a conflict copy and records that the cloud
 /// version should now be fetched into the original name (the user chose
 /// "Keep both").
-fn keep_both_versions(graph: &GraphContext, row: &SyncFileRow, local_path: &Path, entry: &LocalEntry, stats: &mut SyncCycleStats) -> Result<(), String> {
+fn keep_both_versions(graph: &GraphContext, row: &SyncFileRow, local_path: &Path, entry: &LocalEntry, stats: &mut SyncCycleStats) -> SyncResult<()>  {
     let copy = preserve_conflict_copy(local_path)?;
     mark_conflict_preserved(&graph.profile_id, &row.path, entry)?;
     stats.conflict_copies += 1;
@@ -143,7 +145,7 @@ async fn reconcile_both_sides(
     conflict_code: &str,
     stats: &mut SyncCycleStats,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<(), String> {
+) -> SyncResult<()>  {
     for row in rows {
         ensure_not_cancelled(cancel_flag)?;
         let local_path = local_path_for(sync_root, &row.path);
@@ -182,7 +184,7 @@ async fn upload_planned_files(
     sync_root: &Path,
     stats: &mut SyncCycleStats,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<(), String> {
+) -> SyncResult<()>  {
     for row in list_sync_file_rows_by_action(&graph.profile_id, PLANNER_ACTION_UPLOAD)? {
         ensure_not_cancelled(cancel_flag)?;
         if row.is_dir {
@@ -212,7 +214,7 @@ async fn upload_planned_files(
             Ok(uploaded) => uploaded,
             Err(error) => {
                 if is_sync_cancelled_error(&error) {
-                    return Err(error);
+                    return Err(SyncError::from(error));
                 }
                 stats.upload_failures += 1;
                 log::warn!(
@@ -254,7 +256,7 @@ async fn upload_planned_files(
 
 /// Moves local files and empty folders the plan deletes to the Trash, each
 /// only if it still matches the baseline.
-fn delete_local_items(graph: &GraphContext, sync_root: &Path, rows: &[SyncFileRow], stats: &mut SyncCycleStats) -> Result<(), String> {
+fn delete_local_items(graph: &GraphContext, sync_root: &Path, rows: &[SyncFileRow], stats: &mut SyncCycleStats) -> SyncResult<()>  {
     for row in rows {
         let local_path = local_path_for(sync_root, &row.path);
         let Some(entry) = read_local_entry(&local_path)? else {
@@ -301,7 +303,7 @@ async fn delete_remote_items(
     rows: &[SyncFileRow],
     stats: &mut SyncCycleStats,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<(), String> {
+) -> SyncResult<()>  {
     for row in rows {
         ensure_not_cancelled(cancel_flag)?;
         let Some(item_id) = row.remote_item_id.clone() else {
@@ -347,7 +349,7 @@ async fn apply_conflict_resolutions(
     sync_root: &Path,
     stats: &mut SyncCycleStats,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<(), String> {
+) -> SyncResult<()>  {
     for choice in list_conflict_resolutions(&graph.profile_id)? {
         ensure_not_cancelled(cancel_flag)?;
         let row = &choice.row;
@@ -410,7 +412,7 @@ async fn apply_conflict_resolutions(
                 clear_sync_file_issue(&graph.profile_id, &row.path)?;
             }
             (resolution, Some(_)) => {
-                return Err(format!("Unknown conflict resolution '{resolution}' for '{}'", row.path));
+                return Err(SyncError::from(format!("Unknown conflict resolution '{resolution}' for '{}'", row.path)));
             }
         }
         log::info!(

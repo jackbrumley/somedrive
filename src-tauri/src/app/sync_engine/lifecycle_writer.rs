@@ -304,39 +304,6 @@ fn runtime_profile_auth_ready(
         .unwrap_or(false)
 }
 
-/// Classifies a failed cycle that is not an authentication problem. Lost
-/// sign-in is never inferred from error text: it comes from the auth
-/// authority (`record_sign_in_required` sets the runtime not auth-ready).
-fn classify_sync_issue(error: &str) -> (&'static str, &'static [&'static str]) {
-    let normalized = error.to_lowercase();
-    if normalized.contains("429") || normalized.contains("too many requests") {
-        return ("rate_limited", &["retry_sync"]);
-    }
-    if normalized.contains("permission denied") || normalized.contains("403") {
-        return ("permission_denied", &["open_sync_root", "retry_sync"]);
-    }
-    if normalized.contains("no space left") || normalized.contains("disk full") {
-        return ("disk_full", &["open_sync_root", "retry_sync"]);
-    }
-    if normalized.contains("sync root") {
-        return ("sync_root_unavailable", &["open_sync_root", "retry_sync"]);
-    }
-    if normalized.contains("conflict") || normalized.contains("safebackup") {
-        return (
-            "conflict_detected",
-            &["open_conflict", "open_sync_root", "retry_sync"],
-        );
-    }
-    if normalized.contains("network")
-        || normalized.contains("connection")
-        || normalized.contains("timed out")
-        || normalized.contains("dns")
-    {
-        return ("network_unavailable", &["retry_sync"]);
-    }
-    ("unknown_error", &["retry_sync"])
-}
-
 #[cfg(test)]
 mod lifecycle_writer_tests {
     use super::*;

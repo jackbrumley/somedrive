@@ -60,7 +60,8 @@ fn place_downloaded_file(
         if !replaceable {
             let _ = std::fs::remove_file(temp_path);
             let cloud_mtime = row.map(|row| row.cloud_mtime).unwrap_or(0);
-            hold_conflict(graph, relative_path, ISSUE_CONFLICT_BOTH_CHANGED, existing.mtime_ns, cloud_mtime)?;
+            hold_conflict(graph, relative_path, ISSUE_CONFLICT_BOTH_CHANGED, existing.mtime_ns, cloud_mtime)
+                .map_err(|error| error.to_string())?;
             return Ok(None);
         }
     }

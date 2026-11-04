@@ -29,7 +29,7 @@ review, 2026-11-04). Design: `docs/sync-engine.md`. Built on branch
    the newest automatically" (default Ask me).
 8. [x] Exclude rules (Settings): folders and patterns never synced, such as
    browser caches.
-9. [ ] Typed `SyncError` through the engine instead of classifying errors by
+9. [x] Typed `SyncError` through the engine instead of classifying errors by
    their text (`classify_sync_issue`).
 10. [ ] Replace the `include!` modules in `app/sync_engine.rs` and
     `app/auth.rs` with real Rust modules.

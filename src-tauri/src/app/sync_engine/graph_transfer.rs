@@ -19,7 +19,7 @@ async fn graph_get_text_if_exists(
     graph: &GraphContext,
     url: &str,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<Option<String>, String> {
+) -> SyncResult<Option<String>> {
     match graph_get(graph, url, cancel_flag, &[StatusCode::NOT_FOUND]).await? {
         GraphGetOutcome::Body(text) => Ok(Some(text)),
         GraphGetOutcome::HandledStatus => Ok(None),
@@ -32,7 +32,7 @@ async fn graph_get_delta_page(
     graph: &GraphContext,
     url: &str,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<Option<String>, String> {
+) -> SyncResult<Option<String>> {
     match graph_get(graph, url, cancel_flag, &[StatusCode::GONE]).await? {
         GraphGetOutcome::Body(text) => Ok(Some(text)),
         GraphGetOutcome::HandledStatus => Ok(None),
@@ -44,7 +44,7 @@ async fn graph_get(
     url: &str,
     cancel_flag: &Arc<AtomicBool>,
     handled_statuses: &[StatusCode],
-) -> Result<GraphGetOutcome, String> {
+) -> SyncResult<GraphGetOutcome> {
     let client = graph_http_client()?;
     let mut refreshed = false;
     let mut attempt: u32 = 0;
@@ -55,19 +55,17 @@ async fn graph_get(
         let access_token = graph.current_access_token().await;
         let response = tokio::select! {
             _ = wait_for_cancellation(Arc::clone(cancel_flag)) => {
-                return Err(SYNC_CANCELLED_ERROR.to_string());
+                return Err(SyncError::Cancelled);
             }
             value = client
                 .get(url)
                 .bearer_auth(&access_token)
-                .send() => {
-                value.map_err(|error| format!("Graph GET failed: {error}"))
-            }
+                .send() => value
         };
         let response = match response {
             Ok(value) => value,
             Err(error) => {
-                if attempt < MAX_DOWNLOAD_RETRIES && is_transient_request_error(&error) {
+                if attempt < MAX_DOWNLOAD_RETRIES && is_transient_reqwest_error(&error) {
                     let delay = exponential_backoff_delay(attempt);
                     log::warn!(
                         "{} [cycle:{}] GRAPH_GET_RETRY attempt={} url={} reason={} delay_ms={}",
@@ -81,7 +79,7 @@ async fn graph_get(
                     sleep_with_cancellation(cancel_flag, delay).await?;
                     continue;
                 }
-                return Err(error);
+                return Err(SyncError::from_request(&error, format!("Graph GET failed: {error}")));
             }
         };
 
@@ -111,14 +109,10 @@ async fn graph_get(
             }
         }
 
-        let text = response
-            .text()
-            .await
-            .map_err(|error| format!("Failed reading Graph response: {error}"));
-        let text = match text {
+        let text = match response.text().await {
             Ok(value) => value,
             Err(error) => {
-                if attempt < MAX_DOWNLOAD_RETRIES && is_transient_request_error(&error) {
+                if attempt < MAX_DOWNLOAD_RETRIES && is_transient_reqwest_error(&error) {
                     let delay = exponential_backoff_delay(attempt);
                     log::warn!(
                         "{} [cycle:{}] GRAPH_GET_RETRY_BODY attempt={} url={} reason={} delay_ms={}",
@@ -132,7 +126,7 @@ async fn graph_get(
                     sleep_with_cancellation(cancel_flag, delay).await?;
                     continue;
                 }
-                return Err(error);
+                return Err(SyncError::from_request(&error, format!("Failed reading Graph response: {error}")));
             }
         };
 
@@ -152,25 +146,19 @@ async fn graph_get(
         }
         if !status.is_success() {
             let snippet: String = text.chars().take(400).collect();
-            return Err(format!(
-                "Graph GET {} failed with status {}: {}",
-                url, status, snippet
+            return Err(SyncError::from_status(
+                status,
+                format!("Graph GET {} failed with status {}: {}", url, status, snippet),
             ));
         }
         return Ok(GraphGetOutcome::Body(text));
     }
 }
 
-fn is_transient_request_error(error: &str) -> bool {
-    let normalized = error.to_lowercase();
-    normalized.contains("timed out")
-        || normalized.contains("timeout")
-        || normalized.contains("connection reset")
-        || normalized.contains("connection aborted")
-        || normalized.contains("connection refused")
-        || normalized.contains("tempor")
-        || normalized.contains("dns")
-        || normalized.contains("unreachable")
+/// A request that failed for a reason worth retrying (connection, timeout,
+/// interrupted body), judged from the error itself.
+fn is_transient_reqwest_error(error: &reqwest::Error) -> bool {
+    error.is_connect() || error.is_timeout() || error.is_request() || error.is_body()
 }
 
 async fn graph_delete(graph: &GraphContext, url: &str) -> Result<(), String> {
@@ -743,7 +731,7 @@ async fn create_remote_folder(
     graph: &mut GraphContext,
     relative_path: &str,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<GraphDriveItem, String> {
+) -> SyncResult<GraphDriveItem>  {
     ensure_not_cancelled(cancel_flag)?;
     let (parent, name) = split_parent_and_name(relative_path)?;
     let endpoint = if parent.is_empty() {
@@ -775,7 +763,7 @@ async fn create_remote_folder(
         let access_token = graph.current_access_token().await;
         let response = tokio::select! {
             _ = wait_for_cancellation(Arc::clone(cancel_flag)) => {
-                return Err(SYNC_CANCELLED_ERROR.to_string());
+                return Err(SyncError::from(SYNC_CANCELLED_ERROR.to_string()));
             }
             value = client
                 .post(&endpoint)
@@ -828,10 +816,10 @@ async fn create_remote_folder(
         }
         if !status.is_success() {
             let snippet: String = text.chars().take(400).collect();
-            return Err(format!(
+            return Err(SyncError::from(format!(
                 "Create folder failed for '{}' with status {}: {}",
                 relative_path, status, snippet
-            ));
+            )));
         }
         let parsed = serde_json::from_str::<GraphDriveItem>(&text)
             .map_err(|error| format!("Failed decoding create-folder response JSON: {error}"))?;
@@ -850,7 +838,7 @@ async fn delete_remote_item(
     graph: &mut GraphContext,
     item_id: &str,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<(), String> {
+) -> SyncResult<()>  {
     ensure_not_cancelled(cancel_flag)?;
     let url = format!("{GRAPH_ROOT}/me/drive/items/{}", item_id);
     log::info!(

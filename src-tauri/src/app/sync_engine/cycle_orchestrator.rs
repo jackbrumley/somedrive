@@ -12,7 +12,7 @@ async fn tick_sync_cycle(
     sync_runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<SyncCycleStats, String> {
+) -> SyncResult<SyncCycleStats>  {
     ensure_not_cancelled(cancel_flag)?;
     let profile = load_syncable_profile(profiles_lock, profile_id)?;
     let account_prefix = log_context::account_prefix_from_parts(profile_id, &profile.email);
@@ -23,12 +23,12 @@ async fn tick_sync_cycle(
     let session = load_auth_session(profile_id)
         .map_err(|error| record_sign_in_required(profiles_lock, sync_runtime, profile_id, &error))?;
     if session.access_token.trim().is_empty() {
-        return Err(record_sign_in_required(
+        return Err(SyncError::from(record_sign_in_required(
             profiles_lock,
             sync_runtime,
             profile_id,
             "Saved access token is empty",
-        ));
+        )));
     }
 
     let mut graph = GraphContext {
@@ -172,7 +172,7 @@ async fn tick_sync_cycle(
 /// first file is synced a missing folder is simply created; afterwards a
 /// missing or empty folder (an unmounted drive, an empty mount point) stops
 /// the cycle instead of being read as "every file deleted".
-fn ensure_sync_root_available(profile_id: &str, sync_root: &Path) -> Result<(), String> {
+fn ensure_sync_root_available(profile_id: &str, sync_root: &Path) -> SyncResult<()>  {
     let tracked_files = count_tracked_files(profile_id)?;
     let root_exists = sync_root.is_dir();
     let root_empty = root_exists
@@ -182,18 +182,21 @@ fn ensure_sync_root_available(profile_id: &str, sync_root: &Path) -> Result<(), 
     if tracked_files < MISSING_ROOT_MIN_TRACKED_FILES {
         if !root_exists {
             std::fs::create_dir_all(sync_root).map_err(|error| {
-                format!("Failed to create sync root '{}': {}", sync_root.display(), error)
+                SyncError::from_io(
+                    &error,
+                    format!("Failed to create sync root '{}': {}", sync_root.display(), error),
+                )
             })?;
         }
         return Ok(());
     }
     if !root_exists || root_empty {
-        return Err(format!(
+        return Err(SyncError::SyncRootUnavailable(format!(
             "Sync root unavailable: '{}' is {}, but {} files were synced there. Check the drive is mounted; nothing is deleted while the folder is unavailable.",
             sync_root.display(),
             if root_exists { "empty" } else { "missing" },
             tracked_files
-        ));
+        )));
     }
     Ok(())
 }
@@ -209,7 +212,7 @@ async fn apply_deletes_through_guard(
     planned: &PlannedActions,
     stats: &mut SyncCycleStats,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<(), String> {
+) -> SyncResult<()>  {
     let mut guard_state = read_large_delete_guard_state(&graph.profile_id)?;
     let planned_paths: Vec<String> = planned
         .delete_local

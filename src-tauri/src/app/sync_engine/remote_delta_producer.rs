@@ -2,7 +2,7 @@ fn spawn_delta_page_producer(
     graph: &GraphContext,
     start_url: String,
     cancel_flag: Arc<AtomicBool>,
-    page_tx: mpsc::Sender<Result<DeltaPageWorkItem, String>>,
+    page_tx: mpsc::Sender<Result<DeltaPageWorkItem, SyncError>>,
     producer_alive_flag: Arc<AtomicBool>,
 ) {
     let producer_graph = graph.clone();
@@ -22,7 +22,7 @@ fn spawn_delta_page_producer(
                     producer_graph.account_prefix,
                     producer_graph.cycle_id
                 );
-                let _ = page_tx.send(Err(error)).await;
+                let _ = page_tx.send(Err(SyncError::from(error))).await;
                 return;
             }
 
@@ -38,7 +38,7 @@ fn spawn_delta_page_producer(
                     // The delta link expired: enumerate the whole drive again.
                     if let Err(error) = begin_delta_resync(&producer_graph.profile_id) {
                         producer_alive_flag.store(false, Ordering::Relaxed);
-                        let _ = page_tx.send(Err(error)).await;
+                        let _ = page_tx.send(Err(SyncError::from(error))).await;
                         return;
                     }
                     log::warn!(
@@ -74,7 +74,7 @@ fn spawn_delta_page_producer(
                         producer_graph.cycle_id,
                         error
                     );
-                    let _ = page_tx.send(Err(error)).await;
+                    let _ = page_tx.send(Err(SyncError::from(error))).await;
                     return;
                 }
             };

@@ -176,7 +176,7 @@ fn start_sync_worker(state: &tauri::State<'_, AppState>, profile_id: &str) -> Re
                                 );
                             }
                             Err(error) => {
-                                if is_sync_cancelled_error(&error) {
+                                if error == SyncError::Cancelled {
                                     log::info!(
                                         "{} SYNC_CYCLE_CANCELLED",
                                         log_context::account_prefix(&profile_id_owned)
@@ -231,7 +231,7 @@ fn start_sync_worker(state: &tauri::State<'_, AppState>, profile_id: &str) -> Re
                                         consecutive_failures,
                                         delay.as_secs()
                                     );
-                                    let (issue_code, issue_actions) = classify_sync_issue(&error);
+                                    let (issue_code, issue_actions) = error.issue();
                                     (
                                         issue_code,
                                         issue_actions,

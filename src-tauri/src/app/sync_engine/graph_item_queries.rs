@@ -6,14 +6,14 @@ async fn fetch_remote_item(
     graph: &GraphContext,
     item_id: &str,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<Option<GraphDriveItem>, String> {
+) -> SyncResult<Option<GraphDriveItem>>  {
     let url = format!("{GRAPH_ROOT}/me/drive/items/{item_id}");
     let Some(text) = graph_get_text_if_exists(graph, &url, cancel_flag).await? else {
         return Ok(None);
     };
-    serde_json::from_str::<GraphDriveItem>(&text)
-        .map(Some)
-        .map_err(|error| format!("Failed decoding item {item_id}: {error}"))
+    let item = serde_json::from_str::<GraphDriveItem>(&text)
+        .map_err(|error| format!("Failed decoding item {item_id}: {error}"))?;
+    Ok(Some(item))
 }
 
 /// The item at `relative_path` in OneDrive; `None` when there is none.
@@ -21,14 +21,14 @@ async fn fetch_remote_item_by_path(
     graph: &GraphContext,
     relative_path: &str,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<Option<GraphDriveItem>, String> {
+) -> SyncResult<Option<GraphDriveItem>>  {
     let url = format!("{GRAPH_ROOT}/me/drive/root:/{}", encode_graph_path(relative_path));
     let Some(text) = graph_get_text_if_exists(graph, &url, cancel_flag).await? else {
         return Ok(None);
     };
-    serde_json::from_str::<GraphDriveItem>(&text)
-        .map(Some)
-        .map_err(|error| format!("Failed decoding item at '{relative_path}': {error}"))
+    let item = serde_json::from_str::<GraphDriveItem>(&text)
+        .map_err(|error| format!("Failed decoding item at '{relative_path}': {error}"))?;
+    Ok(Some(item))
 }
 
 /// Whether the cloud folder currently has any children (a fresh listing,
@@ -37,7 +37,7 @@ async fn remote_folder_has_children(
     graph: &GraphContext,
     item_id: &str,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<bool, String> {
+) -> SyncResult<bool>  {
     #[derive(Deserialize)]
     struct ChildrenPage {
         value: Vec<serde_json::Value>,

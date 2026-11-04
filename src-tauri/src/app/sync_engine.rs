@@ -3,6 +3,7 @@ include!("sync_engine/worker_lifecycle.rs");
 include!("sync_engine/sync_shutdown.rs");
 include!("sync_engine/runtime_and_models.rs");
 include!("sync_engine/graph_context.rs");
+include!("sync_engine/sync_error.rs");
 include!("sync_engine/quick_xor_hash.rs");
 include!("sync_engine/conflict_copy.rs");
 include!("sync_engine/lifecycle_writer.rs");

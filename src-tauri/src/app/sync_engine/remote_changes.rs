@@ -6,7 +6,7 @@ async fn fetch_and_apply_delta_changes(
     sync_root: &Path,
     stats: &mut SyncCycleStats,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<(), String> {
+) -> SyncResult<()>  {
     let delta_page_queue_capacity = resolve_delta_page_queue_capacity();
     let download_queue_capacity = resolve_download_queue_capacity();
     let download_concurrency = resolve_download_concurrency();
@@ -50,7 +50,7 @@ async fn fetch_and_apply_delta_changes(
     let active_download_workers = Arc::new(AtomicUsize::new(0));
 
     let (page_tx, mut page_rx) =
-        mpsc::channel::<Result<DeltaPageWorkItem, String>>(delta_page_queue_capacity);
+        mpsc::channel::<Result<DeltaPageWorkItem, SyncError>>(delta_page_queue_capacity);
     let producer_alive_flag = Arc::clone(&producer_alive);
     spawn_delta_page_producer(
         graph,
@@ -147,7 +147,7 @@ async fn fetch_and_apply_delta_changes(
 async fn confirm_items_missing_after_resync(
     graph: &GraphContext,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<(), String> {
+) -> SyncResult<()>  {
     let Some(started_at) = read_delta_resync_started_at(&graph.profile_id)? else {
         return Ok(());
     };

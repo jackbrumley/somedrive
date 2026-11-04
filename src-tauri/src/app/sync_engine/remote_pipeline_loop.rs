@@ -12,9 +12,9 @@ async fn run_remote_pipeline_loop(
     producer_alive: &Arc<AtomicBool>,
     active_download_workers: &Arc<AtomicUsize>,
     pending_download_count: &Arc<AtomicUsize>,
-    page_rx: &mut mpsc::Receiver<Result<DeltaPageWorkItem, String>>,
+    page_rx: &mut mpsc::Receiver<Result<DeltaPageWorkItem, SyncError>>,
     download_result_rx: &mut mpsc::Receiver<RemoteDownloadResult>,
-) -> Result<RemotePipelineLoopOutcome, String> {
+) -> SyncResult<RemotePipelineLoopOutcome>  {
     const PHASE_PROGRESS_UPDATE_INTERVAL: Duration = Duration::from_millis(750);
     const PHASE_PROGRESS_ITEM_STEP: usize = 250;
     const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
@@ -68,14 +68,14 @@ async fn run_remote_pipeline_loop(
                         if producer_done && pending_download_count.load(Ordering::Relaxed) == 0 {
                             break;
                         }
-                        return Err(format!(
+                        return Err(SyncError::from(format!(
                             "Download worker channel closed unexpectedly producer_alive={} active_workers={} pending_downloads={} remaining_download_jobs={} retry_waiting={}",
                             producer_alive.load(Ordering::Relaxed),
                             active_download_workers.load(Ordering::Relaxed),
                             pending_download_count.load(Ordering::Relaxed),
                             download_counters.remaining,
                             download_counters.retry_waiting
-                        ));
+                        )));
                     },
                 };
                 last_progress_at = std::time::Instant::now();
@@ -151,17 +151,17 @@ async fn run_remote_pipeline_loop(
                         last_progress_at = std::time::Instant::now();
                         continue;
                     }
-                    return Err(format!(
+                    return Err(SyncError::from(format!(
                         "Remote sync stalled after {}s with no progress",
                         stall_timeout.as_secs()
-                    ));
+                    )));
                 }
             }
             maybe_page = page_rx.recv(), if !producer_done => {
                 let page_payload = match maybe_page {
                     Some(Ok(value)) => value,
                     Some(Err(error)) => {
-                        return Err(format!(
+                        return Err(SyncError::from(format!(
                             "Delta producer error={} producer_alive={} active_workers={} pending_downloads={} remaining_download_jobs={} retry_waiting={}",
                             error,
                             producer_alive.load(Ordering::Relaxed),
@@ -169,7 +169,7 @@ async fn run_remote_pipeline_loop(
                             pending_download_count.load(Ordering::Relaxed),
                             download_counters.remaining,
                             download_counters.retry_waiting
-                        ));
+                        )));
                     },
                     None => {
                         producer_done = true;
