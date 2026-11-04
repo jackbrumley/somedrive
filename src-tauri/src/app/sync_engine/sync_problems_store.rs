@@ -40,7 +40,7 @@ pub(crate) fn set_conflict_resolution(
     }
     let mut connection = open_sync_jobs_connection(profile_id)?;
     let transaction = connection
-        .transaction()
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(|error| format!("Failed starting resolution transaction: {error}"))?;
     let mut updated = 0;
     for path in paths {

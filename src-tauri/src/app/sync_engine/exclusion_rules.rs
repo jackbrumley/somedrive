@@ -82,7 +82,7 @@ pub(crate) fn apply_exclusion_rules(
             .map_err(|error| format!("Failed reading paths for exclusion: {error}"))?
     };
     let transaction = connection
-        .transaction()
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(|error| format!("Failed starting exclusion transaction: {error}"))?;
     let now = current_unix_seconds();
     let mut excluded = 0;

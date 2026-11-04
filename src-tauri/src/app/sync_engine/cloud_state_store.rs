@@ -26,7 +26,7 @@ pub(crate) fn apply_delta_page(
 ) -> Result<DeltaPageSummary, String> {
     let mut connection = open_sync_jobs_connection(profile_id)?;
     let transaction = connection
-        .transaction()
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(|error| format!("Failed starting delta page transaction: {error}"))?;
     let now = current_unix_seconds();
     let mut summary = DeltaPageSummary::default();

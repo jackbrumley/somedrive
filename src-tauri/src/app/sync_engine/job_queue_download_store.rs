@@ -98,7 +98,7 @@ pub(crate) fn claim_download_jobs(
 
     let mut connection = open_sync_jobs_connection(profile_id)?;
     let transaction = connection
-        .transaction()
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(|error| format!("Failed starting download claim transaction: {error}"))?;
     let now = current_unix_seconds();
     let lease_until = now.saturating_add(DOWNLOAD_JOB_LEASE_SECONDS);

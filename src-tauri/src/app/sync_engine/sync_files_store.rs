@@ -127,7 +127,7 @@ pub(crate) fn apply_local_scan(
 ) -> Result<(), String> {
     let mut connection = open_sync_jobs_connection(profile_id)?;
     let transaction = connection
-        .transaction()
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(|error| format!("Failed starting local scan transaction: {error}"))?;
     let now = current_unix_seconds();
     transaction
@@ -248,7 +248,7 @@ pub(crate) fn commit_baseline_from_upload(
 ) -> Result<(), String> {
     let mut connection = open_sync_jobs_connection(profile_id)?;
     let transaction = connection
-        .transaction()
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(|error| format!("Failed starting upload baseline transaction: {error}"))?;
     upsert_cloud_item(&transaction, profile_id, uploaded, current_unix_seconds())?;
     let version = CloudVersion {
