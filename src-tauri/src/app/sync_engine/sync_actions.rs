@@ -382,6 +382,14 @@ pub(crate) fn delete_local_items(
         record_local_absent(&graph.profile_id, &row.path)?;
         forget_sync_file(&graph.profile_id, &row.path)?;
         record_throttle_event(&graph.profile_id, DELETE_EVENT_DIRECTION)?;
+        if !entry.is_dir {
+            record_finished_delete(
+                &graph.profile_id,
+                HISTORY_TRASHED_LOCALLY,
+                &row.path,
+                entry.size,
+            )?;
+        }
         stats.deleted_local += 1;
         log::info!(
             "{} [cycle:{}] LOCAL_DELETE_TO_TRASH path={}",
@@ -434,6 +442,14 @@ pub(crate) async fn delete_remote_items(
         record_cloud_absent(&graph.profile_id, &row.path)?;
         forget_sync_file(&graph.profile_id, &row.path)?;
         record_throttle_event(&graph.profile_id, DELETE_EVENT_DIRECTION)?;
+        if !row.is_dir {
+            record_finished_delete(
+                &graph.profile_id,
+                HISTORY_DELETED_REMOTELY,
+                &row.path,
+                row.base_cloud_size,
+            )?;
+        }
         stats.deleted_remote += 1;
     }
     Ok(())

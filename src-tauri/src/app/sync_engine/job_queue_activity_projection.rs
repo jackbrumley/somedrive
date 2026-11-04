@@ -1,7 +1,7 @@
 use super::*;
 
-/// "Recently synced" shows files finished within this many seconds, so the
-/// list empties by itself a while after the sync has caught up.
+/// The Activity feed shows files finished (or failed) within this many
+/// seconds, so it empties by itself a while after the sync has caught up.
 pub(crate) const RECENTLY_SYNCED_WINDOW_SECONDS: i64 = 10 * 60;
 
 pub(crate) fn read_sync_job_activity_projection(
@@ -164,6 +164,7 @@ pub(crate) fn read_sync_job_activity_projection(
              WHERE profile_id = ?1
                AND state = ?2
                AND finished_at IS NOT NULL
+               AND finished_at >= ?4
              ORDER BY finished_at DESC
              LIMIT ?3",
         )
@@ -173,7 +174,8 @@ pub(crate) fn read_sync_job_activity_projection(
             params![
                 profile_id,
                 DOWNLOAD_JOB_STATE_FAILED_TERMINAL,
-                recent_limit as i64
+                recent_limit as i64,
+                current_unix_seconds() - RECENTLY_SYNCED_WINDOW_SECONDS,
             ],
             |row| {
                 let job_id: i64 = row.get(0)?;

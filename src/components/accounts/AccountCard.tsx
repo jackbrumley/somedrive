@@ -13,17 +13,10 @@ import type { AccountProfile, SyncRuntimeAccountStatus } from "../../types/somed
 import { syncModeMessage } from "./syncModeMessaging";
 import { computeEffectiveSyncState, computeHasCompletedInitialSync } from "./syncStateSelectors";
 
-const ISSUE_BADGE_WINDOW_MS = 10 * 60 * 1000;
 
+/** Files that failed in the last 10 minutes (the engine sends only those). */
 function recentIssueCount(runtimeStatus: SyncRuntimeAccountStatus | null): number {
-  if (!runtimeStatus) {
-    return 0;
-  }
-  const now = Date.now();
-  return runtimeStatus.recentFailed.filter((item) => {
-    const finishedAt = new Date(item.finishedAt).getTime();
-    return Number.isFinite(finishedAt) && now - finishedAt <= ISSUE_BADGE_WINDOW_MS;
-  }).length;
+  return runtimeStatus?.recentFailed.length ?? 0;
 }
 
 interface AccountCardProps {

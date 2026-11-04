@@ -1,8 +1,8 @@
-import { IconCircleCheckFilled, IconDownload, IconUpload } from "@tabler/icons-preact";
+import { IconAlertTriangle, IconCircleCheckFilled, IconDownload, IconTrash, IconUpload } from "@tabler/icons-preact";
 import type { ComponentChildren } from "preact";
 import { useRef, useState } from "preact/hooks";
 import { useElementHeight } from "../../hooks/useElementHeight";
-import type { SyncRuntimeAccountStatus } from "../../types/somedrive";
+import type { SyncRuntimeAccountStatus, SyncRuntimeRecentItem } from "../../types/somedrive";
 import { VirtualizedList } from "../ui/VirtualizedList";
 import { AccountSyncDetails } from "./AccountSyncDetails";
 import { FileTypeIcon } from "./FileTypeIcon";
@@ -10,17 +10,21 @@ import { formatBytes, formatClockTime, percentOf, splitSyncPath } from "./syncFo
 
 const ROW_HEIGHT_PX = 52;
 const MIN_VISIBLE_ROWS = 4;
-const RECENT_LIMIT = 64;
+/** Finished rows shown at most (the engine sends the last 10 minutes). */
+const FINISHED_LIMIT = 200;
 
-type ActivityTab = "now" | "recent" | "problems" | "notSynced" | "details";
+type ActivityTab = "activity" | "problems" | "notSynced" | "details";
+
+/** What a feed row is: still running, or how it finished. */
+type RowKind = "running" | "done" | "deleted" | "failed";
 
 interface ActivityRow {
   id: string;
+  kind: RowKind;
   direction: string;
   path: string;
   sizeText: string;
   progressPercent: number | null;
-  completed: boolean;
 }
 
 interface AccountSyncActivityListProps {
@@ -32,48 +36,87 @@ interface AccountSyncActivityListProps {
   onOpenItemFolder: (relativePath: string) => Promise<void>;
 }
 
-function activeRows(runtimeStatus: SyncRuntimeAccountStatus): ActivityRow[] {
+/** What a finished delete did (mirrors `sync_history_store`). */
+const DELETE_LABELS: Record<string, string> = {
+  trash_local: "Deleted in OneDrive · moved to Trash",
+  delete_remote: "Deleted here · removed from OneDrive",
+};
+
+function runningRows(runtimeStatus: SyncRuntimeAccountStatus): ActivityRow[] {
   if (runtimeStatus.phase === "paused") {
     return [];
   }
   return runtimeStatus.inProgress
     .filter((transfer) => transfer.state !== "queued")
     .sort((left, right) => Date.parse(left.startedAt) - Date.parse(right.startedAt) || left.path.localeCompare(right.path))
-    .map((transfer) => {
-      const progressPercent = percentOf(transfer.bytesDone, transfer.bytesTotal);
-      return {
-        id: transfer.id,
-        direction: transfer.direction,
-        path: transfer.path,
-        sizeText:
-          transfer.bytesTotal === null
-            ? "Size unknown"
-            : transfer.bytesDone > 0
-              ? `${formatBytes(transfer.bytesDone)} of ${formatBytes(transfer.bytesTotal)}`
-              : formatBytes(transfer.bytesTotal),
-        progressPercent,
-        completed: false,
-      };
-    });
+    .map((transfer) => ({
+      id: transfer.id,
+      kind: "running",
+      direction: transfer.direction,
+      path: transfer.path,
+      sizeText:
+        transfer.bytesTotal === null
+          ? "Size unknown"
+          : transfer.bytesDone > 0
+            ? `${formatBytes(transfer.bytesDone)} of ${formatBytes(transfer.bytesTotal)}`
+            : formatBytes(transfer.bytesTotal),
+      progressPercent: percentOf(transfer.bytesDone, transfer.bytesTotal),
+    }));
 }
 
-function recentRows(runtimeStatus: SyncRuntimeAccountStatus): ActivityRow[] {
-  return [...runtimeStatus.recentCompleted]
-    .sort((left, right) => Date.parse(right.finishedAt) - Date.parse(left.finishedAt))
-    .slice(0, RECENT_LIMIT)
-    .map((item) => ({
-      id: item.id,
+function finishedRow(item: SyncRuntimeRecentItem, failed: boolean): ActivityRow {
+  const when = formatClockTime(item.finishedAt);
+  const isUpload = item.direction.toLowerCase() === "upload";
+  if (failed) {
+    return {
+      id: `failed-${item.id}`,
+      kind: "failed",
       direction: item.direction,
       path: item.path,
-      sizeText: `${formatBytes(item.bytesTotal)} · ${formatClockTime(item.finishedAt)}`,
+      sizeText: `Couldn't ${isUpload ? "upload" : "download"} · see Sync problems · ${when}`,
       progressPercent: null,
-      completed: true,
-    }));
+    };
+  }
+  const deleteLabel = DELETE_LABELS[item.direction];
+  return {
+    id: item.id,
+    kind: deleteLabel ? "deleted" : "done",
+    direction: item.direction,
+    path: item.path,
+    sizeText: `${deleteLabel ?? `${isUpload ? "Uploaded" : "Downloaded"} · ${formatBytes(item.bytesTotal)}`} · ${when}`,
+    progressPercent: null,
+  };
+}
+
+/** Everything the sync is doing and did in the last 10 minutes: running
+ *  transfers first, then finished ones (transfers, deletes, failures),
+ *  newest first. */
+function feedRows(runtimeStatus: SyncRuntimeAccountStatus): ActivityRow[] {
+  const finished = [
+    ...runtimeStatus.recentCompleted.map((item) => ({ item, failed: false })),
+    ...runtimeStatus.recentFailed.map((item) => ({ item, failed: true })),
+  ]
+    .sort((left, right) => Date.parse(right.item.finishedAt) - Date.parse(left.item.finishedAt))
+    .slice(0, FINISHED_LIMIT)
+    .map(({ item, failed }) => finishedRow(item, failed));
+  return [...runningRows(runtimeStatus), ...finished];
+}
+
+function RowStateIcon({ row }: { row: ActivityRow }) {
+  switch (row.kind) {
+    case "done":
+      return <IconCircleCheckFilled size={17} />;
+    case "deleted":
+      return <IconTrash size={17} />;
+    case "failed":
+      return <IconAlertTriangle size={17} />;
+    default:
+      return row.direction.toLowerCase() === "upload" ? <IconUpload size={17} /> : <IconDownload size={17} />;
+  }
 }
 
 function ActivityRowView({ row, onOpen }: { row: ActivityRow; onOpen: (path: string) => Promise<void> }) {
   const { name, folder } = splitSyncPath(row.path);
-  const DirectionIcon = row.direction.toLowerCase() === "upload" ? IconUpload : IconDownload;
   return (
     <button type="button" class="sync-file-open sync-activity-row" title={row.path} onClick={() => void onOpen(row.path)}>
       <span class="sync-file-icon">
@@ -91,9 +134,36 @@ function ActivityRowView({ row, onOpen }: { row: ActivityRow; onOpen: (path: str
           </span>
         )}
       </span>
-      <span class={row.completed ? "sync-activity-state is-done" : "sync-activity-state"}>
-        {row.completed ? <IconCircleCheckFilled size={17} /> : <DirectionIcon size={17} />}
+      <span class={`sync-activity-state is-${row.kind}`}>
+        <RowStateIcon row={row} />
       </span>
+    </button>
+  );
+}
+
+function TabButton({
+  tab,
+  current,
+  onSelect,
+  title,
+  children,
+}: {
+  tab: ActivityTab;
+  current: ActivityTab;
+  onSelect: (tab: ActivityTab) => void;
+  title?: string;
+  children: ComponentChildren;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={current === tab}
+      class={current === tab ? "sync-activity-tab is-active" : "sync-activity-tab"}
+      onClick={() => onSelect(tab)}
+      title={title}
+    >
+      {children}
     </button>
   );
 }
@@ -106,64 +176,37 @@ export function AccountSyncActivityList({
   notSynced,
   onOpenItemFolder,
 }: AccountSyncActivityListProps) {
-  const [selectedTab, setSelectedTab] = useState<ActivityTab>("now");
+  const [tab, setTab] = useState<ActivityTab>("activity");
   const listBodyRef = useRef<HTMLDivElement>(null);
   const listBodyHeight = useElementHeight(listBodyRef);
-  const nowRows = runtimeStatus ? activeRows(runtimeStatus) : [];
-  const doneRows = runtimeStatus ? recentRows(runtimeStatus) : [];
-  const tab: ActivityTab = selectedTab === "now" && nowRows.length === 0 && doneRows.length > 0 ? "recent" : selectedTab;
-  const rows = tab === "recent" ? doneRows : nowRows;
+  const rows = runtimeStatus ? feedRows(runtimeStatus) : [];
+  const runningCount = rows.filter((row) => row.kind === "running").length;
+  const emptyText =
+    runtimeStatus?.phase === "paused"
+      ? "Paused. Nothing is transferring."
+      : "Up to date · nothing changed in the last 10 minutes.";
 
   return (
     <section class="sync-activity">
       <div class="sync-activity-tabs" role="tablist" aria-label="Sync activity and details">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "now"}
-          class={tab === "now" ? "sync-activity-tab is-active" : "sync-activity-tab"}
-          onClick={() => setSelectedTab("now")}
-        >
-          In progress <span class="sync-activity-count">{nowRows.length}</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "recent"}
-          class={tab === "recent" ? "sync-activity-tab is-active" : "sync-activity-tab"}
-          onClick={() => setSelectedTab("recent")}
-        >
-          Recently synced <span class="sync-activity-count">{doneRows.length}</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "problems"}
-          class={tab === "problems" ? "sync-activity-tab is-active" : "sync-activity-tab"}
-          onClick={() => setSelectedTab("problems")}
-        >
+        <TabButton tab="activity" current={tab} onSelect={setTab} title="What SomeDrive is doing and did in the last 10 minutes">
+          Activity{runningCount > 0 && <span class="sync-activity-count">{runningCount}</span>}
+        </TabButton>
+        <TabButton tab="problems" current={tab} onSelect={setTab}>
           Sync problems{" "}
           <span class={problemCount > 0 ? "sync-activity-count is-attention" : "sync-activity-count"}>{problemCount}</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "notSynced"}
-          class={tab === "notSynced" ? "sync-activity-tab is-active" : "sync-activity-tab"}
-          onClick={() => setSelectedTab("notSynced")}
+        </TabButton>
+        <TabButton
+          tab="notSynced"
+          current={tab}
+          onSelect={setTab}
           title="Items skipped on purpose, such as OneNote notebooks and shared folders"
         >
           Not synced <span class="sync-activity-count">{notSyncedCount}</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "details"}
-          class={tab === "details" ? "sync-activity-tab is-active" : "sync-activity-tab"}
-          onClick={() => setSelectedTab("details")}
-        >
+        </TabButton>
+        <TabButton tab="details" current={tab} onSelect={setTab}>
           Details
-        </button>
+        </TabButton>
       </div>
       <div class="sync-activity-body" ref={listBodyRef}>
         {tab === "problems" ? (
@@ -177,7 +220,7 @@ export function AccountSyncActivityList({
             <p class="sync-activity-empty">No status has been received for this account yet.</p>
           )
         ) : rows.length === 0 ? (
-          <p class="sync-activity-empty">{tab === "now" ? "Nothing transferring right now." : "No files synced yet."}</p>
+          <p class="sync-activity-empty">{emptyText}</p>
         ) : (
           <VirtualizedList
             items={rows}
