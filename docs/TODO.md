@@ -4,6 +4,22 @@ Plans and known bugs, per the App Standard (section 8).
 
 ## Now
 
+### Sync engine: baseline reconciliation
+The current engine is not safe to run two-way on real data (data-safety
+review, 2026-11-04). Design and build order: `docs/sync-engine.md`.
+- [ ] Test isolation (`cargo test` must not write to `~/.config/somedrive`).
+- [ ] `sync_items` with cloud, local and baseline state; delta pages
+  committed atomically; JSON caches removed.
+- [ ] Planner from the decision table; jobs re-queued from any state.
+- [ ] Safe execution: safe overwrite, mtime, fsync and hash check,
+  `If-Match` uploads, conflict copies, baseline commit.
+- [ ] Deletes: Trash, two-direction guard re-checked on approval, missing
+  root stop.
+- [ ] Remove the two-phase lifecycle.
+- [ ] Robustness: 410 resync, auth expiry requeue, cycle retry, 404 re-check,
+  name and case issues, temp cleanup.
+- [ ] Test-account scenario run (`docs/sync-engine.md` section 11).
+
 ### Project-owned Microsoft Entra app registration
 SomeDrive must not ship with a third-party client ID.
 - [ ] Create a Microsoft Entra app registration owned by this project that
