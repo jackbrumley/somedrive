@@ -29,9 +29,12 @@ pub(crate) struct GraphContext {
     pub(crate) pending_dir_syncs: Arc<std::sync::Mutex<HashSet<PathBuf>>>,
     /// How many downloads may run at once right now (adapts to throttling).
     pub(crate) download_limit: Arc<AdaptiveDownloadLimit>,
-    /// Requests released by the end of a throttle window, counted so they
-    /// can be spread out instead of all firing at once.
+    /// Requests released by the end of a throttle window, counted so the
+    /// first goes alone as a probe and the rest are spread out.
     pub(crate) throttle_releases: Arc<AtomicUsize>,
+    /// While a probe is out after a throttle window, every other request
+    /// holds back until this instant.
+    pub(crate) throttle_probe_until: Arc<std::sync::Mutex<Option<tokio::time::Instant>>>,
 }
 
 /// Requests released together after a throttle window are spread over this
@@ -39,6 +42,11 @@ pub(crate) struct GraphContext {
 /// trip the limit again.
 const THROTTLE_RELEASE_SPREAD: usize = 10;
 const THROTTLE_RELEASE_STEP: Duration = Duration::from_millis(300);
+/// When a throttle window ends, one request goes alone and the rest wait
+/// this long: if Microsoft refuses the probe, a new window starts and they
+/// wait it out instead of all being refused too (each refusal can lengthen
+/// the penalty).
+const THROTTLE_PROBE_WAIT: Duration = Duration::from_secs(2);
 
 impl GraphContext {
     /// Notes that `folder` gained a downloaded file whose directory entry
@@ -74,32 +82,63 @@ impl GraphContext {
     }
 
     /// Holds every Graph request back until the account's throttle window
-    /// (set by `extend_throttle_window`) has passed, then spreads the
-    /// requests it held over a few seconds. Returns the moment the request
-    /// may start, which the caller passes back if it gets a 429.
+    /// (set by `extend_throttle_window`) has passed. Then the first request
+    /// held goes alone as a probe; the others wait `THROTTLE_PROBE_WAIT`
+    /// and look again (a refused probe has started a new window by then),
+    /// and are spread over a few seconds. Returns the moment the request may
+    /// start, which the caller passes back if it gets a 429.
     pub(crate) async fn wait_for_throttle_window(
         &self,
         cancel_flag: &Arc<AtomicBool>,
     ) -> Result<std::time::Instant, String> {
-        let mut waited = false;
+        let mut release: Option<usize> = None;
         loop {
+            let now = tokio::time::Instant::now();
             let resume_at = self
                 .throttled_until
                 .lock()
                 .map_err(|_| "Graph throttle lock is poisoned".to_string())?
-                .filter(|resume_at| *resume_at > tokio::time::Instant::now());
-            let Some(resume_at) = resume_at else {
-                break;
+                .filter(|resume_at| *resume_at > now);
+            if let Some(resume_at) = resume_at {
+                sleep_with_cancellation(cancel_flag, resume_at - now).await?;
+                // Mark this request as one the window held.
+                release = Some(usize::MAX);
+                continue;
+            }
+            if release == Some(usize::MAX) {
+                let order = self.throttle_releases.fetch_add(1, Ordering::Relaxed);
+                release = Some(order);
+                if order == 0 {
+                    *self
+                        .throttle_probe_until
+                        .lock()
+                        .map_err(|_| "Graph throttle lock is poisoned".to_string())? =
+                        Some(now + THROTTLE_PROBE_WAIT);
+                    log::info!(
+                        "{} [cycle:{}] GRAPH_THROTTLE_PROBE",
+                        self.account_prefix,
+                        self.cycle_id
+                    );
+                    return Ok(std::time::Instant::now());
+                }
+            }
+            let probe_until = self
+                .throttle_probe_until
+                .lock()
+                .map_err(|_| "Graph throttle lock is poisoned".to_string())?
+                .filter(|until| *until > now);
+            let Some(probe_until) = probe_until else {
+                return Ok(std::time::Instant::now());
             };
-            waited = true;
-            sleep_with_cancellation(cancel_flag, resume_at - tokio::time::Instant::now()).await?;
+            let spread = release
+                .and_then(|order| u32::try_from(order % THROTTLE_RELEASE_SPREAD).ok())
+                .unwrap_or(0);
+            sleep_with_cancellation(
+                cancel_flag,
+                (probe_until - now) + THROTTLE_RELEASE_STEP * spread,
+            )
+            .await?;
         }
-        if waited {
-            let release = self.throttle_releases.fetch_add(1, Ordering::Relaxed);
-            let step = u32::try_from(release % THROTTLE_RELEASE_SPREAD).unwrap_or(0);
-            sleep_with_cancellation(cancel_flag, THROTTLE_RELEASE_STEP * step).await?;
-        }
-        Ok(std::time::Instant::now())
     }
 
     /// Records a 429 for the whole account: pushes the throttle window out to
@@ -118,6 +157,11 @@ impl GraphContext {
             .map_err(|_| "Graph throttle lock is poisoned".to_string())?;
         if throttled_until.is_none_or(|current| current < resume_at) {
             *throttled_until = Some(resume_at);
+            // A new window: the next request released goes first, alone.
+            self.throttle_releases.store(0, Ordering::Relaxed);
+            if let Ok(mut probe_until) = self.throttle_probe_until.lock() {
+                *probe_until = None;
+            }
             log::warn!(
                 "{} [cycle:{}] GRAPH_THROTTLE_WINDOW_EXTENDED wait_ms={}",
                 self.account_prefix,
