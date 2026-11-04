@@ -27,15 +27,6 @@ pub(crate) async fn download_remote_item_content(
     let url = format!("{GRAPH_ROOT}/me/drive/items/{}/content", item_id);
     let graph_client = graph.http_no_redirect.clone();
     let content_client = graph.content_http.clone();
-    let download_request_timeout = compute_download_request_timeout(Some(version.size));
-    log::info!(
-        "{} [cycle:{}] DOWNLOAD_TIMEOUT_POLICY path={} known_size_bytes={} timeout_seconds={}",
-        graph.account_prefix,
-        graph.cycle_id,
-        relative_path,
-        version.size,
-        download_request_timeout.as_secs()
-    );
     let mut token_refreshed = false;
     let mut attempt: u32 = 0;
     let transfer_id = runtime_start_transfer(
@@ -62,11 +53,10 @@ pub(crate) async fn download_remote_item_content(
             value = match direct_url.as_deref() {
                 // The change feed's pre-authenticated link: one request
                 // straight to the content server, no Graph call or redirect.
-                Some(direct) => content_client.get(direct).timeout(download_request_timeout).send(),
+                Some(direct) => content_client.get(direct).send(),
                 None => graph_client
                     .get(&url)
                     .bearer_auth(&access_token)
-                    .timeout(download_request_timeout)
                     .send(),
             } => {
                 value.map_err(|error| format!("Download request failed: {error}"))
@@ -168,7 +158,6 @@ pub(crate) async fn download_remote_item_content(
                 }
                 value = content_client
                     .get(&redirect_url)
-                    .timeout(download_request_timeout)
                     .send() => {
                     value.map_err(|error| format!("Download redirect request failed: {error}"))
                 }
