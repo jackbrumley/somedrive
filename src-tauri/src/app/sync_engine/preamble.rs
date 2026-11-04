@@ -132,12 +132,25 @@ pub fn keep_cloud_files_after_large_delete(
     Ok(())
 }
 
-/// Everything on this account that needs the user: held conflicts, items
-/// SomeDrive cannot sync, and downloads that failed for good.
-pub fn list_sync_problems(profile_id: &str) -> Result<Vec<SyncProblem>, String> {
+/// What the account's Sync problems and Not synced tabs show.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncProblemsView {
+    /// Things that need the user: held conflicts, items SomeDrive cannot
+    /// sync, and downloads that failed for good.
+    pub problems: Vec<SyncProblem>,
+    /// Things skipped by design (OneNote, exclude rules, shared folders,
+    /// malware), one line per top-most item, with the reason.
+    pub not_synced: Vec<NotSyncedItem>,
+}
+
+pub fn list_sync_problems(profile_id: &str) -> Result<SyncProblemsView, String> {
     let mut problems = list_file_problems(profile_id)?;
     problems.extend(list_failed_download_problems(profile_id)?);
-    Ok(problems)
+    Ok(SyncProblemsView {
+        problems,
+        not_synced: list_not_synced_items(profile_id)?,
+    })
 }
 
 /// Records the user's choice for held conflicts; the next cycle applies it.

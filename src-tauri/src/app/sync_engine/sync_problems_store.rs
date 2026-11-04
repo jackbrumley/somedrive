@@ -172,36 +172,45 @@ pub(crate) fn list_file_problems(profile_id: &str) -> Result<Vec<SyncProblem>, S
                     local_present, local_size, local_mtime_ns,
                     cloud_present, cloud_size, cloud_mtime
              FROM sync_files
-             WHERE profile_id = ?1 AND issue_code IS NOT NULL AND issue_code != ?2
+             WHERE profile_id = ?1 AND issue_code IS NOT NULL
+               AND issue_code NOT IN (?2, ?3, ?4)
              ORDER BY path",
         )
         .map_err(|error| format!("Failed preparing problems query: {error}"))?;
     let rows = statement
-        .query_map(params![profile_id, ISSUE_EXCLUDED_BY_RULE], |row| {
-            let code: String = row.get(1)?;
-            let local_present = sql_to_bool(row.get(4)?);
-            let cloud_present = sql_to_bool(row.get(7)?);
-            Ok(SyncProblem {
-                path: row.get(0)?,
-                is_conflict: code.starts_with(CONFLICT_ISSUE_PREFIX),
-                code,
-                detail: row.get(2)?,
-                resolution: row.get(3)?,
-                local_size: local_present
-                    .then(|| row.get::<_, i64>(5).map(|value| value.max(0) as u64))
-                    .transpose()?,
-                local_modified_at: local_present
-                    .then(|| row.get::<_, i64>(6).map(nanos_to_rfc3339))
-                    .transpose()?,
-                cloud_size: cloud_present
-                    .then(|| row.get::<_, i64>(8).map(|value| value.max(0) as u64))
-                    .transpose()?,
-                cloud_modified_at: cloud_present
-                    .then(|| row.get::<_, i64>(9).map(unix_seconds_to_rfc3339))
-                    .transpose()?,
-                retry_id: None,
-            })
-        })
+        .query_map(
+            params![
+                profile_id,
+                NOT_SYNCED_ISSUE_CODES[0],
+                NOT_SYNCED_ISSUE_CODES[1],
+                NOT_SYNCED_ISSUE_CODES[2],
+            ],
+            |row| {
+                let code: String = row.get(1)?;
+                let local_present = sql_to_bool(row.get(4)?);
+                let cloud_present = sql_to_bool(row.get(7)?);
+                Ok(SyncProblem {
+                    path: row.get(0)?,
+                    is_conflict: code.starts_with(CONFLICT_ISSUE_PREFIX),
+                    code,
+                    detail: row.get(2)?,
+                    resolution: row.get(3)?,
+                    local_size: local_present
+                        .then(|| row.get::<_, i64>(5).map(|value| value.max(0) as u64))
+                        .transpose()?,
+                    local_modified_at: local_present
+                        .then(|| row.get::<_, i64>(6).map(nanos_to_rfc3339))
+                        .transpose()?,
+                    cloud_size: cloud_present
+                        .then(|| row.get::<_, i64>(8).map(|value| value.max(0) as u64))
+                        .transpose()?,
+                    cloud_modified_at: cloud_present
+                        .then(|| row.get::<_, i64>(9).map(unix_seconds_to_rfc3339))
+                        .transpose()?,
+                    retry_id: None,
+                })
+            },
+        )
         .map_err(|error| format!("Failed querying problems: {error}"))?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|error| format!("Failed reading problems: {error}"))

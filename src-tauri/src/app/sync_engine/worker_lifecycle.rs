@@ -155,6 +155,7 @@ pub(crate) fn start_sync_worker(
                         log::info!("{} SYNC_TICK", log_context::account_prefix(&profile_id_owned));
                         match tick_sync_cycle(&profiles_lock, &sync_runtime, &profile_id_owned, &cancel_flag).await {
                             Ok(stats) => {
+                                record_cycle_completed(&sync_runtime, &profile_id_owned);
                                 if consecutive_failures > 0 {
                                     consecutive_failures = 0;
                                     clear_sync_retry(&profile_id_owned);
@@ -321,4 +322,27 @@ pub(crate) fn stop_sync_worker(
     }
 
     Ok(())
+}
+
+/// Records that a sync cycle completed: the account's last sync time (which
+/// also marks the first sync as finished) goes to its lifecycle row, and the
+/// UI gets a fresh status.
+fn record_cycle_completed(sync_runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>, profile_id: &str) {
+    let completed_at = chrono::Utc::now().to_rfc3339();
+    if let Err(error) = persist_sync_lifecycle_last_sync_at(profile_id, Some(&completed_at)) {
+        log::warn!(
+            "{} SYNC_LAST_SYNC_PERSIST_FAILED error={}",
+            log_context::account_prefix(profile_id),
+            error
+        );
+        return;
+    }
+    if let Ok(runtime_map) = sync_runtime.lock() {
+        if runtime_map.contains_key(profile_id) {
+            sync_runtime::request_status_event(
+                profile_id,
+                sync_runtime::StatusEventEmitMode::Immediate,
+            );
+        }
+    }
 }

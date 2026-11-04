@@ -12,7 +12,7 @@ const ROW_HEIGHT_PX = 52;
 const MIN_VISIBLE_ROWS = 4;
 const RECENT_LIMIT = 64;
 
-type ActivityTab = "now" | "recent" | "problems" | "details";
+type ActivityTab = "now" | "recent" | "problems" | "notSynced" | "details";
 
 interface ActivityRow {
   id: string;
@@ -27,6 +27,8 @@ interface AccountSyncActivityListProps {
   runtimeStatus: SyncRuntimeAccountStatus | null;
   problemCount: number;
   problems: ComponentChildren;
+  notSyncedCount: number;
+  notSynced: ComponentChildren;
   onOpenItemFolder: (relativePath: string) => Promise<void>;
 }
 
@@ -100,6 +102,8 @@ export function AccountSyncActivityList({
   runtimeStatus,
   problemCount,
   problems,
+  notSyncedCount,
+  notSynced,
   onOpenItemFolder,
 }: AccountSyncActivityListProps) {
   const [selectedTab, setSelectedTab] = useState<ActivityTab>("now");
@@ -144,6 +148,16 @@ export function AccountSyncActivityList({
         <button
           type="button"
           role="tab"
+          aria-selected={tab === "notSynced"}
+          class={tab === "notSynced" ? "sync-activity-tab is-active" : "sync-activity-tab"}
+          onClick={() => setSelectedTab("notSynced")}
+          title="Items skipped on purpose, such as OneNote notebooks and shared folders"
+        >
+          Not synced <span class="sync-activity-count">{notSyncedCount}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={tab === "details"}
           class={tab === "details" ? "sync-activity-tab is-active" : "sync-activity-tab"}
           onClick={() => setSelectedTab("details")}
@@ -154,6 +168,8 @@ export function AccountSyncActivityList({
       <div class="sync-activity-body" ref={listBodyRef}>
         {tab === "problems" ? (
           <div class="sync-tab-scroll">{problems}</div>
+        ) : tab === "notSynced" ? (
+          <div class="sync-tab-scroll">{notSynced}</div>
         ) : tab === "details" ? (
           runtimeStatus ? (
             <AccountSyncDetails runtimeStatus={runtimeStatus} />

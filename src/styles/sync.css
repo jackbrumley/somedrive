@@ -305,9 +305,11 @@
   inset: 0;
 }
 
+/* Five tabs: they wrap rather than overflow at the narrowest window. */
 .sync-activity-tabs {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-1);
   padding: 6px 6px 10px;
   border-bottom: 1px solid var(--line-soft);
@@ -326,6 +328,7 @@
   color: var(--text-muted);
   font-size: 0.85rem;
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
 }
 

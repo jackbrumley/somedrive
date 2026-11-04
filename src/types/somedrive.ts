@@ -167,6 +167,7 @@ export interface SyncRuntimeAccountStatus {
   uploadThrottleTotal?: number;
   uploadThrottleLastMinute?: number;
   remoteScanComplete?: boolean;
+  lastSyncAt?: string | null;
   localScanScannedCount?: number;
   localScanEstimatedTotal?: number | null;
   localScanCurrentPath?: string | null;
@@ -235,6 +236,21 @@ export interface SyncProblem {
   cloudSize: number | null;
   cloudModifiedAt: string | null;
   retryId: string | null;
+}
+
+/** Mirrors `sync_engine::NotSyncedItem`: an item skipped by design. */
+export interface NotSyncedItem {
+  path: string;
+  reasonCode: "onenote_notebook" | "excluded_by_rule" | "malware_detected" | "shared_with_you" | string;
+  reason: string;
+  isFolder: boolean;
+  contained: number;
+}
+
+/** Mirrors `sync_engine::SyncProblemsView`. */
+export interface SyncProblemsView {
+  problems: SyncProblem[];
+  notSynced: NotSyncedItem[];
 }
 
 /** Mirrors `app_settings::ConflictPolicy`. */

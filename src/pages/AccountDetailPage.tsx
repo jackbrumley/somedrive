@@ -11,7 +11,7 @@ import { memo } from "preact/compat";
 import { agentStateRequestLabel, useAgentStateRequest } from "../hooks/useAgentStateRequest";
 import { PageHeader } from "../components/shell/PageHeader";
 import { AccountDetailUnifiedPanel } from "../components/accounts/AccountDetailUnifiedPanel";
-import type { AccountProfile, ConflictResolution, SyncProblem, SyncRuntimeAccountStatus } from "../types/somedrive";
+import type { AccountProfile, ConflictResolution, SyncProblemsView, SyncRuntimeAccountStatus } from "../types/somedrive";
 import { computeEffectiveSyncState } from "../components/accounts/syncStateSelectors";
 
 interface AccountDetailPageProps {
@@ -37,7 +37,7 @@ interface AccountDetailPageProps {
   onKeepCloudFiles: (accountId: string) => Promise<void>;
   onFetchLargeDeletePreview: (accountId: string) => Promise<string[]>;
   onExportLargeDeletePreview: (accountId: string) => Promise<void>;
-  onFetchSyncProblems: (accountId: string) => Promise<SyncProblem[]>;
+  onFetchSyncProblems: (accountId: string) => Promise<SyncProblemsView>;
   onResolveSyncConflicts: (accountId: string, paths: string[], resolution: ConflictResolution) => Promise<void>;
 }
 

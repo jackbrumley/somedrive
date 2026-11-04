@@ -4,6 +4,7 @@ import { AccountCard } from "../components/accounts/AccountCard";
 import { AccountDetailPage } from "./AccountDetailPage";
 import type {
   AccountProfile,
+  NotSyncedItem,
   SyncAgentState,
   SyncProblem,
   SyncRuntimeAccountStatus,
@@ -129,6 +130,24 @@ const previewSyncProblems: SyncProblem[] = [
     cloudSize: null,
     cloudModifiedAt: null,
     retryId: null,
+  },
+];
+
+/** Sample skipped-by-design items so the Not synced tab can be previewed. */
+const previewNotSynced: NotSyncedItem[] = [
+  {
+    path: "Documents/Family Notebook",
+    reasonCode: "onenote_notebook",
+    reason: "OneNote notebook. OneNote keeps notebooks online; open it in OneNote or at onenote.com.",
+    isFolder: true,
+    contained: 6,
+  },
+  {
+    path: "Tayla's Photos",
+    reasonCode: "shared_with_you",
+    reason: "Shared with you by someone else. Shared folders are not synced to this device.",
+    isFolder: true,
+    contained: 0,
   },
 ];
 
@@ -386,7 +405,7 @@ export function UiLabPage({ onBack }: UiLabPageProps) {
         onKeepCloudFiles={async () => undefined}
         onFetchLargeDeletePreview={async () => []}
         onExportLargeDeletePreview={async () => undefined}
-        onFetchSyncProblems={async () => previewSyncProblems}
+        onFetchSyncProblems={async () => ({ problems: previewSyncProblems, notSynced: previewNotSynced })}
         onResolveSyncConflicts={async () => undefined}
       />
     );

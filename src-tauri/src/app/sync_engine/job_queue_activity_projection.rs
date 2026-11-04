@@ -1,5 +1,9 @@
 use super::*;
 
+/// "Recently synced" shows files finished within this many seconds, so the
+/// list empties by itself a while after the sync has caught up.
+pub(crate) const RECENTLY_SYNCED_WINDOW_SECONDS: i64 = 10 * 60;
+
 pub(crate) fn read_sync_job_activity_projection(
     connection: &Connection,
     profile_id: &str,
@@ -108,6 +112,7 @@ pub(crate) fn read_sync_job_activity_projection(
              WHERE profile_id = ?1
                AND state IN (?2, ?3)
                AND finished_at IS NOT NULL
+               AND finished_at >= ?5
              ORDER BY finished_at DESC
              LIMIT ?4",
         )
@@ -119,6 +124,7 @@ pub(crate) fn read_sync_job_activity_projection(
                 DOWNLOAD_JOB_STATE_DONE,
                 DOWNLOAD_JOB_STATE_SKIPPED,
                 recent_limit as i64,
+                current_unix_seconds() - RECENTLY_SYNCED_WINDOW_SECONDS,
             ],
             |row| {
                 let job_id: i64 = row.get(0)?;
@@ -352,6 +358,7 @@ pub fn hydrate_runtime_status_from_db(
     status.phase = lifecycle.phase;
     status.phase_message = lifecycle.phase_message;
     status.remote_scan_complete = lifecycle.remote_scan_complete;
+    status.last_sync_at = lifecycle.last_sync_at.clone();
     if lifecycle.activity_stage.trim().is_empty() {
         return Err(format!(
             "Missing lifecycle activity stage for profile '{}'.",

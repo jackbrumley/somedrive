@@ -105,6 +105,9 @@ pub struct SyncRuntimeAccountStatus {
     pub upload_throttle_total: usize,
     pub upload_throttle_last_minute: usize,
     pub remote_scan_complete: bool,
+    /// When a sync cycle last completed (RFC 3339); `None` until the first
+    /// sync has finished.
+    pub last_sync_at: Option<String>,
     pub local_scan_scanned_count: usize,
     pub local_scan_estimated_total: Option<usize>,
     pub local_scan_current_path: Option<String>,
@@ -165,6 +168,7 @@ impl SyncRuntimeAccountStatus {
             upload_throttle_total: 0,
             upload_throttle_last_minute: 0,
             remote_scan_complete: false,
+            last_sync_at: None,
             local_scan_scanned_count: 0,
             local_scan_estimated_total: None,
             local_scan_current_path: None,

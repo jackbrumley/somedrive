@@ -4,7 +4,7 @@ import { AccountSyncActivityPanel } from "./AccountSyncActivityPanel";
 import type {
   AccountProfile,
   ConflictResolution,
-  SyncProblem,
+  SyncProblemsView,
   SyncRuntimeAccountStatus,
 } from "../../types/somedrive";
 import { computeEffectiveSyncState, computeHasCompletedInitialSync } from "./syncStateSelectors";
@@ -28,7 +28,7 @@ interface AccountDetailUnifiedPanelProps {
   onKeepCloudFiles: (accountId: string) => Promise<void>;
   onFetchLargeDeletePreview: (accountId: string) => Promise<string[]>;
   onExportLargeDeletePreview: (accountId: string) => Promise<void>;
-  onFetchSyncProblems: (accountId: string) => Promise<SyncProblem[]>;
+  onFetchSyncProblems: (accountId: string) => Promise<SyncProblemsView>;
   onResolveSyncConflicts: (accountId: string, paths: string[], resolution: ConflictResolution) => Promise<void>;
 }
 
@@ -94,7 +94,7 @@ export function AccountDetailUnifiedPanel({
       <AccountSyncActivityPanel
         accountId={account.id}
         runtimeStatus={runtimeStatus}
-        hasCompletedInitialSync={computeHasCompletedInitialSync(account)}
+        hasCompletedInitialSync={computeHasCompletedInitialSync(account, runtimeStatus)}
         issueMessage={hasBlockingIssue ? syncIssueMessage : null}
         issueKind={issueKind}
         issueActions={issueActions}

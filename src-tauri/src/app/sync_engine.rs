@@ -58,6 +58,7 @@ mod job_queue_upload_store;
 mod lifecycle_writer;
 mod local_moves;
 mod local_moves_store;
+mod not_synced_store;
 mod path_state;
 mod planner_index;
 #[cfg(test)]
@@ -113,6 +114,7 @@ pub(crate) use job_queue_upload_store::*;
 pub use lifecycle_writer::*;
 pub(crate) use local_moves::*;
 pub(crate) use local_moves_store::*;
+pub use not_synced_store::*;
 pub(crate) use path_state::*;
 pub(crate) use planner_index::*;
 pub(crate) use planner_transitions::*;
