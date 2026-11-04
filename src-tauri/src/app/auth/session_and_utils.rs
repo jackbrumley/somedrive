@@ -130,12 +130,39 @@ pub fn load_auth_session(profile_id: &str) -> Result<AuthSessionSnapshot, String
     })
 }
 
-pub async fn refresh_access_token(profile_id: &str) -> Result<AuthSessionSnapshot, String> {
-    let existing = load_auth_session(profile_id)?;
-    let refresh_token = existing
-        .refresh_token
-        .clone()
-        .ok_or_else(|| "Refresh token not available; re-authentication required".to_string())?;
+/// Why a token refresh failed. `SignInRequired` means Microsoft will not
+/// accept the saved sign-in again (expired, revoked or needing consent):
+/// retrying cannot help and the account must sign in again.
+#[derive(Debug)]
+pub enum TokenRefreshError {
+    SignInRequired(String),
+    Failed(String),
+}
+
+impl std::fmt::Display for TokenRefreshError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SignInRequired(detail) => write!(formatter, "Sign-in required: {detail}"),
+            Self::Failed(detail) => write!(formatter, "{detail}"),
+        }
+    }
+}
+
+/// OAuth error codes that mean the refresh token can never succeed again.
+fn refresh_error_requires_sign_in(error_code: &str) -> bool {
+    matches!(
+        error_code,
+        "invalid_grant" | "interaction_required" | "consent_required" | "login_required"
+    )
+}
+
+pub async fn refresh_access_token(
+    profile_id: &str,
+) -> Result<AuthSessionSnapshot, TokenRefreshError> {
+    let existing = load_auth_session(profile_id).map_err(TokenRefreshError::SignInRequired)?;
+    let refresh_token = existing.refresh_token.clone().ok_or_else(|| {
+        TokenRefreshError::SignInRequired("No saved refresh token for this account".to_string())
+    })?;
 
     let client_id = resolve_interactive_client_id();
     let client = reqwest::Client::new();
@@ -149,17 +176,25 @@ pub async fn refresh_access_token(profile_id: &str) -> Result<AuthSessionSnapsho
         ])
         .send()
         .await
-        .map_err(|error| format!("Failed refreshing access token: {error}"))?;
+        .map_err(|error| {
+            TokenRefreshError::Failed(format!("Failed refreshing access token: {error}"))
+        })?;
 
     let status = response.status();
     let body = response
         .text()
         .await
-        .map_err(|error| format!("Failed reading refresh-token response body: {error}"))?;
+        .map_err(|error| {
+            TokenRefreshError::Failed(format!(
+                "Failed reading refresh-token response body: {error}"
+            ))
+        })?;
 
     let payload: TokenResponse = serde_json::from_str(&body).map_err(|error| {
         let snippet: String = body.chars().take(400).collect();
-        format!("Failed to decode refresh-token response: {error}. Response snippet: {snippet}")
+        TokenRefreshError::Failed(format!(
+            "Failed to decode refresh-token response: {error}. Response snippet: {snippet}"
+        ))
     })?;
 
     if !status.is_success() || payload.error.is_some() {
@@ -167,12 +202,18 @@ pub async fn refresh_access_token(profile_id: &str) -> Result<AuthSessionSnapsho
             .error_description
             .unwrap_or_else(|| "Unknown token refresh error".to_string());
         let code = payload.error.unwrap_or_else(|| status.to_string());
-        return Err(format!("Token refresh failed: {code} ({detail})"));
+        let message = format!("Token refresh failed: {code} ({detail})");
+        if refresh_error_requires_sign_in(&code) {
+            return Err(TokenRefreshError::SignInRequired(message));
+        }
+        return Err(TokenRefreshError::Failed(message));
     }
 
     let access_token = payload
         .access_token
-        .ok_or_else(|| "Refresh response missing access token".to_string())?;
+        .ok_or_else(|| {
+            TokenRefreshError::Failed("Refresh response missing access token".to_string())
+        })?;
     let next_refresh_token = payload.refresh_token.or(existing.refresh_token);
     let updated_at = chrono::Local::now().to_rfc3339();
 
@@ -186,7 +227,8 @@ pub async fn refresh_access_token(profile_id: &str) -> Result<AuthSessionSnapsho
             scope: payload.scope.clone(),
             updated_at: updated_at.clone(),
         },
-    )?;
+    )
+    .map_err(TokenRefreshError::Failed)?;
 
     log::info!(
         "{} Access token refreshed",
@@ -201,4 +243,55 @@ pub async fn refresh_access_token(profile_id: &str) -> Result<AuthSessionSnapsho
         scope: payload.scope,
         updated_at,
     })
+}
+
+/// Records that the account's saved sign-in is no longer accepted, so it
+/// stays signed out (and its sync stopped) across restarts until the user
+/// signs in again. The account keeps its email so the UI can name it.
+pub fn mark_account_sign_in_required(
+    profiles_lock: &std::sync::Mutex<()>,
+    profile_id: &str,
+) -> Result<(), String> {
+    let _guard = profiles_lock
+        .lock()
+        .map_err(|_| "Account profile lock is poisoned".to_string())?;
+    let mut profiles = load_profiles()?;
+    let profile = profiles
+        .iter_mut()
+        .find(|profile| profile.id == profile_id)
+        .ok_or_else(|| "Account profile not found".to_string())?;
+    if !profile.auth_configured {
+        return Ok(());
+    }
+    profile.auth_configured = false;
+    save_profiles(&profiles)?;
+    log::warn!(
+        "{} AUTH_SIGN_IN_REQUIRED profile marked signed out",
+        log_context::account_prefix(profile_id)
+    );
+    Ok(())
+}
+
+#[cfg(test)]
+mod token_refresh_error_tests {
+    use super::refresh_error_requires_sign_in;
+
+    #[test]
+    fn expired_or_revoked_grants_require_sign_in() {
+        for code in [
+            "invalid_grant",
+            "interaction_required",
+            "consent_required",
+            "login_required",
+        ] {
+            assert!(refresh_error_requires_sign_in(code), "{code}");
+        }
+    }
+
+    #[test]
+    fn transient_token_errors_do_not_require_sign_in() {
+        for code in ["temporarily_unavailable", "server_error", "503 Service Unavailable"] {
+            assert!(!refresh_error_requires_sign_in(code), "{code}");
+        }
+    }
 }

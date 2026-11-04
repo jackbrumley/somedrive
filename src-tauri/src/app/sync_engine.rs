@@ -2,6 +2,7 @@ include!("sync_engine/preamble.rs");
 include!("sync_engine/worker_lifecycle.rs");
 include!("sync_engine/sync_shutdown.rs");
 include!("sync_engine/runtime_and_models.rs");
+include!("sync_engine/graph_context.rs");
 include!("sync_engine/lifecycle_writer.rs");
 include!("sync_engine/job_queue.rs");
 include!("sync_engine/action_jobs.rs");

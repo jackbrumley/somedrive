@@ -468,7 +468,12 @@ fn update_upload_job_progress(
 }
 
 fn read_upload_job_counters(profile_id: &str) -> Result<UploadJobCounters, String> {
-    let connection = open_sync_jobs_connection(profile_id)?;
+    query_upload_job_counters(&open_sync_jobs_connection(profile_id)?, profile_id)
+}
+
+/// The upload counters read on a caller-owned connection, so they can share
+/// one snapshot with other reads (see `hydrate_runtime_status_from_db`).
+fn query_upload_job_counters(connection: &Connection, profile_id: &str) -> Result<UploadJobCounters, String> {
     connection
         .query_row(
             "SELECT

@@ -47,45 +47,16 @@ struct RemoteDownloadResult {
     status: RemoteDownloadResultStatus,
 }
 
-#[derive(Clone)]
-struct GraphContext {
-    profile_id: String,
-    account_prefix: String,
-    cycle_id: String,
-    access_token: Arc<tokio::sync::RwLock<String>>,
-    token_refresh_lock: Arc<tokio::sync::Mutex<()>>,
-    sync_runtime: Arc<std::sync::Mutex<SyncRuntimeMap>>,
-}
-
-impl GraphContext {
-    async fn current_access_token(&self) -> String {
-        self.access_token.read().await.clone()
-    }
-
-    async fn refresh_token_if_needed(&self, stale_token: &str) -> Result<String, String> {
-        let _refresh_guard = self.token_refresh_lock.lock().await;
-
-        let current_token = self.current_access_token().await;
-        if !current_token.trim().is_empty() && current_token != stale_token {
-            return Ok(current_token);
-        }
-
-        let refreshed = refresh_access_token(&self.profile_id).await?;
-        {
-            let mut access_token = self.access_token.write().await;
-            *access_token = refreshed.access_token.clone();
-        }
-        Ok(refreshed.access_token)
-    }
-
-}
-
 fn resolve_download_concurrency() -> usize {
     std::env::var("SOMEDRIVE_SYNC_DOWNLOAD_CONCURRENCY")
         .ok()
         .and_then(|value| value.trim().parse::<usize>().ok())
         .map(crate::app::app_settings::clamp_download_concurrency)
-        .or_else(|| crate::app::app_settings::load_sync_download_concurrency().ok())
+        .or_else(|| {
+            crate::app::app_settings::load_sync_download_concurrency()
+                .ok()
+                .map(|setting| setting.value)
+        })
         .unwrap_or(DEFAULT_DOWNLOAD_CONCURRENCY)
 }
 
@@ -363,14 +334,11 @@ async fn handle_download_retry(
     if attempt < MAX_DOWNLOAD_RETRIES {
         let delay = exponential_backoff_delay(attempt);
         if let Some(active_job_id) = job_id {
-            if let Err(error) = mark_download_job_retry_wait(
-                &graph.profile_id,
-                active_job_id,
-                reason,
-                delay,
-            ) {
+            if let Err(error) =
+                record_download_job_retrying_in_place(&graph.profile_id, active_job_id, reason)
+            {
                 log::warn!(
-                    "{} [cycle:{}] DOWNLOAD_RETRY_WAIT_PERSIST_FAILED path={} error={}",
+                    "{} [cycle:{}] DOWNLOAD_RETRY_PERSIST_FAILED path={} error={}",
                     graph.account_prefix,
                     graph.cycle_id,
                     relative_path,

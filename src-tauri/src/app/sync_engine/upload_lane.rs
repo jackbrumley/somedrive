@@ -181,6 +181,7 @@ async fn upload_small_file_simple(
     let mut refreshed = false;
     loop {
         ensure_not_cancelled(cancel_flag)?;
+        graph.wait_for_throttle_window(cancel_flag).await?;
         let access_token = graph.current_access_token().await;
         let response = tokio::select! {
             _ = wait_for_cancellation(Arc::clone(cancel_flag)) => {
@@ -322,6 +323,7 @@ async fn upload_large_file_session(
         let mut attempt: u32 = 0;
         loop {
             ensure_not_cancelled(cancel_flag)?;
+            graph.wait_for_throttle_window(cancel_flag).await?;
             attempt += 1;
             let response = tokio::select! {
                 _ = wait_for_cancellation(Arc::clone(cancel_flag)) => {
@@ -349,6 +351,10 @@ async fn upload_large_file_session(
             if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
                 if status == StatusCode::TOO_MANY_REQUESTS {
                     let _ = record_throttle_event(&graph.profile_id, UPLOAD_JOB_DIRECTION);
+                    graph.extend_throttle_window(
+                        parse_retry_after_delay(response.headers())
+                            .unwrap_or_else(|| exponential_backoff_delay(attempt)),
+                    )?;
                 }
                 if attempt < MAX_DOWNLOAD_RETRIES {
                     let delay = parse_retry_after_delay(response.headers())
@@ -466,6 +472,7 @@ async fn create_upload_session(
 
     loop {
         ensure_not_cancelled(cancel_flag)?;
+        graph.wait_for_throttle_window(cancel_flag).await?;
         let access_token = graph.current_access_token().await;
         let response = tokio::select! {
             _ = wait_for_cancellation(Arc::clone(cancel_flag)) => {
@@ -492,10 +499,11 @@ async fn create_upload_session(
             continue;
         }
         if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
+            let delay = parse_retry_after_delay(response.headers()).unwrap_or_else(|| Duration::from_secs(2));
             if status == StatusCode::TOO_MANY_REQUESTS {
                 let _ = record_throttle_event(&graph.profile_id, UPLOAD_JOB_DIRECTION);
+                graph.extend_throttle_window(delay)?;
             }
-            let delay = parse_retry_after_delay(response.headers()).unwrap_or_else(|| Duration::from_secs(2));
             log::warn!(
                 "{} [cycle:{}] GRAPH_UPLOAD_SESSION_RETRY status={} path={} delay_ms={}",
                 graph.account_prefix,

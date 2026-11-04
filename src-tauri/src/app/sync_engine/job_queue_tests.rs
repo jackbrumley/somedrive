@@ -422,6 +422,32 @@ mod job_queue_tests {
     }
 
     #[test]
+    fn download_retrying_in_place_stays_claimed_by_its_worker() {
+        let profile_id = test_profile_id("retry-in-place-stays-claimed");
+        clear_profile_rows(&profile_id);
+        insert_download_job_with_state(
+            &profile_id,
+            "retrying",
+            "docs/retrying.bin",
+            DOWNLOAD_JOB_STATE_QUEUED,
+            JOB_RUN_STATE_IDLE,
+            None,
+        );
+
+        let claimed = claim_download_jobs(&profile_id, "cycle-1", 10).expect("claim job");
+        assert_eq!(claimed.len(), 1);
+        record_download_job_retrying_in_place(&profile_id, claimed[0].job_id, "stream reset")
+            .expect("record in-place retry");
+
+        let second_claim = claim_download_jobs(&profile_id, "cycle-1", 10).expect("claim again");
+        assert!(
+            second_claim.is_empty(),
+            "a job being retried in place must not be handed to a second worker"
+        );
+        clear_profile_rows(&profile_id);
+    }
+
+    #[test]
     fn multi_cycle_download_claims_progress_queued_and_retry_wait_jobs() {
         let profile_id = test_profile_id("multi-cycle-claim-progression");
         clear_profile_rows(&profile_id);

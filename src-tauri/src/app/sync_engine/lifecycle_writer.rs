@@ -303,15 +303,22 @@ fn runtime_set_upload_planned_total(
     }
 }
 
+fn runtime_profile_auth_ready(
+    runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
+    profile_id: &str,
+) -> bool {
+    runtime
+        .lock()
+        .ok()
+        .and_then(|runtime_map| runtime_map.get(profile_id).map(|status| status.auth_ready))
+        .unwrap_or(false)
+}
+
+/// Classifies a failed cycle that is not an authentication problem. Lost
+/// sign-in is never inferred from error text: it comes from the auth
+/// authority (`record_sign_in_required` sets the runtime not auth-ready).
 fn classify_sync_issue(error: &str) -> (&'static str, &'static [&'static str]) {
     let normalized = error.to_lowercase();
-    if normalized.contains("re-authentication")
-        || normalized.contains("not authenticated")
-        || normalized.contains("access token is empty")
-        || normalized.contains("401")
-    {
-        return ("auth_required", &["reauthenticate", "retry_sync"]);
-    }
     if normalized.contains("429") || normalized.contains("too many requests") {
         return ("rate_limited", &["retry_sync"]);
     }

@@ -1,3 +1,6 @@
+const SIGN_IN_REQUIRED_MESSAGE: &str =
+    "Your Microsoft sign-in has expired. Sign in again to resume syncing.";
+
 fn start_sync_worker(state: &tauri::State<'_, AppState>, profile_id: &str) -> Result<(), String> {
     let account_prefix = log_context::account_prefix(profile_id);
     if !sync_accepts_new_work() {
@@ -141,7 +144,20 @@ fn start_sync_worker(state: &tauri::State<'_, AppState>, profile_id: &str) -> Re
                                     runtime_reset_transfer_activity(&sync_runtime, &profile_id_owned);
                                     continue;
                                 }
-                                let (issue_code, issue_actions) = classify_sync_issue(&error);
+                                let sign_in_required =
+                                    !runtime_profile_auth_ready(&sync_runtime, &profile_id_owned);
+                                let (issue_code, issue_actions, issue_message, phase_message) =
+                                    if sign_in_required {
+                                        (
+                                            "auth_required",
+                                            &["reauthenticate"][..],
+                                            SIGN_IN_REQUIRED_MESSAGE.to_string(),
+                                            "Sign-in required".to_string(),
+                                        )
+                                    } else {
+                                        let (issue_code, issue_actions) = classify_sync_issue(&error);
+                                        (issue_code, issue_actions, error.clone(), format!("Sync error: {}", error))
+                                    };
                                 log::error!(
                                     "{} SYNC_CYCLE_FAILED {}",
                                     log_context::account_prefix(&profile_id_owned),
@@ -154,13 +170,13 @@ fn start_sync_worker(state: &tauri::State<'_, AppState>, profile_id: &str) -> Re
                                     &sync_runtime,
                                     &profile_id_owned,
                                     "error",
-                                    &format!("Sync error: {}", error),
+                                    &phase_message,
                                 );
                                 runtime_set_issue(
                                     &sync_runtime,
                                     &profile_id_owned,
                                     issue_code,
-                                    &error,
+                                    &issue_message,
                                     issue_actions,
                                     None,
                                     None,

@@ -662,6 +662,31 @@ fn mark_download_job_retry_wait(
     Ok(())
 }
 
+/// Records a failed attempt that the same worker is about to retry in place.
+/// The job stays claimed (state and lease unchanged): releasing it here would
+/// let the dispatcher hand the file to a second worker while this one still
+/// retries it, and both would write the same temporary file.
+fn record_download_job_retrying_in_place(
+    profile_id: &str,
+    job_id: i64,
+    error_text: &str,
+) -> Result<(), String> {
+    let connection = open_sync_jobs_connection(profile_id)?;
+    let now = current_unix_seconds();
+    connection
+        .execute(
+            "UPDATE sync_jobs
+             SET last_error = ?1,
+                 bytes_done = 0,
+                 updated_at = ?2,
+                 progress_updated_at = ?2
+             WHERE profile_id = ?3 AND direction = ?4 AND id = ?5",
+            params![error_text, now, profile_id, DOWNLOAD_JOB_DIRECTION, job_id],
+        )
+        .map_err(|error| format!("Failed recording download retry: {error}"))?;
+    Ok(())
+}
+
 fn reset_running_sync_jobs_for_pause(profile_id: &str) -> Result<usize, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let now = current_unix_seconds();
@@ -694,7 +719,12 @@ fn reset_running_sync_jobs_for_pause(profile_id: &str) -> Result<usize, String> 
 }
 
 fn read_download_job_counters(profile_id: &str) -> Result<DownloadJobCounters, String> {
-    let connection = open_sync_jobs_connection(profile_id)?;
+    query_download_job_counters(&open_sync_jobs_connection(profile_id)?, profile_id)
+}
+
+/// The download counters read on a caller-owned connection, so they can share
+/// one snapshot with other reads (see `hydrate_runtime_status_from_db`).
+fn query_download_job_counters(connection: &Connection, profile_id: &str) -> Result<DownloadJobCounters, String> {
     connection
         .query_row(
             "SELECT

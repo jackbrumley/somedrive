@@ -22,6 +22,7 @@ async fn run_remote_pipeline_loop(
     const PHASE_PROGRESS_UPDATE_INTERVAL: Duration = Duration::from_millis(750);
     const PHASE_PROGRESS_ITEM_STEP: usize = 250;
     const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
+    const DOWNLOAD_RESULT_BATCH_LIMIT: usize = 64;
 
     let scan_started_at = std::time::Instant::now();
     let mut last_phase_update_at = scan_started_at;
@@ -85,23 +86,38 @@ async fn run_remote_pipeline_loop(
                 };
                 last_progress_at = std::time::Instant::now();
                 last_download_result_at = Some(last_progress_at);
-                apply_remote_download_result(
-                    graph,
-                    sync_root,
-                    sync_state,
-                    stats,
-                    &mut remote_applied_paths,
-                    download_result,
-                )?;
-                download_results_since_flush += 1;
+                // Apply every result already waiting, then read the counters
+                // once: per-result counter queries over the whole jobs table
+                // let finished downloads pile up faster than they are saved.
+                let mut result_batch = vec![download_result];
+                while result_batch.len() < DOWNLOAD_RESULT_BATCH_LIMIT {
+                    match download_result_rx.try_recv() {
+                        Ok(next_result) => result_batch.push(next_result),
+                        Err(_) => break,
+                    }
+                }
+                for batched_result in result_batch {
+                    apply_remote_download_result(
+                        graph,
+                        sync_root,
+                        sync_state,
+                        stats,
+                        &mut remote_applied_paths,
+                        batched_result,
+                    )?;
+                    download_results_since_flush += 1;
+                }
 
                 if download_results_since_flush >= checkpoint_flush_step {
                     save_sync_state(&graph.profile_id, sync_state)?;
                     download_results_since_flush = 0;
                 }
 
+                if !producer_done {
+                    continue;
+                }
                 let latest_counters = sync_download_counters_from_db(graph)?;
-                if producer_done && latest_counters.remaining > 0 {
+                if latest_counters.remaining > 0 {
                     runtime_set_phase(
                         &graph.sync_runtime,
                         &graph.profile_id,

@@ -3,8 +3,10 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 const DEFAULT_DOWNLOAD_CONCURRENCY: usize = 12;
-const MIN_DOWNLOAD_CONCURRENCY: usize = 8;
-const MAX_DOWNLOAD_CONCURRENCY: usize = 256;
+const MIN_DOWNLOAD_CONCURRENCY: usize = 4;
+// Microsoft throttles a OneDrive account well before this many parallel
+// downloads; higher values only produce 429 storms.
+const MAX_DOWNLOAD_CONCURRENCY: usize = 32;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -79,19 +81,39 @@ fn default_download_concurrency() -> usize {
     DEFAULT_DOWNLOAD_CONCURRENCY
 }
 
-pub fn load_sync_download_concurrency() -> Result<usize, String> {
+/// The download concurrency setting with the range the UI may offer; the
+/// limits are owned here so the slider cannot drift from the clamp.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadConcurrencySetting {
+    pub value: usize,
+    pub min: usize,
+    pub max: usize,
+}
+
+impl DownloadConcurrencySetting {
+    fn from_value(value: usize) -> Self {
+        Self {
+            value,
+            min: MIN_DOWNLOAD_CONCURRENCY,
+            max: MAX_DOWNLOAD_CONCURRENCY,
+        }
+    }
+}
+
+pub fn load_sync_download_concurrency() -> Result<DownloadConcurrencySetting, String> {
     let settings = load_or_create_app_settings()?;
-    Ok(clamp_download_concurrency(
-        settings.sync.download_concurrency,
+    Ok(DownloadConcurrencySetting::from_value(
+        clamp_download_concurrency(settings.sync.download_concurrency),
     ))
 }
 
-pub fn save_sync_download_concurrency(value: usize) -> Result<usize, String> {
+pub fn save_sync_download_concurrency(value: usize) -> Result<DownloadConcurrencySetting, String> {
     let normalized = clamp_download_concurrency(value);
     let mut settings = load_or_create_app_settings()?;
     settings.sync.download_concurrency = normalized;
     save_app_settings(&settings)?;
-    Ok(normalized)
+    Ok(DownloadConcurrencySetting::from_value(normalized))
 }
 
 pub fn load_close_to_tray() -> Result<bool, String> {

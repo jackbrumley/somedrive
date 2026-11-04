@@ -17,9 +17,15 @@ async fn tick_sync_cycle(
         )
     })?;
 
-    let session = load_auth_session(profile_id)?;
+    let session = load_auth_session(profile_id)
+        .map_err(|error| record_sign_in_required(profiles_lock, sync_runtime, profile_id, &error))?;
     if session.access_token.trim().is_empty() {
-        return Err("Auth access token is empty; re-authentication required".to_string());
+        return Err(record_sign_in_required(
+            profiles_lock,
+            sync_runtime,
+            profile_id,
+            "Saved access token is empty",
+        ));
     }
 
     let mut graph = GraphContext {
@@ -28,7 +34,9 @@ async fn tick_sync_cycle(
         cycle_id: cycle_id.clone(),
         access_token: Arc::new(tokio::sync::RwLock::new(session.access_token)),
         token_refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
+        profiles_lock: Arc::clone(profiles_lock),
         sync_runtime: Arc::clone(sync_runtime),
+        throttled_until: Arc::new(std::sync::Mutex::new(None)),
     };
 
     runtime_set_phase(

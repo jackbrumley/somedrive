@@ -1,6 +1,8 @@
 use crate::app::account_profiles::{load_profiles, save_profiles, AccountProfile};
 use crate::app::activity_log;
-use crate::app::auth::{load_auth_session, refresh_access_token};
+use crate::app::auth::{
+    load_auth_session, mark_account_sign_in_required, refresh_access_token, TokenRefreshError,
+};
 use crate::app::log_context;
 use crate::app::state::AppState;
 use crate::app::sync_runtime::{self, SyncRuntimeMap};
@@ -18,6 +20,7 @@ use tokio::sync::mpsc;
 const GRAPH_ROOT: &str = "https://graph.microsoft.com/v1.0";
 const DEFAULT_DOWNLOAD_CONCURRENCY: usize = 12;
 const MAX_DOWNLOAD_RETRIES: u32 = 5;
+const DOWNLOAD_PROGRESS_PERSIST_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_RETRY_DELAY_SECONDS: u64 = 30;
 const DEFAULT_REQUEST_TIMEOUT_SECONDS: u64 = 60;
 const DEFAULT_CONNECT_TIMEOUT_SECONDS: u64 = 15;

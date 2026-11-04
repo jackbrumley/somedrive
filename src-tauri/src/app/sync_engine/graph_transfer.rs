@@ -17,6 +17,7 @@ async fn graph_get_text(
     let mut attempt: u32 = 0;
     loop {
         ensure_not_cancelled(cancel_flag)?;
+        graph.wait_for_throttle_window(cancel_flag).await?;
         attempt += 1;
         let access_token = graph.current_access_token().await;
         let response = tokio::select! {
@@ -55,6 +56,10 @@ async fn graph_get_text(
         if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
             if status == StatusCode::TOO_MANY_REQUESTS {
                 let _ = record_throttle_event(&graph.profile_id, DOWNLOAD_JOB_DIRECTION);
+                graph.extend_throttle_window(
+                    parse_retry_after_delay(response.headers())
+                        .unwrap_or_else(|| exponential_backoff_delay(attempt)),
+                )?;
             }
             if attempt < MAX_DOWNLOAD_RETRIES {
                 let delay = parse_retry_after_delay(response.headers())
@@ -212,6 +217,7 @@ async fn download_remote_item_content(
     }
     loop {
         ensure_not_cancelled(cancel_flag)?;
+        graph.wait_for_throttle_window(cancel_flag).await?;
         attempt += 1;
         if let Some(active_job_id) = job_id {
             let _ = mark_download_job_running(&graph.profile_id, active_job_id);
@@ -358,6 +364,7 @@ async fn download_remote_item_content(
             let delay = parse_retry_after_delay(&response_headers)
                 .or_else(|| parse_retry_after_seconds_from_json_body(&response_text))
                 .unwrap_or_else(|| exponential_backoff_delay(attempt));
+            graph.extend_throttle_window(delay)?;
             if let Some(active_job_id) = job_id {
                 let retry_reason = format!("Download retry scheduled for HTTP status {status}");
                 if let Err(error) = mark_download_job_retry_wait(
@@ -392,14 +399,13 @@ async fn download_remote_item_content(
                     .unwrap_or_else(|| exponential_backoff_delay(attempt));
                 if let Some(active_job_id) = job_id {
                     let retry_reason = format!("Download retry scheduled for HTTP status {status}");
-                    if let Err(error) = mark_download_job_retry_wait(
+                    if let Err(error) = record_download_job_retrying_in_place(
                         &graph.profile_id,
                         active_job_id,
                         &retry_reason,
-                        delay,
                     ) {
                         log::warn!(
-                            "{} [cycle:{}] DOWNLOAD_RETRY_WAIT_PERSIST_FAILED path={} error={}",
+                            "{} [cycle:{}] DOWNLOAD_RETRY_PERSIST_FAILED path={} error={}",
                             graph.account_prefix,
                             graph.cycle_id,
                             relative_path,
@@ -503,6 +509,7 @@ async fn download_remote_item_content(
 
         let mut stream = response.bytes_stream();
         let mut downloaded_bytes: u64 = 0;
+        let mut last_progress_persisted_at = std::time::Instant::now();
         let mut should_retry_download = false;
         while let Some(chunk_result) = stream.next().await {
             if cancel_flag.load(Ordering::Relaxed) {
@@ -562,13 +569,27 @@ async fn download_remote_item_content(
             }
 
             downloaded_bytes += chunk.len() as u64;
+            // The database copy of progress is for restarts and the activity
+            // projection, so it is written at most once per interval: a write
+            // per chunk from every worker starves the result writer.
             if let Some(active_job_id) = job_id {
-                let _ = update_download_job_progress(
-                    &graph.profile_id,
-                    active_job_id,
-                    downloaded_bytes,
-                    total,
-                );
+                if last_progress_persisted_at.elapsed() >= DOWNLOAD_PROGRESS_PERSIST_INTERVAL {
+                    last_progress_persisted_at = std::time::Instant::now();
+                    if let Err(error) = update_download_job_progress(
+                        &graph.profile_id,
+                        active_job_id,
+                        downloaded_bytes,
+                        total,
+                    ) {
+                        log::warn!(
+                            "{} [cycle:{}] DOWNLOAD_PROGRESS_PERSIST_FAILED path={} error={}",
+                            graph.account_prefix,
+                            graph.cycle_id,
+                            relative_path,
+                            error
+                        );
+                    }
+                }
             }
             if let Some(active_transfer_id) = &transfer_id {
                 runtime_update_transfer_progress(
@@ -708,6 +729,7 @@ async fn create_remote_folder(
     let mut refreshed = false;
     loop {
         ensure_not_cancelled(cancel_flag)?;
+        graph.wait_for_throttle_window(cancel_flag).await?;
         let access_token = graph.current_access_token().await;
         let response = tokio::select! {
             _ = wait_for_cancellation(Arc::clone(cancel_flag)) => {

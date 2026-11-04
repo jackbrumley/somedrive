@@ -1,11 +1,14 @@
 fn read_sync_job_activity_projection(
+    connection: &Connection,
     profile_id: &str,
     active_limit: usize,
     recent_limit: usize,
 ) -> Result<SyncJobActivityProjection, String> {
-    let connection = open_sync_jobs_connection(profile_id)?;
     let mut projection = SyncJobActivityProjection::default();
 
+    // Running transfers sort first so the row limit can only cut queued
+    // rows; otherwise recently requeued jobs push running ones out of the
+    // projection and its count drifts from the in-flight counter.
     let mut active_statement = connection
         .prepare(
             "SELECT id,
@@ -23,7 +26,8 @@ fn read_sync_job_activity_projection(
                     (state = ?2 AND run_state IN (?3, ?4))
                     OR state = ?5
                 )
-              ORDER BY COALESCE(progress_updated_at, updated_at) DESC
+              ORDER BY (state = ?2 AND run_state = ?3) DESC,
+                       COALESCE(progress_updated_at, updated_at) DESC
               LIMIT ?6",
         )
         .map_err(|error| format!("Failed preparing active sync job query: {error}"))?;
@@ -228,11 +232,23 @@ pub fn hydrate_runtime_status_from_db(
     const ACTIVE_ACTIVITY_LIMIT: usize = 512;
     const RECENT_ACTIVITY_LIMIT: usize = 120;
     let profile_id = status.profile_id.clone();
-    let projection =
-        read_sync_job_activity_projection(&profile_id, ACTIVE_ACTIVITY_LIMIT, RECENT_ACTIVITY_LIMIT)?;
+    // One read transaction: the activity rows and the in-flight counters come
+    // from the same WAL snapshot, so workers claiming jobs between the reads
+    // cannot make them disagree.
+    let connection = open_sync_jobs_connection(&profile_id)?;
+    let snapshot = connection
+        .unchecked_transaction()
+        .map_err(|error| format!("Failed starting sync activity snapshot: {error}"))?;
+    let projection = read_sync_job_activity_projection(
+        &snapshot,
+        &profile_id,
+        ACTIVE_ACTIVITY_LIMIT,
+        RECENT_ACTIVITY_LIMIT,
+    )?;
+    let download_counters = query_download_job_counters(&snapshot, &profile_id)?;
+    let upload_counters = query_upload_job_counters(&snapshot, &profile_id)?;
+    drop(snapshot);
     let planner_counters = read_sync_file_planner_counters(&profile_id)?;
-    let download_counters = read_download_job_counters(&profile_id)?;
-    let upload_counters = read_upload_job_counters(&profile_id)?;
 
     if projection.active_download_count != download_counters.in_progress {
         log::warn!(
