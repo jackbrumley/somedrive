@@ -1,6 +1,6 @@
 # Sync Engine: Baseline Reconciliation Design
 
-Status: **proposed** (2026-11-04). Replaces the two-phase "cloud first, then
+Status: **accepted** (2026-11-04), not yet built. Replaces the two-phase "cloud first, then
 two-way" model. When this is built it becomes the single description of how
 SomeDrive decides what to do with a file.
 
@@ -275,14 +275,13 @@ both sides afterwards:
 
 Only after these pass does SomeDrive run on the real account.
 
-## 12. Decisions needed
+## 12. Decisions
 
-- Conflict copy naming: `name (conflict 2026-11-04 1532 on mint).ext`?
-- Delete guard threshold: 10 files or 10%, whichever is larger?
-- Local deletes to Trash: always, or a setting?
-- Retire the older plan documents (`TWO_WAY_SYNC_IMPLEMENTATION_PLAN.md`,
-  `sync-db-authority-roadmap.md`, `sync-reliability-rebuild-plan.md`,
-  `sync-state-authority-corrective-action-plan.md`,
-  `sync-status-single-pipeline-implementation-plan.md`) once this is
-  accepted? Their still-valid rules (DB authority, single status writer) are
-  already in AGENTS.md.
+Agreed 2026-11-04:
+
+- Conflict copies are named `name (conflict YYYY-MM-DD HHMM on <hostname>).ext`.
+- The delete guard asks before more than 10 files or 10% of tracked files,
+  whichever is larger, in either direction.
+- Local deletes always go to the Trash.
+- This document replaces the earlier sync plan documents; their lasting
+  rules (database authority, single status writer) are in AGENTS.md.
