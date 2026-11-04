@@ -257,38 +257,57 @@ fn open_new_sync_jobs_connection(profile_id: &str) -> Result<Connection, String>
     Ok(connection)
 }
 
+/// Creates or rebuilds the account's sync schema, once per account per run.
+///
+/// No Rust lock is held while the database is touched or a line is logged:
+/// logging an account line loads the account list, which opens this database
+/// again, and a lock held here would deadlock start-up. An IMMEDIATE
+/// transaction serialises the check-and-rebuild across connections instead.
 pub(crate) fn ensure_sync_schema(profile_id: &str, connection: &Connection) -> Result<(), String> {
-    let mut ready = SYNC_SCHEMA_READY
+    let already_ready = SYNC_SCHEMA_READY
         .lock()
-        .map_err(|_| "Sync schema lock is poisoned".to_string())?;
-    if ready.contains(profile_id) {
+        .map_err(|_| "Sync schema lock is poisoned".to_string())?
+        .contains(profile_id);
+    if already_ready {
         return Ok(());
     }
 
-    let version = connection
+    let transaction =
+        rusqlite::Transaction::new_unchecked(connection, rusqlite::TransactionBehavior::Immediate)
+            .map_err(|error| format!("Failed starting sync schema transaction: {error}"))?;
+    let version = transaction
         .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
         .map_err(|error| format!("Failed reading sync schema version: {error}"))?;
-    if version != 0 && version != SYNC_SCHEMA_VERSION {
-        log::warn!(
-            "{} SYNC_SCHEMA_RESET from_version={} to_version={} reason=engine_replaced",
-            log_context::account_prefix(profile_id),
-            version,
-            SYNC_SCHEMA_VERSION
-        );
+    let reset_from_version = (version != 0 && version != SYNC_SCHEMA_VERSION).then_some(version);
+    if reset_from_version.is_some() {
         for table in LEGACY_SYNC_TABLES {
-            connection
+            transaction
                 .execute_batch(&format!("DROP TABLE IF EXISTS {table};"))
                 .map_err(|error| format!("Failed dropping legacy table {table}: {error}"))?;
         }
     }
-
-    connection
+    transaction
         .execute_batch(SYNC_SCHEMA_SQL)
         .map_err(|error| format!("Failed initializing sync schema: {error}"))?;
-    connection
+    transaction
         .execute_batch(&format!("PRAGMA user_version = {SYNC_SCHEMA_VERSION};"))
         .map_err(|error| format!("Failed writing sync schema version: {error}"))?;
-    ready.insert(profile_id.to_string());
+    transaction
+        .commit()
+        .map_err(|error| format!("Failed committing sync schema: {error}"))?;
+
+    SYNC_SCHEMA_READY
+        .lock()
+        .map_err(|_| "Sync schema lock is poisoned".to_string())?
+        .insert(profile_id.to_string());
+    if let Some(from_version) = reset_from_version {
+        log::warn!(
+            "{} SYNC_SCHEMA_RESET from_version={} to_version={} reason=engine_replaced",
+            log_context::account_prefix(profile_id),
+            from_version,
+            SYNC_SCHEMA_VERSION
+        );
+    }
     Ok(())
 }
 
