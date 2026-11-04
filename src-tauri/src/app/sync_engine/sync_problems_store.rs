@@ -50,6 +50,26 @@ fn set_conflict_resolution(profile_id: &str, paths: &[String], resolution: &str)
     Ok(updated)
 }
 
+/// The setting's automatic choice for one held conflict, recorded against
+/// the local file's time as it is now.
+fn set_automatic_conflict_resolution(
+    profile_id: &str,
+    path: &str,
+    resolution: &str,
+    local_mtime_ns: i64,
+) -> Result<(), String> {
+    let connection = open_sync_jobs_connection(profile_id)?;
+    connection
+        .execute(
+            "UPDATE sync_files
+             SET resolution = ?3, resolution_local_mtime_ns = ?4, updated_at = ?5
+             WHERE profile_id = ?1 AND path = ?2 AND substr(issue_code, 1, length(?6)) = ?6",
+            params![profile_id, path, resolution, local_mtime_ns, current_unix_seconds(), CONFLICT_ISSUE_PREFIX],
+        )
+        .map_err(|error| format!("Failed recording automatic resolution for '{path}': {error}"))?;
+    Ok(())
+}
+
 fn list_conflict_resolutions(profile_id: &str) -> Result<Vec<ConflictResolution>, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let mut statement = connection

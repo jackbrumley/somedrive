@@ -44,14 +44,39 @@ fn default_close_to_tray() -> bool {
 struct SyncSettings {
     #[serde(default = "default_download_concurrency")]
     download_concurrency: usize,
+    #[serde(default)]
+    conflict_policy: ConflictPolicy,
 }
 
 impl Default for SyncSettings {
     fn default() -> Self {
         Self {
             download_concurrency: default_download_concurrency(),
+            conflict_policy: ConflictPolicy::default(),
         }
     }
+}
+
+/// What happens to a file that changed on this device and in OneDrive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictPolicy {
+    /// Hold it in Sync problems until the user chooses.
+    #[default]
+    Ask,
+    /// Keep whichever version changed last; the other stays in OneDrive's
+    /// version history or the Trash.
+    KeepNewest,
+}
+
+pub fn load_conflict_policy() -> Result<ConflictPolicy, String> {
+    Ok(load_or_create_app_settings()?.sync.conflict_policy)
+}
+
+pub fn save_conflict_policy(policy: ConflictPolicy) -> Result<(), String> {
+    let mut settings = load_or_create_app_settings()?;
+    settings.sync.conflict_policy = policy;
+    save_app_settings(&settings)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -180,7 +205,22 @@ pub fn app_settings_path() -> Result<PathBuf, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::AppSettingsFile;
+    use super::{AppSettingsFile, ConflictPolicy};
+
+    #[test]
+    fn conflict_policy_defaults_to_ask_and_uses_the_ui_names() {
+        let existing: AppSettingsFile =
+            serde_json::from_str(r#"{"sync":{"downloadConcurrency":12}}"#).unwrap();
+        assert_eq!(existing.sync.conflict_policy, ConflictPolicy::Ask);
+        assert_eq!(
+            serde_json::to_string(&ConflictPolicy::KeepNewest).unwrap(),
+            "\"keep_newest\""
+        );
+        assert_eq!(
+            serde_json::from_str::<ConflictPolicy>("\"ask\"").unwrap(),
+            ConflictPolicy::Ask
+        );
+    }
 
     #[test]
     fn close_to_tray_defaults_on_for_new_and_existing_settings() {

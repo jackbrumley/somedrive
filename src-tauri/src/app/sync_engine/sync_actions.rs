@@ -79,8 +79,16 @@ fn conflict_detail(conflict_code: &str) -> &'static str {
     }
 }
 
-/// Holds `path` as a conflict: it stops syncing until the user chooses.
-fn hold_conflict(graph: &GraphContext, path: &str, conflict_code: &str) -> Result<(), String> {
+/// Holds `path` as a conflict: it stops syncing until it is resolved. With
+/// the "keep the newest" setting the newer side is chosen straight away (and
+/// applied next cycle, through the same checks as a user's choice).
+fn hold_conflict(
+    graph: &GraphContext,
+    path: &str,
+    conflict_code: &str,
+    local_mtime_ns: i64,
+    cloud_mtime: i64,
+) -> Result<(), String> {
     record_sync_file_issue(&graph.profile_id, path, conflict_code, conflict_detail(conflict_code))?;
     log::warn!(
         "{} [cycle:{}] CONFLICT_HELD path={} code={}",
@@ -89,6 +97,21 @@ fn hold_conflict(graph: &GraphContext, path: &str, conflict_code: &str) -> Resul
         path,
         conflict_code
     );
+    if crate::app::app_settings::load_conflict_policy()? == crate::app::app_settings::ConflictPolicy::KeepNewest {
+        let resolution = if local_mtime_ns / 1_000_000_000 > cloud_mtime {
+            RESOLUTION_KEEP_LOCAL
+        } else {
+            RESOLUTION_KEEP_CLOUD
+        };
+        set_automatic_conflict_resolution(&graph.profile_id, path, resolution, local_mtime_ns)?;
+        log::info!(
+            "{} [cycle:{}] CONFLICT_AUTO_RESOLVED path={} resolution={} policy=keep_newest",
+            graph.account_prefix,
+            graph.cycle_id,
+            path,
+            resolution
+        );
+    }
     Ok(())
 }
 
@@ -144,7 +167,7 @@ async fn reconcile_both_sides(
             commit_baseline(&graph.profile_id, &row.path, &row.cloud_version(), &entry)?;
             stats.matched_files += 1;
         } else {
-            hold_conflict(graph, &row.path, conflict_code)?;
+            hold_conflict(graph, &row.path, conflict_code, entry.mtime_ns, row.cloud_mtime)?;
             stats.conflicts_held += 1;
         }
     }

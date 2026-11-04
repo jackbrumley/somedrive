@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { routeStateFromHash, type AppRouteState } from "../routes/appRoutes";
 import type {
+  ConflictPolicy,
   DownloadConcurrencySetting,
   ActivityEvent,
   AppStatusSnapshot,
@@ -52,6 +53,7 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
   const [closeToTray, setCloseToTray] = useState(true);
   const [logLevel, setLogLevel] = useState<LogLevel>("info");
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  const [conflictPolicy, setConflictPolicy] = useState<ConflictPolicy | null>(null);
   const [syncDownloadConcurrency, setSyncDownloadConcurrency] =
     useState<DownloadConcurrencySetting | null>(null);
 
@@ -168,6 +170,7 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
     void systemActions.fetchLogLevel().then(setLogLevel);
     void systemActions.fetchSystemInfo().then(setSystemInfo);
     void systemActions.fetchSyncDownloadConcurrency().then(setSyncDownloadConcurrency);
+    void systemActions.fetchConflictPolicy().then(setConflictPolicy);
     return () => {
       isDisposed = true;
       window.removeEventListener("hashchange", syncRoute);
@@ -240,6 +243,13 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
     }
   };
 
+  const updateConflictPolicy = async (policy: ConflictPolicy) => {
+    const updated = await systemActions.setConflictPolicy(policy);
+    if (updated !== null) {
+      setConflictPolicy(updated);
+    }
+  };
+
   const updateSyncDownloadConcurrency = async (value: number) => {
     const updated = await systemActions.setSyncDownloadConcurrency(value);
     if (updated !== null) {
@@ -295,6 +305,8 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
     copySystemInfo: systemActions.copySystemInfo,
     syncDownloadConcurrency,
     updateSyncDownloadConcurrency,
+    conflictPolicy,
+    updateConflictPolicy,
     fetchSessionLogText: systemActions.fetchSessionLogText,
     copySessionLog: systemActions.copySessionLog,
     openSessionLog: systemActions.openSessionLog,

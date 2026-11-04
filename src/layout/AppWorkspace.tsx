@@ -76,6 +76,8 @@ export function AppWorkspace({ runtime, updates }: AppWorkspaceProps) {
           onToggleRawLoggerMode={runtime.toggleRawLoggerMode}
           syncDownloadConcurrency={runtime.syncDownloadConcurrency}
           onChangeSyncDownloadConcurrency={runtime.updateSyncDownloadConcurrency}
+          conflictPolicy={runtime.conflictPolicy}
+          onChangeConflictPolicy={runtime.updateConflictPolicy}
           appVersion={runtime.status.appVersion}
           checkingUpdates={updates.checkingUpdates}
           lastCheckedAt={updates.lastCheckedAt}

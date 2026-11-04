@@ -155,6 +155,12 @@ file stays held. The tab also lists names OneDrive cannot hold, OneNote
 notebooks, malware-flagged files and downloads that failed for good, so
 everything that needs the user is in one place.
 
+Settings → Sync → "When a file changes on both sides" can be switched from
+**Ask me** (the default) to **Keep the newest**: a held file then gets the
+newer side's version chosen automatically, applied through the same checks
+as a user's choice; the older version stays in OneDrive's version history or
+the Trash.
+
 ### 6.3 Uploads
 Uploads of an existing item send `If-Match: <baseline eTag>`. A 412 means the
 cloud changed since the plan: re-plan that item (it becomes row 4). New

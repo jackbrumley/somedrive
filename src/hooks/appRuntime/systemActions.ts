@@ -5,6 +5,7 @@ import {
   isEnabled as isAutostartEnabled,
 } from "@tauri-apps/plugin-autostart";
 import type {
+  ConflictPolicy,
   DownloadConcurrencySetting,
   LogLevel,
   SystemInfo,
@@ -192,6 +193,31 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
     }
   };
 
+  const fetchConflictPolicy = async (): Promise<ConflictPolicy | null> => {
+    try {
+      return await invoke<ConflictPolicy>("get_conflict_policy");
+    } catch (error) {
+      showToast(`Failed to read the conflict setting: ${error}`, "error");
+      return null;
+    }
+  };
+
+  const setConflictPolicy = async (policy: ConflictPolicy): Promise<ConflictPolicy | null> => {
+    try {
+      const updated = await invoke<ConflictPolicy>("set_conflict_policy", { policy });
+      showToast(
+        updated === "ask"
+          ? "Files changed on both sides will wait for your decision."
+          : "Files changed on both sides will keep the newest version.",
+        "success"
+      );
+      return updated;
+    } catch (error) {
+      showToast(`Failed to update the conflict setting: ${error}`, "error");
+      return null;
+    }
+  };
+
   const setSyncDownloadConcurrency = async (value: number) => {
     try {
       const updated = await invoke<DownloadConcurrencySetting>("set_sync_download_concurrency", {
@@ -223,6 +249,8 @@ export function createSystemActions({ showToast }: SystemActionsFactoryParams) {
     setRawLoggerMode,
     fetchSyncDownloadConcurrency,
     setSyncDownloadConcurrency,
+    fetchConflictPolicy,
+    setConflictPolicy,
     openAccountItemFolder,
     openAccountSyncRootFolder,
   };

@@ -25,7 +25,7 @@ review, 2026-11-04). Design: `docs/sync-engine.md`. Built on branch
    old copy).
 6. [ ] Test-account trial run (`docs/sync-engine.md` section 11) before any
    real data; then merge `sync-baseline` into `dev`.
-7. [ ] Optional setting "When a file changes on both sides: Ask me / Keep
+7. [x] Optional setting "When a file changes on both sides: Ask me / Keep
    the newest automatically" (default Ask me).
 8. [ ] Exclude rules (Settings): folders and patterns never synced, such as
    browser caches.

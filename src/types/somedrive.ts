@@ -236,3 +236,6 @@ export interface SyncProblem {
   cloudModifiedAt: string | null;
   retryId: string | null;
 }
+
+/** Mirrors `app_settings::ConflictPolicy`. */
+export type ConflictPolicy = "ask" | "keep_newest";

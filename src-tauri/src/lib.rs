@@ -34,6 +34,8 @@ pub fn run(launch: LaunchOptions) {
             request_sync_status_snapshot,
             get_sync_download_concurrency,
             set_sync_download_concurrency,
+            get_conflict_policy,
+            set_conflict_policy,
             check_for_updates,
             install_update,
             minimize_to_tray_or_taskbar,

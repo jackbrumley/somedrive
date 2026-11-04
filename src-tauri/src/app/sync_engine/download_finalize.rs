@@ -55,11 +55,12 @@ fn place_downloaded_file(
                 "A folder is in the way of '{relative_path}'; the file is not downloaded"
             ));
         }
-        let replaceable = read_sync_file_row(&graph.profile_id, relative_path)?
-            .is_some_and(|row| row.local_matches_baseline(&existing));
+        let row = read_sync_file_row(&graph.profile_id, relative_path)?;
+        let replaceable = row.as_ref().is_some_and(|row| row.local_matches_baseline(&existing));
         if !replaceable {
             let _ = std::fs::remove_file(temp_path);
-            hold_conflict(graph, relative_path, ISSUE_CONFLICT_BOTH_CHANGED)?;
+            let cloud_mtime = row.map(|row| row.cloud_mtime).unwrap_or(0);
+            hold_conflict(graph, relative_path, ISSUE_CONFLICT_BOTH_CHANGED, existing.mtime_ns, cloud_mtime)?;
             return Ok(None);
         }
     }
