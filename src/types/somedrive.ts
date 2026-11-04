@@ -167,7 +167,6 @@ export interface SyncRuntimeAccountStatus {
   uploadThrottleTotal?: number;
   uploadThrottleLastMinute?: number;
   remoteScanComplete?: boolean;
-  twoWayReady?: boolean;
   localScanScannedCount?: number;
   localScanEstimatedTotal?: number | null;
   localScanCurrentPath?: string | null;
@@ -220,3 +219,23 @@ export interface DownloadConcurrencySetting {
   min: number;
   max: number;
 }
+
+/** How the user resolves a file that differs on this device and in OneDrive. */
+export type ConflictResolution = "keep_local" | "keep_cloud" | "keep_both";
+
+/** Mirrors `sync_engine::SyncProblem`: one file that needs the user. */
+export interface SyncProblem {
+  path: string;
+  code: string;
+  detail: string;
+  isConflict: boolean;
+  resolution: ConflictResolution | null;
+  localSize: number | null;
+  localModifiedAt: string | null;
+  cloudSize: number | null;
+  cloudModifiedAt: string | null;
+  retryId: string | null;
+}
+
+/** Mirrors `app_settings::ConflictPolicy`. */
+export type ConflictPolicy = "ask" | "keep_newest";

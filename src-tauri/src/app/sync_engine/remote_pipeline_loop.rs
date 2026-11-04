@@ -1,24 +1,22 @@
-struct RemotePipelineLoopOutcome {
-    deferred_delta_link: Option<String>,
-    remote_applied_paths: HashSet<String>,
+use super::*;
+
+pub(crate) struct RemotePipelineLoopOutcome {
+    pub(crate) deferred_delta_link: Option<String>,
 }
 
 // the pipeline loop owns the cycle's channels and shared counters explicitly; a pipeline context struct is tracked in docs/TODO.md.
 #[allow(clippy::too_many_arguments)]
-async fn run_remote_pipeline_loop(
+pub(crate) async fn run_remote_pipeline_loop(
     graph: &mut GraphContext,
     sync_root: &Path,
-    sync_state: &mut PersistedSyncState,
     stats: &mut SyncCycleStats,
-    lifecycle_state: &mut SyncLifecycleOperationalState,
     cycle_cancel_flag: &Arc<AtomicBool>,
     producer_alive: &Arc<AtomicBool>,
     active_download_workers: &Arc<AtomicUsize>,
     pending_download_count: &Arc<AtomicUsize>,
-    page_rx: &mut mpsc::Receiver<Result<DeltaPageWorkItem, String>>,
+    page_rx: &mut mpsc::Receiver<Result<DeltaPageWorkItem, SyncError>>,
     download_result_rx: &mut mpsc::Receiver<RemoteDownloadResult>,
-    checkpoint_flush_step: usize,
-) -> Result<RemotePipelineLoopOutcome, String> {
+) -> SyncResult<RemotePipelineLoopOutcome> {
     const PHASE_PROGRESS_UPDATE_INTERVAL: Duration = Duration::from_millis(750);
     const PHASE_PROGRESS_ITEM_STEP: usize = 250;
     const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
@@ -37,10 +35,8 @@ async fn run_remote_pipeline_loop(
     let mut last_download_result_at: Option<std::time::Instant> = None;
     let mut last_download_counter_signature: Option<(usize, usize, usize, usize, u64, u64, u64)> =
         None;
-    let mut download_results_since_flush: usize = 0;
     let mut producer_done = false;
     let mut deferred_delta_link: Option<String> = None;
-    let mut remote_applied_paths: HashSet<String> = HashSet::new();
 
     loop {
         ensure_not_cancelled(cycle_cancel_flag)?;
@@ -74,14 +70,14 @@ async fn run_remote_pipeline_loop(
                         if producer_done && pending_download_count.load(Ordering::Relaxed) == 0 {
                             break;
                         }
-                        return Err(format!(
+                        return Err(SyncError::from(format!(
                             "Download worker channel closed unexpectedly producer_alive={} active_workers={} pending_downloads={} remaining_download_jobs={} retry_waiting={}",
                             producer_alive.load(Ordering::Relaxed),
                             active_download_workers.load(Ordering::Relaxed),
                             pending_download_count.load(Ordering::Relaxed),
                             download_counters.remaining,
                             download_counters.retry_waiting
-                        ));
+                        )));
                     },
                 };
                 last_progress_at = std::time::Instant::now();
@@ -96,21 +92,11 @@ async fn run_remote_pipeline_loop(
                         Err(_) => break,
                     }
                 }
+                // Directory entries reach the disk before any of these
+                // downloads is recorded as synced.
+                graph.flush_pending_dir_syncs()?;
                 for batched_result in result_batch {
-                    apply_remote_download_result(
-                        graph,
-                        sync_root,
-                        sync_state,
-                        stats,
-                        &mut remote_applied_paths,
-                        batched_result,
-                    )?;
-                    download_results_since_flush += 1;
-                }
-
-                if download_results_since_flush >= checkpoint_flush_step {
-                    save_sync_state(&graph.profile_id, sync_state)?;
-                    download_results_since_flush = 0;
+                    apply_remote_download_result(graph, stats, batched_result)?;
                 }
 
                 if !producer_done {
@@ -170,17 +156,17 @@ async fn run_remote_pipeline_loop(
                         last_progress_at = std::time::Instant::now();
                         continue;
                     }
-                    return Err(format!(
+                    return Err(SyncError::from(format!(
                         "Remote sync stalled after {}s with no progress",
                         stall_timeout.as_secs()
-                    ));
+                    )));
                 }
             }
             maybe_page = page_rx.recv(), if !producer_done => {
                 let page_payload = match maybe_page {
                     Some(Ok(value)) => value,
                     Some(Err(error)) => {
-                        return Err(format!(
+                        return Err(SyncError::from(format!(
                             "Delta producer error={} producer_alive={} active_workers={} pending_downloads={} remaining_download_jobs={} retry_waiting={}",
                             error,
                             producer_alive.load(Ordering::Relaxed),
@@ -188,7 +174,7 @@ async fn run_remote_pipeline_loop(
                             pending_download_count.load(Ordering::Relaxed),
                             download_counters.remaining,
                             download_counters.retry_waiting
-                        ));
+                        )));
                     },
                     None => {
                         producer_done = true;
@@ -245,23 +231,21 @@ async fn run_remote_pipeline_loop(
                     page_payload.items.len()
                 );
 
-                process_remote_page_items(
-                    graph,
-                    sync_root,
-                    sync_state,
-                    !lifecycle_state.two_way_ready,
-                    cycle_cancel_flag,
-                    page_payload.items,
-                )
-                .await?;
-                let _ = recompute_sync_file_actions(&graph.profile_id, lifecycle_state.two_way_ready)?;
-                let _ = materialize_planner_download_jobs(&graph.profile_id)?;
+                let next_link = page_payload.next_link.clone();
+                let page_summary = apply_delta_page(
+                    &graph.profile_id,
+                    &graph.account_prefix,
+                    &page_payload.items,
+                    next_link.as_deref(),
+                )?;
+                stats.remote_items_skipped_unresolved += page_summary.skipped_unresolved;
+                stats.local_moves += apply_pending_local_moves(&graph.profile_id, &graph.account_prefix, sync_root)?;
+                apply_exclusion_rules(&graph.profile_id, &graph.exclusions)?;
+                recompute_sync_file_actions(&graph.profile_id)?;
+                materialize_planner_download_jobs(&graph.profile_id)?;
                 let _ = sync_download_counters_from_db(graph)?;
 
-                if let Some(next_link) = page_payload.next_link {
-                    lifecycle_state.active_delta_next_link = Some(next_link);
-                    persist_lifecycle_operational_state(&graph.profile_id, lifecycle_state)?;
-                } else {
+                if next_link.is_none() {
                     deferred_delta_link = page_payload.delta_link;
                     producer_done = true;
                 }
@@ -271,6 +255,5 @@ async fn run_remote_pipeline_loop(
 
     Ok(RemotePipelineLoopOutcome {
         deferred_delta_link,
-        remote_applied_paths,
     })
 }

@@ -26,7 +26,6 @@ function metricGroups(status: SyncRuntimeAccountStatus): MetricGroup[] {
         ["Can sync", String(status.canSync ?? false)],
         ["Issue", status.issueCode ?? "none"],
         ["Remote scan complete", String(status.remoteScanComplete ?? false)],
-        ["Two-way ready", String(status.twoWayReady ?? false)],
         ["Updated", formatClockTime(status.updatedAt)],
       ],
     },

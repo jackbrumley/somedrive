@@ -1,3 +1,5 @@
+use super::*;
+
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetAccountSyncRootInput {
@@ -114,7 +116,7 @@ pub fn open_account_item_folder(
     open_folder_in_file_manager(&folder_path)
 }
 
-fn normalize_relative_sync_item_path(value: &str) -> Result<PathBuf, String> {
+pub(crate) fn normalize_relative_sync_item_path(value: &str) -> Result<PathBuf, String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         return Err("Sync path is empty".to_string());
@@ -142,7 +144,7 @@ fn normalize_relative_sync_item_path(value: &str) -> Result<PathBuf, String> {
     Ok(normalized)
 }
 
-fn open_folder_in_file_manager(folder_path: &PathBuf) -> Result<(), String> {
+pub(crate) fn open_folder_in_file_manager(folder_path: &PathBuf) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
         Command::new("xdg-open")
@@ -169,4 +171,3 @@ fn open_folder_in_file_manager(folder_path: &PathBuf) -> Result<(), String> {
 
     Ok(())
 }
-

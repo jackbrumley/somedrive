@@ -1,4 +1,6 @@
-fn read_sync_job_activity_projection(
+use super::*;
+
+pub(crate) fn read_sync_job_activity_projection(
     connection: &Connection,
     profile_id: &str,
     active_limit: usize,
@@ -48,7 +50,9 @@ fn read_sync_job_activity_projection(
                 let direction: String = row.get(3)?;
                 let path: String = row.get(4)?;
                 let bytes_done = row.get::<_, i64>(5)?.max(0) as u64;
-                let bytes_total = row.get::<_, Option<i64>>(6)?.map(|value| value.max(0) as u64);
+                let bytes_total = row
+                    .get::<_, Option<i64>>(6)?
+                    .map(|value| value.max(0) as u64);
                 let started_at_unix: i64 = row.get(7)?;
                 let updated_at_unix: i64 = row.get(8)?;
                 let transfer_state = if state == DOWNLOAD_JOB_STATE_IN_PROGRESS
@@ -77,11 +81,15 @@ fn read_sync_job_activity_projection(
     for row in active_rows {
         let (transfer, _) =
             row.map_err(|error| format!("Failed reading active sync job row: {error}"))?;
-        if transfer.direction.eq_ignore_ascii_case(DOWNLOAD_JOB_DIRECTION)
+        if transfer
+            .direction
+            .eq_ignore_ascii_case(DOWNLOAD_JOB_DIRECTION)
             && transfer.state == "in_progress"
         {
             projection.active_download_count += 1;
-        } else if transfer.direction.eq_ignore_ascii_case(UPLOAD_JOB_DIRECTION)
+        } else if transfer
+            .direction
+            .eq_ignore_ascii_case(UPLOAD_JOB_DIRECTION)
             && transfer.state == "in_progress"
         {
             projection.active_upload_count += 1;
@@ -116,7 +124,9 @@ fn read_sync_job_activity_projection(
                 let job_id: i64 = row.get(0)?;
                 let direction: String = row.get(1)?;
                 let path: String = row.get(2)?;
-                let bytes_total = row.get::<_, Option<i64>>(3)?.map(|value| value.max(0) as u64);
+                let bytes_total = row
+                    .get::<_, Option<i64>>(3)?
+                    .map(|value| value.max(0) as u64);
                 let finished_at_unix: i64 = row.get(4)?;
                 Ok(SyncRuntimeRecentItem {
                     id: format!("job-{job_id}"),
@@ -131,9 +141,9 @@ fn read_sync_job_activity_projection(
         )
         .map_err(|error| format!("Failed querying completed sync jobs: {error}"))?;
     for row in completed_rows {
-        projection.recent_completed.push(
-            row.map_err(|error| format!("Failed reading completed sync job row: {error}"))?,
-        );
+        projection
+            .recent_completed
+            .push(row.map_err(|error| format!("Failed reading completed sync job row: {error}"))?);
     }
 
     let mut failed_statement = connection
@@ -154,12 +164,18 @@ fn read_sync_job_activity_projection(
         .map_err(|error| format!("Failed preparing failed sync job query: {error}"))?;
     let failed_rows = failed_statement
         .query_map(
-            params![profile_id, DOWNLOAD_JOB_STATE_FAILED_TERMINAL, recent_limit as i64],
+            params![
+                profile_id,
+                DOWNLOAD_JOB_STATE_FAILED_TERMINAL,
+                recent_limit as i64
+            ],
             |row| {
                 let job_id: i64 = row.get(0)?;
                 let direction: String = row.get(1)?;
                 let path: String = row.get(2)?;
-                let bytes_total = row.get::<_, Option<i64>>(3)?.map(|value| value.max(0) as u64);
+                let bytes_total = row
+                    .get::<_, Option<i64>>(3)?
+                    .map(|value| value.max(0) as u64);
                 let finished_at_unix: i64 = row.get(4)?;
                 let error_text: Option<String> = row.get(5)?;
                 Ok(SyncRuntimeRecentItem {
@@ -197,12 +213,18 @@ fn read_sync_job_activity_projection(
         .map_err(|error| format!("Failed preparing retry-wait sync job query: {error}"))?;
     let retry_wait_rows = retry_wait_statement
         .query_map(
-            params![profile_id, DOWNLOAD_JOB_STATE_RETRY_WAIT, recent_limit as i64],
+            params![
+                profile_id,
+                DOWNLOAD_JOB_STATE_RETRY_WAIT,
+                recent_limit as i64
+            ],
             |row| {
                 let job_id: i64 = row.get(0)?;
                 let direction: String = row.get(1)?;
                 let path: String = row.get(2)?;
-                let bytes_total = row.get::<_, Option<i64>>(3)?.map(|value| value.max(0) as u64);
+                let bytes_total = row
+                    .get::<_, Option<i64>>(3)?
+                    .map(|value| value.max(0) as u64);
                 let retry_at_unix: i64 = row.get(4)?;
                 let error_text: Option<String> = row.get(5)?;
                 Ok(SyncRuntimeRecentItem {
@@ -218,9 +240,9 @@ fn read_sync_job_activity_projection(
         )
         .map_err(|error| format!("Failed querying retry-wait sync jobs: {error}"))?;
     for row in retry_wait_rows {
-        projection.recent_retry_waiting.push(
-            row.map_err(|error| format!("Failed reading retry-wait sync job row: {error}"))?,
-        );
+        projection
+            .recent_retry_waiting
+            .push(row.map_err(|error| format!("Failed reading retry-wait sync job row: {error}"))?);
     }
 
     Ok(projection)
@@ -321,12 +343,15 @@ pub fn hydrate_runtime_status_from_db(
         status.issue_secondary_path = None;
     }
 
-    let lifecycle = read_sync_lifecycle_row(&profile_id)?
-        .ok_or_else(|| format!("Missing sync lifecycle state row for profile '{}'.", profile_id))?;
+    let lifecycle = read_sync_lifecycle_row(&profile_id)?.ok_or_else(|| {
+        format!(
+            "Missing sync lifecycle state row for profile '{}'.",
+            profile_id
+        )
+    })?;
     status.phase = lifecycle.phase;
     status.phase_message = lifecycle.phase_message;
     status.remote_scan_complete = lifecycle.remote_scan_complete;
-    status.two_way_ready = lifecycle.two_way_ready;
     if lifecycle.activity_stage.trim().is_empty() {
         return Err(format!(
             "Missing lifecycle activity stage for profile '{}'.",

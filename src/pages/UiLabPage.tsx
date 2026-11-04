@@ -5,6 +5,7 @@ import { AccountDetailPage } from "./AccountDetailPage";
 import type {
   AccountProfile,
   SyncAgentState,
+  SyncProblem,
   SyncRuntimeAccountStatus,
 } from "../types/somedrive";
 
@@ -88,6 +89,46 @@ const previewAccounts: AccountProfile[] = [
     authConfigured: false,
     agentState: "error",
     lastSyncAt: null,
+  },
+];
+
+/** Sample problems so the Sync problems tab can be previewed. */
+const previewSyncProblems: SyncProblem[] = [
+  {
+    path: "Documents/Budget 2026.xlsx",
+    code: "conflict_both_changed",
+    detail: "This file changed on this device and in OneDrive since the last sync.",
+    isConflict: true,
+    resolution: null,
+    localSize: 48_211,
+    localModifiedAt: "2026-11-04T09:12:00+11:00",
+    cloudSize: 47_903,
+    cloudModifiedAt: "2026-11-04T10:40:00+11:00",
+    retryId: null,
+  },
+  {
+    path: "Pictures/Holiday/IMG_2041.jpg",
+    code: "conflict_both_new",
+    detail: "This file is on this device and in OneDrive with different content.",
+    isConflict: true,
+    resolution: "keep_cloud",
+    localSize: 3_204_118,
+    localModifiedAt: "2026-10-30T18:02:00+11:00",
+    cloudSize: 3_351_002,
+    cloudModifiedAt: "2026-10-30T18:05:00+11:00",
+    retryId: null,
+  },
+  {
+    path: "Notes/meeting: plan.txt",
+    code: "name_invalid",
+    detail: "The name contains a character OneDrive does not allow (\" * : < > ? \\ |).",
+    isConflict: false,
+    resolution: null,
+    localSize: 812,
+    localModifiedAt: "2026-11-02T11:00:00+11:00",
+    cloudSize: null,
+    cloudModifiedAt: null,
+    retryId: null,
   },
 ];
 
@@ -345,6 +386,8 @@ export function UiLabPage({ onBack }: UiLabPageProps) {
         onKeepCloudFiles={async () => undefined}
         onFetchLargeDeletePreview={async () => []}
         onExportLargeDeletePreview={async () => undefined}
+        onFetchSyncProblems={async () => previewSyncProblems}
+        onResolveSyncConflicts={async () => undefined}
       />
     );
   }

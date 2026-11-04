@@ -6,19 +6,38 @@ Plans and known bugs, per the App Standard (section 8).
 
 ### Sync engine: baseline reconciliation
 The current engine is not safe to run two-way on real data (data-safety
-review, 2026-11-04). Design and build order: `docs/sync-engine.md`.
-- [ ] Test isolation (`cargo test` must not write to `~/.config/somedrive`).
-- [ ] `sync_items` with cloud, local and baseline state; delta pages
-  committed atomically; JSON caches removed.
-- [ ] Planner from the decision table; jobs re-queued from any state.
-- [ ] Safe execution: safe overwrite, mtime, fsync and hash check,
-  `If-Match` uploads, conflict copies, baseline commit.
-- [ ] Deletes: Trash, two-direction guard re-checked on approval, missing
-  root stop.
-- [ ] Remove the two-phase lifecycle.
-- [ ] Robustness: 410 resync, auth expiry requeue, cycle retry, 404 re-check,
-  name and case issues, temp cleanup.
-- [ ] Test-account scenario run (`docs/sync-engine.md` section 11).
+review, 2026-11-04). Design: `docs/sync-engine.md`. Built on branch
+`sync-baseline`; worked through in this order:
+
+1. [x] Test isolation (`cargo test` must not write to `~/.config/somedrive`).
+2. [x] Baseline engine: cloud, local and baseline state per path, delta
+   pages committed atomically, decision-table planner, safe downloads and
+   uploads, deletes to Trash through the two-way guard, missing-root stop,
+   two-phase lifecycle removed.
+3. [x] Hold conflicts instead of copying them; a Sync problems tab where the
+   user keeps this device's version, OneDrive's version, or both (one file
+   or many at once).
+4. [x] Robustness: an expired delta token (410 / `resyncRequired`) starts a
+   fresh enumeration; sign-in expiring mid-download requeues the download
+   instead of failing it; a failed cycle retries automatically with backoff.
+5. [x] True local rename for cloud folder renames (today a cloud rename
+   re-downloads the folder and the delete guard asks before removing the
+   old copy).
+6. [ ] Test-account trial run (`docs/sync-engine.md` section 11) before any
+   real data; then merge `sync-baseline` into `dev`.
+7. [x] Optional setting "When a file changes on both sides: Ask me / Keep
+   the newest automatically" (default Ask me).
+8. [x] Exclude rules (Settings): folders and patterns never synced, such as
+   browser caches.
+9. [x] Typed `SyncError` through the engine instead of classifying errors by
+   their text (`classify_sync_issue`).
+10. [x] Replace the `include!` modules in `app/sync_engine.rs` and
+    `app/auth.rs` with real Rust modules.
+11. [x] Split the files over the 600-line soft budget
+    (`npm run check:structure` lists them).
+12. [x] Download throughput (`docs/sync-engine.md` section 7a): shared HTTP
+    clients, direct download links, SQLite connection reuse, one folder
+    flush per batch, adaptive concurrency and a large-file lane.
 
 ### Project-owned Microsoft Entra app registration
 SomeDrive must not ship with a third-party client ID.
@@ -69,7 +88,8 @@ SomeDrive must not ship with a third-party client ID.
 
 ## Ideas
 
+- Selective sync: choose which OneDrive folders this device syncs.
+- Files On-Demand: a virtual drive (FUSE) that downloads files when opened.
+
 - Show only the relevant tray item (Pause all or Resume all syncing) by
   rebuilding the tray menu when sync state changes.
-- Split the remaining files over the 1000-line budget (see the allowlist in
-  `scripts/check-file-lines.mjs`).

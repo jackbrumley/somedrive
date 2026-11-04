@@ -43,6 +43,7 @@ export function computeEffectiveSyncState(
   };
 }
 
-export function computeHasCompletedInitialSync(runtimeStatus: SyncRuntimeAccountStatus | null): boolean {
-  return runtimeStatus?.twoWayReady === true;
+/** The first sync is done once the account has completed a sync cycle. */
+export function computeHasCompletedInitialSync(account: AccountProfile): boolean {
+  return account.lastSyncAt !== null;
 }

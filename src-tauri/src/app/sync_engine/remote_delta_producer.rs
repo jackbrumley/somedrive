@@ -1,8 +1,10 @@
-fn spawn_delta_page_producer(
+use super::*;
+
+pub(crate) fn spawn_delta_page_producer(
     graph: &GraphContext,
     start_url: String,
     cancel_flag: Arc<AtomicBool>,
-    page_tx: mpsc::Sender<Result<DeltaPageWorkItem, String>>,
+    page_tx: mpsc::Sender<Result<DeltaPageWorkItem, SyncError>>,
     producer_alive_flag: Arc<AtomicBool>,
 ) {
     let producer_graph = graph.clone();
@@ -22,7 +24,7 @@ fn spawn_delta_page_producer(
                     producer_graph.account_prefix,
                     producer_graph.cycle_id
                 );
-                let _ = page_tx.send(Err(error)).await;
+                let _ = page_tx.send(Err(SyncError::from(error))).await;
                 return;
             }
 
@@ -32,20 +34,36 @@ fn spawn_delta_page_producer(
                 producer_graph.cycle_id,
                 current_url
             );
-            let response_text = match graph_get_text(&producer_graph, &current_url, &cancel_flag).await {
-                Ok(text) => text,
-                Err(error) => {
-                    producer_alive_flag.store(false, Ordering::Relaxed);
-                    log::warn!(
-                        "{} [cycle:{}] DELTA_PRODUCER_STOP reason=graph_get_error error={}",
-                        producer_graph.account_prefix,
-                        producer_graph.cycle_id,
-                        error
-                    );
-                    let _ = page_tx.send(Err(error)).await;
-                    return;
-                }
-            };
+            let response_text =
+                match graph_get_delta_page(&producer_graph, &current_url, &cancel_flag).await {
+                    Ok(Some(text)) => text,
+                    Ok(None) => {
+                        // The delta link expired: enumerate the whole drive again.
+                        if let Err(error) = begin_delta_resync(&producer_graph.profile_id) {
+                            producer_alive_flag.store(false, Ordering::Relaxed);
+                            let _ = page_tx.send(Err(SyncError::from(error))).await;
+                            return;
+                        }
+                        log::warn!(
+                            "{} [cycle:{}] DELTA_RESYNC_REQUIRED action=full_enumeration",
+                            producer_graph.account_prefix,
+                            producer_graph.cycle_id
+                        );
+                        current_url = format!("{GRAPH_ROOT}/me/drive/root/delta");
+                        continue;
+                    }
+                    Err(error) => {
+                        producer_alive_flag.store(false, Ordering::Relaxed);
+                        log::warn!(
+                            "{} [cycle:{}] DELTA_PRODUCER_STOP reason=graph_get_error error={}",
+                            producer_graph.account_prefix,
+                            producer_graph.cycle_id,
+                            error
+                        );
+                        let _ = page_tx.send(Err(error)).await;
+                        return;
+                    }
+                };
 
             let response: DeltaResponse = match serde_json::from_str(&response_text)
                 .map_err(|error| format!("Failed to decode delta response: {error}"))
@@ -59,7 +77,7 @@ fn spawn_delta_page_producer(
                         producer_graph.cycle_id,
                         error
                     );
-                    let _ = page_tx.send(Err(error)).await;
+                    let _ = page_tx.send(Err(SyncError::from(error))).await;
                     return;
                 }
             };

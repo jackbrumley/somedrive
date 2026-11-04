@@ -1,7 +1,8 @@
-fn spawn_remote_download_dispatcher(
+use super::*;
+
+pub(crate) fn spawn_remote_download_dispatcher(
     graph: &GraphContext,
     sync_root: &Path,
-    download_concurrency: usize,
     pending_download_count: Arc<AtomicUsize>,
     dispatcher_stop_flag: Arc<AtomicBool>,
     dispatcher_download_tx: mpsc::Sender<RemoteDownloadJob>,
@@ -18,7 +19,10 @@ fn spawn_remote_download_dispatcher(
             }
 
             let pending = pending_download_count.load(Ordering::Relaxed);
-            let available_slots = download_concurrency.saturating_sub(pending);
+            let available_slots = dispatcher_graph
+                .download_limit
+                .current()
+                .saturating_sub(pending);
             if available_slots == 0 {
                 continue;
             }

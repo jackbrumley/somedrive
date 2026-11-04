@@ -1,8 +1,15 @@
 import { PageHeader } from "../components/shell/PageHeader";
 import { DebugSettingsCard } from "../components/settings/DebugSettingsCard";
+import { ExcludeRulesCard } from "../components/settings/ExcludeRulesCard";
 import { SettingRow } from "../components/ui/SettingRow";
 import { ToggleSwitch } from "../components/ui/ToggleSwitch";
-import type { DownloadConcurrencySetting, LogLevel, SystemInfo } from "../types/somedrive";
+import { SelectField, type SelectFieldOption } from "../components/ui/SelectField";
+import type { ConflictPolicy, DownloadConcurrencySetting, LogLevel, SystemInfo } from "../types/somedrive";
+
+const conflictPolicyOptions: SelectFieldOption[] = [
+  { value: "ask", label: "Ask me" },
+  { value: "keep_newest", label: "Keep the newest" },
+];
 
 interface SettingsPageProps {
   autostartEnabled: boolean;
@@ -12,6 +19,10 @@ interface SettingsPageProps {
   rawLoggerMode: boolean;
   onToggleRawLoggerMode: (enabled: boolean) => Promise<void>;
   syncDownloadConcurrency: DownloadConcurrencySetting | null;
+  conflictPolicy: ConflictPolicy | null;
+  onChangeConflictPolicy: (policy: ConflictPolicy) => Promise<void>;
+  excludePatterns: string[] | null;
+  onChangeExcludePatterns: (patterns: string[]) => Promise<void>;
   onChangeSyncDownloadConcurrency: (value: number) => Promise<void>;
   appVersion: string;
   checkingUpdates: boolean;
@@ -38,6 +49,10 @@ export function SettingsPage({
   onToggleRawLoggerMode,
   syncDownloadConcurrency,
   onChangeSyncDownloadConcurrency,
+  conflictPolicy,
+  onChangeConflictPolicy,
+  excludePatterns,
+  onChangeExcludePatterns,
   appVersion,
   checkingUpdates,
   lastCheckedAt,
@@ -99,8 +114,25 @@ export function SettingsPage({
         </article>
 
         <article class="card">
-          <h3>Sync performance</h3>
+          <h3>Sync</h3>
           <div class="settings-list">
+            <SettingRow
+              label="When a file changes on both sides"
+              labelFor="conflict-policy-select"
+              description="Ask me holds the file in Sync problems until you choose. Keep the newest replaces the older version, which stays in OneDrive's version history or your Trash."
+            >
+              {conflictPolicy === null ? (
+                <span class="setting-row-description">Unavailable</span>
+              ) : (
+                <SelectField
+                  id="conflict-policy-select"
+                  name="conflict-policy"
+                  value={conflictPolicy}
+                  options={conflictPolicyOptions}
+                  onValueChange={(next) => void onChangeConflictPolicy(next as ConflictPolicy)}
+                />
+              )}
+            </SettingRow>
             {syncDownloadConcurrency === null ? (
               <SettingRow label="Simultaneous downloads" description="This setting could not be loaded." />
             ) : (
@@ -111,6 +143,8 @@ export function SettingsPage({
             )}
           </div>
         </article>
+
+        <ExcludeRulesCard patterns={excludePatterns} onChange={onChangeExcludePatterns} />
 
         <DebugSettingsCard
           systemInfo={systemInfo}

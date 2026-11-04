@@ -1,4 +1,6 @@
-fn begin_upload_job(
+use super::*;
+
+pub(crate) fn begin_upload_job(
     profile_id: &str,
     relative_path: &str,
     size_bytes: u64,
@@ -149,7 +151,11 @@ fn begin_upload_job(
     Ok(job_id)
 }
 
-fn claim_upload_job_path(profile_id: &str, relative_path: &str, lease_owner: &str) -> Result<bool, String> {
+pub(crate) fn claim_upload_job_path(
+    profile_id: &str,
+    relative_path: &str,
+    lease_owner: &str,
+) -> Result<bool, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let now = current_unix_seconds();
     let lease_until = now.saturating_add(ACTION_JOB_LEASE_SECONDS);
@@ -243,7 +249,9 @@ fn claim_upload_job_path(profile_id: &str, relative_path: &str, lease_owner: &st
     Ok(claimed_by_owner.is_some())
 }
 
-fn upsert_upload_job_queued(
+/// Queues an upload for `relative_path`, queuing a finished job again (see
+/// `upsert_download_job`).
+pub(crate) fn upsert_upload_job_queued(
     profile_id: &str,
     relative_path: &str,
     size_bytes: u64,
@@ -299,13 +307,17 @@ fn upsert_upload_job_queued(
              SET path = ?1,
                  remote_size = ?2,
                  remote_modified_ts = ?3,
+                 state = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN 'queued' ELSE state END,
+                 run_state = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN 'idle' ELSE run_state END,
+                 attempt_count = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN 0 ELSE attempt_count END,
+                 last_error = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN NULL ELSE last_error END,
+                 finished_at = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN NULL ELSE finished_at END,
                  bytes_total = ?4,
                  progress_updated_at = COALESCE(progress_updated_at, ?5),
                  updated_at = ?5
              WHERE profile_id = ?6
                AND direction = ?7
-               AND item_id = ?8
-               AND state IN (?9, ?10)",
+               AND item_id = ?8",
             params![
                 relative_path,
                 size_bytes as i64,
@@ -315,15 +327,13 @@ fn upsert_upload_job_queued(
                 profile_id,
                 UPLOAD_JOB_DIRECTION,
                 item_id,
-                DOWNLOAD_JOB_STATE_QUEUED,
-                DOWNLOAD_JOB_STATE_RETRY_WAIT,
             ],
         )
         .map_err(|error| format!("Failed updating queued upload job metadata: {error}"))?;
     Ok(false)
 }
 
-fn mark_upload_job_done(profile_id: &str, job_id: i64) -> Result<(), String> {
+pub(crate) fn mark_upload_job_done(profile_id: &str, job_id: i64) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let now = current_unix_seconds();
     connection
@@ -351,7 +361,11 @@ fn mark_upload_job_done(profile_id: &str, job_id: i64) -> Result<(), String> {
     Ok(())
 }
 
-fn mark_upload_job_failed(profile_id: &str, job_id: i64, error_text: &str) -> Result<(), String> {
+pub(crate) fn mark_upload_job_failed(
+    profile_id: &str,
+    job_id: i64,
+    error_text: &str,
+) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let now = current_unix_seconds();
     connection
@@ -380,7 +394,7 @@ fn mark_upload_job_failed(profile_id: &str, job_id: i64, error_text: &str) -> Re
     Ok(())
 }
 
-fn mark_upload_job_retry_wait(
+pub(crate) fn mark_upload_job_retry_wait(
     profile_id: &str,
     job_id: i64,
     error_text: &str,
@@ -418,7 +432,7 @@ fn mark_upload_job_retry_wait(
     Ok(())
 }
 
-fn read_upload_job_attempt_count(profile_id: &str, job_id: i64) -> Result<u32, String> {
+pub(crate) fn read_upload_job_attempt_count(profile_id: &str, job_id: i64) -> Result<u32, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     connection
         .query_row(
@@ -434,7 +448,7 @@ fn read_upload_job_attempt_count(profile_id: &str, job_id: i64) -> Result<u32, S
         .map(|value| value.max(0) as u32)
 }
 
-fn update_upload_job_progress(
+pub(crate) fn update_upload_job_progress(
     profile_id: &str,
     job_id: i64,
     bytes_done: u64,
@@ -467,13 +481,17 @@ fn update_upload_job_progress(
     Ok(())
 }
 
-fn read_upload_job_counters(profile_id: &str) -> Result<UploadJobCounters, String> {
-    query_upload_job_counters(&open_sync_jobs_connection(profile_id)?, profile_id)
+pub(crate) fn read_upload_job_counters(profile_id: &str) -> Result<UploadJobCounters, String> {
+    let connection = open_sync_jobs_connection(profile_id)?;
+    query_upload_job_counters(&connection, profile_id)
 }
 
 /// The upload counters read on a caller-owned connection, so they can share
 /// one snapshot with other reads (see `hydrate_runtime_status_from_db`).
-fn query_upload_job_counters(connection: &Connection, profile_id: &str) -> Result<UploadJobCounters, String> {
+pub(crate) fn query_upload_job_counters(
+    connection: &Connection,
+    profile_id: &str,
+) -> Result<UploadJobCounters, String> {
     connection
         .query_row(
             "SELECT

@@ -1,13 +1,15 @@
-fn upsert_sync_lifecycle_row(profile_id: &str, row: &SyncLifecycleStateRow) -> Result<(), String> {
+use super::*;
+
+pub(crate) fn upsert_sync_lifecycle_row(
+    profile_id: &str,
+    row: &SyncLifecycleStateRow,
+) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let now = current_unix_seconds();
     connection
         .execute(
             "INSERT INTO sync_lifecycle_state (
                  profile_id,
-                 two_way_ready,
-                 bootstrap_scan_initialized,
-                 bootstrap_full_scan_completed,
                  delta_link,
                  active_delta_next_link,
                  last_cycle_at,
@@ -27,12 +29,9 @@ fn upsert_sync_lifecycle_row(profile_id: &str, row: &SyncLifecycleStateRow) -> R
                  agent_state,
                  last_sync_at,
                  updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
              ON CONFLICT(profile_id)
              DO UPDATE SET
-                 two_way_ready = excluded.two_way_ready,
-                 bootstrap_scan_initialized = excluded.bootstrap_scan_initialized,
-                 bootstrap_full_scan_completed = excluded.bootstrap_full_scan_completed,
                  delta_link = excluded.delta_link,
                  active_delta_next_link = excluded.active_delta_next_link,
                  last_cycle_at = excluded.last_cycle_at,
@@ -54,9 +53,6 @@ fn upsert_sync_lifecycle_row(profile_id: &str, row: &SyncLifecycleStateRow) -> R
                  updated_at = excluded.updated_at",
             params![
                 profile_id,
-                bool_to_sql(row.two_way_ready),
-                bool_to_sql(row.bootstrap_scan_initialized),
-                bool_to_sql(row.bootstrap_full_scan_completed),
                 row.delta_link,
                 row.active_delta_next_link,
                 row.last_cycle_at,
@@ -82,14 +78,13 @@ fn upsert_sync_lifecycle_row(profile_id: &str, row: &SyncLifecycleStateRow) -> R
     Ok(())
 }
 
-fn read_sync_lifecycle_row(profile_id: &str) -> Result<Option<SyncLifecycleStateRow>, String> {
+pub(crate) fn read_sync_lifecycle_row(
+    profile_id: &str,
+) -> Result<Option<SyncLifecycleStateRow>, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     connection
         .query_row(
-            "SELECT two_way_ready,
-                    bootstrap_scan_initialized,
-                    bootstrap_full_scan_completed,
-                    delta_link,
+            "SELECT delta_link,
                     active_delta_next_link,
                     last_cycle_at,
                     phase,
@@ -112,27 +107,28 @@ fn read_sync_lifecycle_row(profile_id: &str) -> Result<Option<SyncLifecycleState
             params![profile_id],
             |row| {
                 Ok(SyncLifecycleStateRow {
-                    two_way_ready: sql_to_bool(row.get::<_, i64>(0)?),
-                    bootstrap_scan_initialized: sql_to_bool(row.get::<_, i64>(1)?),
-                    bootstrap_full_scan_completed: sql_to_bool(row.get::<_, i64>(2)?),
-                    delta_link: row.get(3)?,
-                    active_delta_next_link: row.get(4)?,
-                    last_cycle_at: row.get(5)?,
-                    phase: row.get(6)?,
-                    phase_message: row.get(7)?,
-                    remote_scan_complete: sql_to_bool(row.get::<_, i64>(8)?),
-                    activity_stage: row.get(9)?,
-                    activity_progress_mode: row.get(10)?,
-                    activity_current: row.get::<_, Option<i64>>(11)?.map(|value| value.max(0) as usize),
-                    activity_total: row.get::<_, Option<i64>>(12)?.map(|value| value.max(0) as usize),
-                    activity_unit: row.get(13)?,
-                    activity_detail: row.get(14)?,
-                    activity_cycle_id: row.get(15)?,
-                    activity_updated_at: row.get(16)?,
-                    large_delete_guard_approved: sql_to_bool(row.get::<_, i64>(17)?),
-                    large_delete_pending_paths_json: row.get(18)?,
-                    agent_state: row.get(19)?,
-                    last_sync_at: row.get(20)?,
+                    delta_link: row.get(0)?,
+                    active_delta_next_link: row.get(1)?,
+                    last_cycle_at: row.get(2)?,
+                    phase: row.get(3)?,
+                    phase_message: row.get(4)?,
+                    remote_scan_complete: sql_to_bool(row.get::<_, i64>(5)?),
+                    activity_stage: row.get(6)?,
+                    activity_progress_mode: row.get(7)?,
+                    activity_current: row
+                        .get::<_, Option<i64>>(8)?
+                        .map(|value| value.max(0) as usize),
+                    activity_total: row
+                        .get::<_, Option<i64>>(9)?
+                        .map(|value| value.max(0) as usize),
+                    activity_unit: row.get(10)?,
+                    activity_detail: row.get(11)?,
+                    activity_cycle_id: row.get(12)?,
+                    activity_updated_at: row.get(13)?,
+                    large_delete_guard_approved: sql_to_bool(row.get::<_, i64>(14)?),
+                    large_delete_pending_paths_json: row.get(15)?,
+                    agent_state: row.get(16)?,
+                    last_sync_at: row.get(17)?,
                 })
             },
         )
@@ -140,35 +136,33 @@ fn read_sync_lifecycle_row(profile_id: &str) -> Result<Option<SyncLifecycleState
         .map_err(|error| format!("Failed reading sync lifecycle row: {error}"))
 }
 
-fn read_sync_lifecycle_operational_state(
+pub(crate) fn read_sync_lifecycle_operational_state(
     profile_id: &str,
 ) -> Result<SyncLifecycleOperationalState, String> {
     let row = read_sync_lifecycle_row(profile_id)?.unwrap_or_default();
     Ok(SyncLifecycleOperationalState {
-        two_way_ready: row.two_way_ready,
-        bootstrap_scan_initialized: row.bootstrap_scan_initialized,
-        bootstrap_full_scan_completed: row.bootstrap_full_scan_completed,
         delta_link: row.delta_link,
         active_delta_next_link: row.active_delta_next_link,
         last_cycle_at: row.last_cycle_at,
     })
 }
 
-fn persist_sync_lifecycle_operational_state(
+pub(crate) fn persist_sync_lifecycle_operational_state(
     profile_id: &str,
     state: &SyncLifecycleOperationalState,
 ) -> Result<(), String> {
     let mut row = read_sync_lifecycle_row(profile_id)?.unwrap_or_default();
-    row.two_way_ready = state.two_way_ready;
-    row.bootstrap_scan_initialized = state.bootstrap_scan_initialized;
-    row.bootstrap_full_scan_completed = state.bootstrap_full_scan_completed;
     row.delta_link = state.delta_link.clone();
     row.active_delta_next_link = state.active_delta_next_link.clone();
     row.last_cycle_at = state.last_cycle_at.clone();
     upsert_sync_lifecycle_row(profile_id, &row)
 }
 
-fn persist_sync_lifecycle_phase(profile_id: &str, phase: &str, phase_message: &str) -> Result<(), String> {
+pub(crate) fn persist_sync_lifecycle_phase(
+    profile_id: &str,
+    phase: &str,
+    phase_message: &str,
+) -> Result<(), String> {
     let mut row = read_sync_lifecycle_row(profile_id)?.unwrap_or_default();
     let progress_mode = match phase {
         "paused" | "idle" | "error" => "hidden",
@@ -178,7 +172,11 @@ fn persist_sync_lifecycle_phase(profile_id: &str, phase: &str, phase_message: &s
     row.phase_message = phase_message.to_string();
     row.activity_stage = phase.to_string();
     row.activity_progress_mode = progress_mode.to_string();
-    row.activity_current = if phase == "scanning_local" { Some(0) } else { None };
+    row.activity_current = if phase == "scanning_local" {
+        Some(0)
+    } else {
+        None
+    };
     row.activity_total = None;
     row.activity_unit = None;
     row.activity_detail = Some(phase_message.to_string());
@@ -187,7 +185,10 @@ fn persist_sync_lifecycle_phase(profile_id: &str, phase: &str, phase_message: &s
     upsert_sync_lifecycle_row(profile_id, &row)
 }
 
-fn persist_sync_lifecycle_remote_scan_complete(profile_id: &str, complete: bool) -> Result<(), String> {
+pub(crate) fn persist_sync_lifecycle_remote_scan_complete(
+    profile_id: &str,
+    complete: bool,
+) -> Result<(), String> {
     let mut row = read_sync_lifecycle_row(profile_id)?.unwrap_or_default();
     row.remote_scan_complete = complete;
     upsert_sync_lifecycle_row(profile_id, &row)
@@ -195,7 +196,7 @@ fn persist_sync_lifecycle_remote_scan_complete(profile_id: &str, complete: bool)
 
 // the structured activity contract (stage, progress_mode, current, total, unit, detail, cycle_id) is passed field by field; bundling it into one struct is tracked in docs/TODO.md.
 #[allow(clippy::too_many_arguments)]
-fn persist_sync_lifecycle_activity(
+pub(crate) fn persist_sync_lifecycle_activity(
     profile_id: &str,
     stage: &str,
     progress_mode: &str,
@@ -229,7 +230,7 @@ fn persist_sync_lifecycle_activity(
 
 // the structured activity contract (stage, progress_mode, current, total, unit, detail, cycle_id) is passed field by field; bundling it into one struct is tracked in docs/TODO.md.
 #[allow(clippy::too_many_arguments)]
-fn validate_sync_lifecycle_activity_write(
+pub(crate) fn validate_sync_lifecycle_activity_write(
     profile_id: &str,
     phase: &str,
     stage: &str,
@@ -308,7 +309,10 @@ fn validate_sync_lifecycle_activity_write(
     Ok(())
 }
 
-pub(crate) fn persist_sync_lifecycle_agent_state(profile_id: &str, agent_state: &str) -> Result<(), String> {
+pub(crate) fn persist_sync_lifecycle_agent_state(
+    profile_id: &str,
+    agent_state: &str,
+) -> Result<(), String> {
     let mut row = read_sync_lifecycle_row(profile_id)?.unwrap_or_default();
     row.agent_state = agent_state.to_string();
     upsert_sync_lifecycle_row(profile_id, &row)
@@ -329,17 +333,20 @@ pub(crate) fn read_sync_lifecycle_profile_metadata(
     Ok(read_sync_lifecycle_row(profile_id)?.map(|row| (row.agent_state, row.last_sync_at)))
 }
 
-fn read_large_delete_guard_state(profile_id: &str) -> Result<LargeDeleteGuardState, String> {
+pub(crate) fn read_large_delete_guard_state(
+    profile_id: &str,
+) -> Result<LargeDeleteGuardState, String> {
     let row = read_sync_lifecycle_row(profile_id)?.unwrap_or_default();
-    let pending_paths = serde_json::from_str::<Vec<String>>(&row.large_delete_pending_paths_json)
-        .map_err(|error| format!("Failed decoding large delete pending paths JSON: {error}"))?;
+    let pending_paths =
+        serde_json::from_str::<Vec<String>>(&row.large_delete_pending_paths_json)
+            .map_err(|error| format!("Failed decoding large delete pending paths JSON: {error}"))?;
     Ok(LargeDeleteGuardState {
         approved: row.large_delete_guard_approved,
         pending_paths,
     })
 }
 
-fn persist_large_delete_guard_state(
+pub(crate) fn persist_large_delete_guard_state(
     profile_id: &str,
     guard_state: &LargeDeleteGuardState,
 ) -> Result<(), String> {

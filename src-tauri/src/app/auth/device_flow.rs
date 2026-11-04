@@ -1,3 +1,5 @@
+use super::*;
+
 #[tauri::command]
 pub async fn start_device_auth(
     state: tauri::State<'_, AppState>,

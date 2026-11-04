@@ -129,11 +129,37 @@ file's modified time to the cloud time. Before the rename: `fsync` the temp
 file, check its size (and `quickXorHash` when Graph supplies one); after:
 `fsync` the directory (fixes A2, A8).
 
-### 6.2 Conflicts
-Never pick a winner. The cloud version keeps the original name; the local
-version is renamed `name (conflict YYYY-MM-DD HHMM on <hostname>).ext` and
-uploaded as a new file, so both appear on every device. A conflict is
-recorded once, logged, and listed in the UI; it never repeats (fixes B8).
+### 6.2 Conflicts: hold and ask
+Never pick a winner, and never fill the folder with copies (the OneDrive
+client's `-PCNAME` copies are how people end up with thousands of
+duplicates). A file that changed on both sides (row 4), or is on both sides
+with different content and no baseline (row 12), is **held**: nothing is
+copied or overwritten, and that one path stops syncing while everything
+else carries on. The same happens when a local file changes after a
+download was planned: the download is discarded and the path held.
+
+Held files are listed in the account's **Sync problems** tab with both
+versions' size and time. The user chooses, for one file or many at once:
+
+- **Keep this device's version:** it is uploaded; OneDrive's version stays
+  in OneDrive's version history.
+- **Keep OneDrive's version:** the local file goes to the Trash and
+  OneDrive's version is downloaded.
+- **Keep both:** only then is a copy made, `name (conflict YYYY-MM-DD HHMM
+  on <hostname>).ext`, holding the local version; the original name takes
+  OneDrive's version.
+
+The choice is applied on the next cycle, and only if the local file is as it
+was when the user chose; if it changed again, the choice is withdrawn and the
+file stays held. The tab also lists names OneDrive cannot hold, OneNote
+notebooks, malware-flagged files and downloads that failed for good, so
+everything that needs the user is in one place.
+
+Settings → Sync → "When a file changes on both sides" can be switched from
+**Ask me** (the default) to **Keep the newest**: a held file then gets the
+newer side's version chosen automatically, applied through the same checks
+as a user's choice; the older version stays in OneDrive's version history or
+the Trash.
 
 ### 6.3 Uploads
 Uploads of an existing item send `If-Match: <baseline eTag>`. A 412 means the
@@ -163,10 +189,19 @@ its id" (fixes A6, A9).
   names) and non-UTF-8 names are per-file issues, shown in the UI, not cycle
   errors.
 
-### 6.6 Temp and junk files
+### 6.6 Temp files and exclude rules
 SomeDrive's `.somedrive-part-*.tmp` files are excluded from the local scan
-and removed at cycle start (fixes C). An exclude list (Settings, later)
-covers caches such as browser profiles.
+and removed when found (fixes C).
+
+Exclude rules (Settings → Excluded from sync) keep paths out of sync in both
+directions. A rule with a `/` is a path from the top of the sync folder (it
+and everything under it, e.g. `Documents/Chromium`); a rule without one
+matches a name anywhere (`node_modules`, `*.tmp`). The local scan does not
+enter excluded folders, and excluded rows are marked before every plan
+(also after each delta page, so nothing excluded starts downloading). An
+excluded item is never uploaded, downloaded or deleted: a synced file that
+disappears from the scan because of a new rule is not deleted in OneDrive.
+Removing the rule brings it back under normal sync.
 
 ## 7. Robustness
 
@@ -188,12 +223,51 @@ covers caches such as browser profiles.
 - **404 on download** re-checks the item through delta instead of marking it
   skipped forever (B7).
 
+## 7a. Throughput
+
+Downloads are the bulk of a first sync, so the download path avoids repeated
+setup work:
+
+- **Shared HTTP clients:** one client per cycle (HTTP/2, keep-alive), so
+  connections and TLS sessions are reused instead of opened per file.
+- **Direct download links:** the change feed's
+  `@microsoft.graph.downloadUrl` is stored with the item and used while it is
+  under 50 minutes old, skipping one Graph request per file. A link refused
+  with 401/403/404/410 falls back to the normal Graph download.
+- **Connection pool:** each account reuses its SQLite connections; a
+  connection returned inside an open transaction is dropped, never reused.
+- **Folder flush per batch:** a downloaded file's folder is flushed once per
+  batch of results, before that batch is recorded as synced, instead of
+  after every file.
+- **Adaptive concurrency:** a cycle starts at 8 parallel downloads, adds one
+  after every 20 successful downloads up to the "Parallel downloads"
+  setting, and halves on a 429 (once per 5-second throttle episode, never
+  below 2). Logged as `DOWNLOAD_LIMIT_RAISED` / `DOWNLOAD_LIMIT_LOWERED`.
+- **Size lanes:** files of 8 MB or more may hold a quarter of the slots (at
+  least one) while smaller files are waiting; slots no small file needs go
+  to large files.
+
 ## 8. Data model
 
 One table holds the per-item state; the JSON `PersistedSyncState` caches are
 removed.
 
-`sync_items` (replaces `sync_files` and the JSON caches):
+Implementation notes (2026-11-04):
+- The table keeps the name `sync_files` (no rename churn); its columns are
+  replaced by the set below (`cloud_*`, `local_*`, `base_*`).
+- Schema version 7. A database from the old engine (`user_version` 1 to 6)
+  is dropped and recreated, not migrated; the first sync then matches
+  existing files by content (row 12). The schema is created once per
+  account per process, not on every connection.
+- Local times are stored in nanoseconds (`local_mtime_ns`).
+- Cycle order: local scan first, then cloud delta pages (downloads stream
+  while pages arrive, planned with the local state already known), then the
+  full plan and execution.
+- Cloud renames and moves are repeated locally as renames (section 8a).
+- Row 12 ("both new") plans a `verify` action that hashes the local file
+  with QuickXorHash and compares it with the cloud hash.
+
+`sync_files` columns:
 
 | Column | Notes |
 |---|---|
@@ -210,6 +284,52 @@ removed.
 
 Per the development-phase data policy there is no migration: the new engine
 starts from an empty database. Existing local files are matched by row 12.
+
+## 8a. Lessons from abraunegg/onedrive and rclone bisync
+
+Researched 2026-11-04 (behaviours only; no code taken). These refine the
+sections above and win where they differ:
+
+- **Cloud changed** = the quickXorHash or size differs from the baseline.
+  The cTag is only a fallback when either side has no hash; a missing value
+  never counts as a change on its own. SharePoint rewrites Office/PDF files
+  after upload, so the baseline after an upload records the hash OneDrive
+  returns.
+- **`If-Match`** only on creating an upload session; never on chunk uploads
+  or deletes (both fail spuriously). Before a cloud delete, the item is read
+  again and its hash compared with the baseline; a change cancels the delete
+  (the planner then downloads it).
+- **Content before action:** before an upload, a local file whose hash still
+  equals the baseline hash only refreshes the baseline (a `touch` is not an
+  edit). Before a conflict copy, matching local and cloud hashes adopt the
+  file. A mass time change (clock or timezone shift) therefore only refreshes
+  baselines and uploads nothing. If the sync folder is missing or empty while
+  20 or more files are tracked (an unmounted drive, an empty mount point),
+  the cycle stops with an issue instead of acting.
+- **Folder deletes in the cloud** happen only when a fresh children listing
+  shows the folder empty (Graph deletes recursively).
+- **Conflict copies** (only when the user picks "Keep both") are made by
+  copying the local file and checking the copy before the original is
+  replaced.
+- **Times:** after setting a downloaded file's time, the file is read back and
+  that value is the baseline (OneDrive keeps whole seconds).
+- **Excluded items** (per-file issues, never synced or deleted): OneNote
+  notebooks (`package` facet) and everything inside them, local `.one` and
+  `.onetoc2` files, items with a `malware` facet, shared shortcuts
+  (`remoteItem`), and invalid local names: `" * : < > ? \ |`, leading or
+  trailing spaces, a trailing dot, `CON PRN AUX NUL COM0-9 LPT0-9` (with any
+  extension), `.lock`, `desktop.ini`, `~$*`, `*_vti_*`, control characters,
+  paths of 400 characters or more, names not in Unicode NFC, and local names
+  that differ only by case from another item.
+- **Zero-byte files** have no hash: equal size 0 is a match. A non-empty file
+  without a hash on either side is never assumed equal (conflict copy).
+- **Cloud renames and moves** are repeated on this device as a rename: the
+  item's whole record (cloud, local and baseline) moves to the new path and
+  the rename is queued in `sync_local_moves`, then carried out right after
+  the delta page is stored (and at the start of the next cycle if the app
+  stopped in between). Only when the new path is already taken does it fall
+  back to "download the new path, remove the old copy through the delete
+  guard".
 
 ## 9. What is removed
 

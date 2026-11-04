@@ -1,4 +1,9 @@
-fn clear_pending_interactive_auth(app: &tauri::AppHandle, profile_id: &str) -> Result<(), String> {
+use super::*;
+
+pub(crate) fn clear_pending_interactive_auth(
+    app: &tauri::AppHandle,
+    profile_id: &str,
+) -> Result<(), String> {
     let state = app.state::<AppState>();
     let mut lock = state
         .interactive_auth_pending
@@ -8,7 +13,7 @@ fn clear_pending_interactive_auth(app: &tauri::AppHandle, profile_id: &str) -> R
     Ok(())
 }
 
-fn domain_hint_for_kind(kind: &str) -> Result<&'static str, String> {
+pub(crate) fn domain_hint_for_kind(kind: &str) -> Result<&'static str, String> {
     match kind.trim().to_lowercase().as_str() {
         "personal" => Ok("consumers"),
         "business" => Ok("organizations"),
@@ -16,7 +21,7 @@ fn domain_hint_for_kind(kind: &str) -> Result<&'static str, String> {
     }
 }
 
-fn resolve_interactive_client_id() -> String {
+pub(crate) fn resolve_interactive_client_id() -> String {
     std::env::var("ONEDRIVE_INTERACTIVE_CLIENT_ID")
         .ok()
         .map(|value| value.trim().to_string())
@@ -24,7 +29,7 @@ fn resolve_interactive_client_id() -> String {
         .unwrap_or_else(|| DEFAULT_INTERACTIVE_CLIENT_ID.to_string())
 }
 
-fn sanitize_auth_window_label(profile_id: &str) -> String {
+pub(crate) fn sanitize_auth_window_label(profile_id: &str) -> String {
     let mut label = String::from("auth-");
     for character in profile_id.chars() {
         if character.is_ascii_alphanumeric() || character == '-' || character == '_' {
@@ -37,13 +42,13 @@ fn sanitize_auth_window_label(profile_id: &str) -> String {
     label
 }
 
-fn generate_state_token() -> String {
+pub(crate) fn generate_state_token() -> String {
     let now = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
     let pid = std::process::id();
     format!("s{}{}", now, pid)
 }
 
-fn url_encode(input: &str) -> String {
+pub(crate) fn url_encode(input: &str) -> String {
     let mut encoded = String::with_capacity(input.len());
     for byte in input.bytes() {
         let should_encode = !matches!(
@@ -60,7 +65,7 @@ fn url_encode(input: &str) -> String {
     encoded
 }
 
-async fn fetch_account_email(access_token: &str) -> Result<String, String> {
+pub(crate) async fn fetch_account_email(access_token: &str) -> Result<String, String> {
     let client = reqwest::Client::new();
     let response = client
         .get(GRAPH_ME_URL)
@@ -106,11 +111,14 @@ async fn fetch_account_email(access_token: &str) -> Result<String, String> {
     Ok(email)
 }
 
-fn auth_session_file_path(profile_id: &str) -> Result<PathBuf, String> {
+pub(crate) fn auth_session_file_path(profile_id: &str) -> Result<PathBuf, String> {
     Ok(crate::paths::account_dir(profile_id)?.join("auth.json"))
 }
 
-fn write_auth_session(profile_id: &str, session: StoredAuthSession) -> Result<(), String> {
+pub(crate) fn write_auth_session(
+    profile_id: &str,
+    session: StoredAuthSession,
+) -> Result<(), String> {
     // Atomic and owner-only: this file holds the account's refresh token.
     crate::app::json_store::write_json(&auth_session_file_path(profile_id)?, &session)
 }
@@ -149,7 +157,7 @@ impl std::fmt::Display for TokenRefreshError {
 }
 
 /// OAuth error codes that mean the refresh token can never succeed again.
-fn refresh_error_requires_sign_in(error_code: &str) -> bool {
+pub(crate) fn refresh_error_requires_sign_in(error_code: &str) -> bool {
     matches!(
         error_code,
         "invalid_grant" | "interaction_required" | "consent_required" | "login_required"
@@ -181,14 +189,11 @@ pub async fn refresh_access_token(
         })?;
 
     let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|error| {
-            TokenRefreshError::Failed(format!(
-                "Failed reading refresh-token response body: {error}"
-            ))
-        })?;
+    let body = response.text().await.map_err(|error| {
+        TokenRefreshError::Failed(format!(
+            "Failed reading refresh-token response body: {error}"
+        ))
+    })?;
 
     let payload: TokenResponse = serde_json::from_str(&body).map_err(|error| {
         let snippet: String = body.chars().take(400).collect();
@@ -209,11 +214,9 @@ pub async fn refresh_access_token(
         return Err(TokenRefreshError::Failed(message));
     }
 
-    let access_token = payload
-        .access_token
-        .ok_or_else(|| {
-            TokenRefreshError::Failed("Refresh response missing access token".to_string())
-        })?;
+    let access_token = payload.access_token.ok_or_else(|| {
+        TokenRefreshError::Failed("Refresh response missing access token".to_string())
+    })?;
     let next_refresh_token = payload.refresh_token.or(existing.refresh_token);
     let updated_at = chrono::Local::now().to_rfc3339();
 
@@ -290,7 +293,11 @@ mod token_refresh_error_tests {
 
     #[test]
     fn transient_token_errors_do_not_require_sign_in() {
-        for code in ["temporarily_unavailable", "server_error", "503 Service Unavailable"] {
+        for code in [
+            "temporarily_unavailable",
+            "server_error",
+            "503 Service Unavailable",
+        ] {
             assert!(!refresh_error_requires_sign_in(code), "{code}");
         }
     }

@@ -1,17 +1,21 @@
-use crate::app::account_profiles::{
+pub(crate) use crate::app::account_profiles::{
     create_profile, load_profiles, remove_profile, rename_profile, save_profiles, set_agent_state,
     AccountProfile, CreateAccountProfileInput, RemoveAccountProfileInput,
     RenameAccountProfileInput, SetAccountAgentStateInput,
 };
-use crate::app::activity_log;
-use crate::app::log_context;
-use crate::app::state::AppState;
-use crate::app::sync_engine;
-use crate::app::sync_runtime;
-use std::fs;
-use std::path::{Component, PathBuf};
-use std::process::Command;
+pub(crate) use crate::app::activity_log;
+pub(crate) use crate::app::log_context;
+pub(crate) use crate::app::state::AppState;
+pub(crate) use crate::app::sync_engine;
+pub(crate) use crate::app::sync_runtime;
+pub(crate) use std::fs;
+pub(crate) use std::path::{Component, PathBuf};
+pub(crate) use std::process::Command;
 
-include!("accounts/profile_commands.rs");
-include!("accounts/folder_commands.rs");
-include!("accounts/global_sync_commands.rs");
+mod folder_commands;
+mod global_sync_commands;
+mod profile_commands;
+
+pub use folder_commands::*;
+pub use global_sync_commands::*;
+pub use profile_commands::*;

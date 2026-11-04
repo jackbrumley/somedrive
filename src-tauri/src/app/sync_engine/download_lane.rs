@@ -1,4 +1,8 @@
-fn sync_download_counters_from_db(graph: &GraphContext) -> Result<DownloadJobCounters, String> {
+use super::*;
+
+pub(crate) fn sync_download_counters_from_db(
+    graph: &GraphContext,
+) -> Result<DownloadJobCounters, String> {
     let counters = read_download_job_counters(&graph.profile_id)?;
     runtime_set_remote_download_counters(
         &graph.sync_runtime,
@@ -12,7 +16,7 @@ fn sync_download_counters_from_db(graph: &GraphContext) -> Result<DownloadJobCou
     Ok(counters)
 }
 
-async fn dispatch_claimed_download_jobs(
+pub(crate) async fn dispatch_claimed_download_jobs(
     graph: &GraphContext,
     sync_root: &Path,
     download_tx: &mpsc::Sender<RemoteDownloadJob>,
@@ -24,31 +28,39 @@ async fn dispatch_claimed_download_jobs(
         return Ok(0);
     }
 
-    let claimed = claim_download_jobs(&graph.profile_id, &graph.cycle_id, available_slots)?;
+    let claimed = claim_download_jobs(
+        &graph.profile_id,
+        &graph.cycle_id,
+        available_slots,
+        graph.download_limit.large_download_slots(),
+    )?;
     if claimed.is_empty() {
         return Ok(0);
     }
 
     let mut dispatched: usize = 0;
     for claimed_job in claimed {
-        let remote_entry = RemoteKnownItem {
-            id: claimed_job.item_id.clone(),
-            path: claimed_job.path.clone(),
-            is_dir: false,
-            size: claimed_job.remote_size,
-            modified_ts: claimed_job.remote_modified_ts,
-            is_shared_reference: false,
-            shared_drive_id: None,
-            shared_item_id: None,
-            shared_kind: None,
+        // The version to download is captured now, so the baseline records
+        // exactly what was fetched even if the cloud changes meanwhile.
+        let Some(row) = read_sync_file_row(&graph.profile_id, &claimed_job.path)?.filter(|row| {
+            row.cloud_present && row.remote_item_id.as_deref() == Some(claimed_job.item_id.as_str())
+        }) else {
+            // The plan moved on (the item was deleted or moved): drop the job.
+            mark_download_job_done(&graph.profile_id, claimed_job.job_id, true)?;
+            continue;
         };
         let local_abs = sync_root.join(path_to_local(&claimed_job.path));
+        let direct_url = row.cloud_download_url.clone().filter(|_| {
+            current_unix_seconds() - row.cloud_download_url_at < DIRECT_URL_MAX_AGE_SECONDS
+        });
         let job = RemoteDownloadJob {
+            direct_url,
             job_id: claimed_job.job_id,
             item_id: claimed_job.item_id,
             path: claimed_job.path,
             local_abs,
-            remote_entry,
+            version: row.cloud_version(),
+            cloud_mtime: row.cloud_mtime,
         };
 
         send_download_job_with_logging(
@@ -64,7 +76,7 @@ async fn dispatch_claimed_download_jobs(
     Ok(dispatched)
 }
 
-async fn send_download_job_with_logging(
+pub(crate) async fn send_download_job_with_logging(
     graph: &GraphContext,
     download_tx: &mpsc::Sender<RemoteDownloadJob>,
     job: RemoteDownloadJob,
@@ -111,12 +123,17 @@ async fn send_download_job_with_logging(
     }
 }
 
-fn apply_remote_download_result(
+/// Graph's direct download links last about an hour; older ones are not
+/// tried (the download goes through Graph instead).
+const DIRECT_URL_MAX_AGE_SECONDS: i64 = 50 * 60;
+
+/// How long a download that got 404/410 waits before it is tried again; a
+/// delta page normally confirms the delete well before then.
+pub(crate) const DOWNLOAD_NOT_FOUND_RETRY_DELAY: Duration = Duration::from_secs(600);
+
+pub(crate) fn apply_remote_download_result(
     graph: &GraphContext,
-    sync_root: &Path,
-    sync_state: &mut PersistedSyncState,
     stats: &mut SyncCycleStats,
-    remote_applied_paths: &mut HashSet<String>,
     result: RemoteDownloadResult,
 ) -> Result<(), String> {
     match result.status {
@@ -125,24 +142,42 @@ fn apply_remote_download_result(
                 "{} [cycle:{}] REMOTE_DOWNLOAD_JOB_RETRY_DEFERRED path={} id={}",
                 graph.account_prefix,
                 graph.cycle_id,
-                result.remote_entry.path,
-                result.remote_entry.id
+                result.path,
+                result.item_id
             );
         }
         RemoteDownloadResultStatus::Cancelled => {
-            let retry_reason = "Download cancelled due to pause; retry scheduled on resume";
             mark_download_job_retry_wait(
                 &graph.profile_id,
                 result.job_id,
-                retry_reason,
+                "Download cancelled due to pause; retry scheduled on resume",
                 Duration::from_secs(1),
             )?;
             log::info!(
                 "{} [cycle:{}] REMOTE_DOWNLOAD_JOB_CANCELLED_RETRY_WAIT path={} id={}",
                 graph.account_prefix,
                 graph.cycle_id,
-                result.remote_entry.path,
-                result.remote_entry.id
+                result.path,
+                result.item_id
+            );
+        }
+        RemoteDownloadResultStatus::Failed(error_text)
+            if !runtime_profile_auth_ready(&graph.sync_runtime, &graph.profile_id) =>
+        {
+            // The sign-in expired mid-download: not the file's fault. It
+            // runs again once the account is signed in.
+            mark_download_job_retry_wait(
+                &graph.profile_id,
+                result.job_id,
+                "Waiting for sign-in",
+                Duration::from_secs(1),
+            )?;
+            log::info!(
+                "{} [cycle:{}] REMOTE_DOWNLOAD_REQUEUED_FOR_SIGN_IN path={} error={}",
+                graph.account_prefix,
+                graph.cycle_id,
+                result.path,
+                error_text
             );
         }
         RemoteDownloadResultStatus::Failed(error_text) => {
@@ -150,62 +185,47 @@ fn apply_remote_download_result(
             runtime_record_remote_download_failed(
                 &graph.sync_runtime,
                 &graph.profile_id,
-                &result.remote_entry.id,
+                &result.item_id,
             );
             log::warn!(
                 "{} [cycle:{}] REMOTE_DOWNLOAD_JOB_FAILED path={} id={} error={}",
                 graph.account_prefix,
                 graph.cycle_id,
-                result.remote_entry.path,
-                result.remote_entry.id,
+                result.path,
+                result.item_id,
                 error_text
             );
         }
-        RemoteDownloadResultStatus::Success(outcome) => {
-            match outcome {
-                RemoteDownloadOutcome::Downloaded => {
-                    let local_abs = sync_root.join(path_to_local(&result.remote_entry.path));
-                    let local_entry = read_local_entry(&local_abs)?.ok_or_else(|| {
-                        format!(
-                            "Downloaded item missing on disk after completion path={} local_path={}",
-                            result.remote_entry.path,
-                            local_abs.display()
-                        )
-                    })?;
-                    mark_download_job_done_with_local_index(
-                        &graph.profile_id,
-                        result.job_id,
-                        &result.remote_entry,
-                        &local_entry,
-                    )?;
-                    runtime_record_remote_download_completed(
-                        &graph.sync_runtime,
-                        &graph.profile_id,
-                        &result.remote_entry.id,
-                    );
-                    remote_applied_paths.insert(result.remote_entry.path.clone());
-                    sync_state
-                        .local_snapshot
-                        .insert(result.remote_entry.path.clone(), local_entry);
-                    upsert_remote_known_item(sync_state, result.remote_entry);
-                    stats.downloaded_files += 1;
-                }
-                RemoteDownloadOutcome::SkippedMissingRemote => {
-                    mark_download_job_done(&graph.profile_id, result.job_id, true)?;
-                    sync_state.remote_by_id.remove(&result.remote_entry.id);
-                    sync_state
-                        .remote_path_to_id
-                        .remove(&result.remote_entry.path);
-                    stats.remote_items_skipped_missing += 1;
-                    log::warn!(
-                        "{} [cycle:{}] REMOTE_ITEM_SKIP_MISSING path={} id={}",
-                        graph.account_prefix,
-                        graph.cycle_id,
-                        result.remote_entry.path,
-                        result.remote_entry.id
-                    );
-                }
-            }
+        RemoteDownloadResultStatus::Success(RemoteDownloadOutcome::Downloaded(entry)) => {
+            commit_baseline(&graph.profile_id, &result.path, &result.version, &entry)?;
+            mark_download_job_done(&graph.profile_id, result.job_id, false)?;
+            graph.record_download_success();
+            runtime_record_remote_download_completed(
+                &graph.sync_runtime,
+                &graph.profile_id,
+                &result.item_id,
+            );
+            stats.downloaded_files += 1;
+        }
+        RemoteDownloadResultStatus::Success(RemoteDownloadOutcome::HeldAsConflict) => {
+            mark_download_job_done(&graph.profile_id, result.job_id, true)?;
+            stats.conflicts_held += 1;
+        }
+        RemoteDownloadResultStatus::Success(RemoteDownloadOutcome::NotFoundOnCloud) => {
+            mark_download_job_retry_wait(
+                &graph.profile_id,
+                result.job_id,
+                "OneDrive could not find this file; waiting for its change feed",
+                DOWNLOAD_NOT_FOUND_RETRY_DELAY,
+            )?;
+            log::warn!(
+                "{} [cycle:{}] REMOTE_ITEM_NOT_FOUND path={} id={} retry_in_s={}",
+                graph.account_prefix,
+                graph.cycle_id,
+                result.path,
+                result.item_id,
+                DOWNLOAD_NOT_FOUND_RETRY_DELAY.as_secs()
+            );
         }
     }
     Ok(())

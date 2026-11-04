@@ -32,9 +32,12 @@ const plannerAllowedFiles = new Set([
   path.join(appRoot, "sync_engine", "cycle_orchestrator.rs"),
   path.join(appRoot, "sync_engine", "remote_changes.rs"),
   path.join(appRoot, "sync_engine", "remote_pipeline_loop.rs"),
-  path.join(appRoot, "sync_engine", "planner.rs"),
   path.join(appRoot, "sync_engine", "planner_transitions.rs"),
   path.join(appRoot, "sync_engine", "job_materializer.rs"),
+  // Test-only modules (#[cfg(test)] in sync_engine.rs) exercise the planner.
+  path.join(appRoot, "sync_engine", "planner_tests.rs"),
+  path.join(appRoot, "sync_engine", "cloud_state_tests.rs"),
+  path.join(appRoot, "sync_engine", "test_support.rs"),
 ]);
 
 const forbiddenPlannerTransitionPattern = /(recompute_sync_file_actions\(|materialize_planner_actions\(|materialize_planner_download_jobs\()/g;

@@ -1,4 +1,8 @@
-fn read_sync_file_planner_counters(profile_id: &str) -> Result<SyncFilePlannerCounters, String> {
+use super::*;
+
+pub(crate) fn read_sync_file_planner_counters(
+    profile_id: &str,
+) -> Result<SyncFilePlannerCounters, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let count_sync_files = |condition: &str, label: &str| -> Result<usize, String> {
         connection
@@ -11,7 +15,7 @@ fn read_sync_file_planner_counters(profile_id: &str) -> Result<SyncFilePlannerCo
             .map_err(|error| format!("Failed reading {label} counter: {error}"))
     };
     let mut counters = SyncFilePlannerCounters {
-        cloud_discovered_total: count_sync_files("remote_present = 1", "cloud discovered")?,
+        cloud_discovered_total: count_sync_files("cloud_present = 1", "cloud discovered")?,
         local_discovered_total: count_sync_files("local_present = 1", "local discovered")?,
         shared_reference_total: count_sync_files("is_shared_reference = 1", "shared reference")?,
         ..SyncFilePlannerCounters::default()
@@ -51,90 +55,19 @@ fn read_sync_file_planner_counters(profile_id: &str) -> Result<SyncFilePlannerCo
     Ok(counters)
 }
 
-fn read_materialized_job_counts(profile_id: &str) -> Result<(usize, usize), String> {
-    let connection = open_sync_jobs_connection(profile_id)?;
-    connection
-        .query_row(
-            "SELECT
-                SUM(CASE
-                    WHEN direction = 'download' AND state IN ('queued', 'in_progress', 'retry_wait') THEN 1
-                    ELSE 0
-                END),
-                SUM(CASE
-                    WHEN direction = 'upload' AND state IN ('queued', 'in_progress', 'retry_wait') THEN 1
-                    ELSE 0
-                END)
-             FROM sync_jobs
-             WHERE profile_id = ?1",
-            params![profile_id],
-            |row| {
-                Ok((
-                    row.get::<_, Option<i64>>(0)?.unwrap_or(0).max(0) as usize,
-                    row.get::<_, Option<i64>>(1)?.unwrap_or(0).max(0) as usize,
-                ))
-            },
-        )
-        .map_err(|error| format!("Failed reading materialized job counts: {error}"))
-}
-
-fn list_sync_file_paths_by_desired_action(
+pub(crate) fn list_sync_file_download_candidates(
     profile_id: &str,
-    desired_action: &str,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<PlannerDownloadCandidate>, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let mut statement = connection
         .prepare(
-            "SELECT path
+            "SELECT remote_item_id, path, cloud_size, cloud_mtime
              FROM sync_files
              WHERE profile_id = ?1
                AND desired_action = ?2
                AND is_dir = 0
                AND is_shared_reference = 0
-             ORDER BY path ASC",
-        )
-        .map_err(|error| format!("Failed preparing sync file action path query: {error}"))?;
-
-    let rows = statement
-        .query_map(params![profile_id, desired_action], |row| row.get::<_, String>(0))
-        .map_err(|error| format!("Failed querying sync file action paths: {error}"))?;
-
-    let mut paths: Vec<String> = Vec::new();
-    for row in rows {
-        paths.push(row.map_err(|error| format!("Failed reading sync file action path: {error}"))?);
-    }
-    Ok(paths)
-}
-
-fn read_remote_item_id_for_path(profile_id: &str, path: &str) -> Result<Option<String>, String> {
-    let connection = open_sync_jobs_connection(profile_id)?;
-    connection
-        .query_row(
-            "SELECT remote_item_id
-             FROM sync_files
-             WHERE profile_id = ?1
-               AND path = ?2
-               AND remote_present = 1
-               AND remote_item_id IS NOT NULL
-             LIMIT 1",
-            params![profile_id, path],
-            |row| row.get::<_, Option<String>>(0),
-        )
-        .optional()
-        .map_err(|error| format!("Failed reading remote item id for path: {error}"))
-        .map(|value| value.flatten())
-}
-
-fn list_sync_file_download_candidates(profile_id: &str) -> Result<Vec<PlannerDownloadCandidate>, String> {
-    let connection = open_sync_jobs_connection(profile_id)?;
-    let mut statement = connection
-        .prepare(
-            "SELECT remote_item_id, path, remote_size, remote_modified_ts
-             FROM sync_files
-             WHERE profile_id = ?1
-               AND desired_action = ?2
-               AND is_dir = 0
-               AND is_shared_reference = 0
-               AND remote_present = 1
+               AND cloud_present = 1
              ORDER BY path ASC",
         )
         .map_err(|error| format!("Failed preparing download candidate query: {error}"))?;
@@ -175,11 +108,13 @@ fn list_sync_file_download_candidates(profile_id: &str) -> Result<Vec<PlannerDow
     Ok(candidates)
 }
 
-fn list_sync_file_upload_candidates(profile_id: &str) -> Result<Vec<PlannerUploadCandidate>, String> {
+pub(crate) fn list_sync_file_upload_candidates(
+    profile_id: &str,
+) -> Result<Vec<PlannerUploadCandidate>, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let mut statement = connection
         .prepare(
-            "SELECT path, local_size, local_modified_ts
+            "SELECT path, local_size, local_mtime_ns
              FROM sync_files
              WHERE profile_id = ?1
                AND desired_action = ?2
@@ -195,7 +130,7 @@ fn list_sync_file_upload_candidates(profile_id: &str) -> Result<Vec<PlannerUploa
             Ok(PlannerUploadCandidate {
                 path: row.get(0)?,
                 local_size: row.get::<_, i64>(1)?.max(0) as u64,
-                local_modified_ts: row.get(2)?,
+                local_mtime_ns: row.get(2)?,
             })
         })
         .map_err(|error| format!("Failed querying upload candidates: {error}"))?;
@@ -208,16 +143,16 @@ fn list_sync_file_upload_candidates(profile_id: &str) -> Result<Vec<PlannerUploa
     Ok(candidates)
 }
 #[derive(Debug, Clone)]
-struct PlannerDownloadCandidate {
-    item_id: String,
-    path: String,
-    remote_size: u64,
-    remote_modified_ts: i64,
+pub(crate) struct PlannerDownloadCandidate {
+    pub(crate) item_id: String,
+    pub(crate) path: String,
+    pub(crate) remote_size: u64,
+    pub(crate) remote_modified_ts: i64,
 }
 
 #[derive(Debug, Clone)]
-struct PlannerUploadCandidate {
-    path: String,
-    local_size: u64,
-    local_modified_ts: i64,
+pub(crate) struct PlannerUploadCandidate {
+    pub(crate) path: String,
+    pub(crate) local_size: u64,
+    pub(crate) local_mtime_ns: i64,
 }

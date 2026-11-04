@@ -1,4 +1,6 @@
-fn runtime_set_phase(
+use super::*;
+
+pub(crate) fn runtime_set_phase(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     phase: &str,
@@ -55,13 +57,16 @@ pub fn runtime_set_engine_state(
     }
 }
 
-fn runtime_reset_transfer_activity(runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>, profile_id: &str) {
+pub(crate) fn runtime_reset_transfer_activity(
+    runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
+    profile_id: &str,
+) {
     if let Ok(mut runtime_map) = runtime.lock() {
         sync_runtime::reset_transfer_activity(&mut runtime_map, profile_id);
     }
 }
 
-fn runtime_set_local_scan_progress(
+pub(crate) fn runtime_set_local_scan_progress(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     scanned_count: usize,
@@ -103,7 +108,7 @@ fn runtime_set_local_scan_progress(
 
 // the structured activity contract (stage, progress_mode, current, total, unit, detail, cycle_id) is passed field by field; bundling it into one struct is tracked in docs/TODO.md.
 #[allow(clippy::too_many_arguments)]
-fn runtime_set_current_activity(
+pub(crate) fn runtime_set_current_activity(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     stage: &str,
@@ -146,7 +151,10 @@ fn runtime_set_current_activity(
     }
 }
 
-fn runtime_clear_issue(runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>, profile_id: &str) {
+pub(crate) fn runtime_clear_issue(
+    runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
+    profile_id: &str,
+) {
     if let Ok(mut runtime_map) = runtime.lock() {
         sync_runtime::clear_issue(&mut runtime_map, profile_id);
     }
@@ -159,7 +167,7 @@ fn runtime_clear_issue(runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>, profile_
     }
 }
 
-fn runtime_set_issue(
+pub(crate) fn runtime_set_issue(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     issue_code: &str,
@@ -196,7 +204,7 @@ fn runtime_set_issue(
     }
 }
 
-fn runtime_set_remote_scan_complete(
+pub(crate) fn runtime_set_remote_scan_complete(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     complete: bool,
@@ -214,24 +222,14 @@ fn runtime_set_remote_scan_complete(
     }
 }
 
-fn persist_lifecycle_operational_state(
+pub(crate) fn persist_lifecycle_operational_state(
     profile_id: &str,
     state: &SyncLifecycleOperationalState,
 ) -> Result<(), String> {
     persist_sync_lifecycle_operational_state(profile_id, state)
 }
 
-fn runtime_record_remote_discovered(
-    runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
-    profile_id: &str,
-    item_id: &str,
-) {
-    if let Ok(mut runtime_map) = runtime.lock() {
-        sync_runtime::record_remote_discovered(&mut runtime_map, profile_id, item_id);
-    }
-}
-
-fn runtime_record_remote_download_completed(
+pub(crate) fn runtime_record_remote_download_completed(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     item_id: &str,
@@ -241,7 +239,7 @@ fn runtime_record_remote_download_completed(
     }
 }
 
-fn runtime_record_remote_download_failed(
+pub(crate) fn runtime_record_remote_download_failed(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     item_id: &str,
@@ -251,7 +249,7 @@ fn runtime_record_remote_download_failed(
     }
 }
 
-fn runtime_set_remote_download_counters(
+pub(crate) fn runtime_set_remote_download_counters(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     planned_total: usize,
@@ -273,7 +271,7 @@ fn runtime_set_remote_download_counters(
     }
 }
 
-fn runtime_set_upload_counters(
+pub(crate) fn runtime_set_upload_counters(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     planned_total: usize,
@@ -293,7 +291,7 @@ fn runtime_set_upload_counters(
     }
 }
 
-fn runtime_set_upload_planned_total(
+pub(crate) fn runtime_set_upload_planned_total(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     planned_total: usize,
@@ -303,7 +301,7 @@ fn runtime_set_upload_planned_total(
     }
 }
 
-fn runtime_profile_auth_ready(
+pub(crate) fn runtime_profile_auth_ready(
     runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
 ) -> bool {
@@ -312,39 +310,6 @@ fn runtime_profile_auth_ready(
         .ok()
         .and_then(|runtime_map| runtime_map.get(profile_id).map(|status| status.auth_ready))
         .unwrap_or(false)
-}
-
-/// Classifies a failed cycle that is not an authentication problem. Lost
-/// sign-in is never inferred from error text: it comes from the auth
-/// authority (`record_sign_in_required` sets the runtime not auth-ready).
-fn classify_sync_issue(error: &str) -> (&'static str, &'static [&'static str]) {
-    let normalized = error.to_lowercase();
-    if normalized.contains("429") || normalized.contains("too many requests") {
-        return ("rate_limited", &["retry_sync"]);
-    }
-    if normalized.contains("permission denied") || normalized.contains("403") {
-        return ("permission_denied", &["open_sync_root", "retry_sync"]);
-    }
-    if normalized.contains("no space left") || normalized.contains("disk full") {
-        return ("disk_full", &["open_sync_root", "retry_sync"]);
-    }
-    if normalized.contains("sync root") {
-        return ("sync_root_unavailable", &["open_sync_root", "retry_sync"]);
-    }
-    if normalized.contains("conflict") || normalized.contains("safebackup") {
-        return (
-            "conflict_detected",
-            &["open_conflict", "open_sync_root", "retry_sync"],
-        );
-    }
-    if normalized.contains("network")
-        || normalized.contains("connection")
-        || normalized.contains("timed out")
-        || normalized.contains("dns")
-    {
-        return ("network_unavailable", &["retry_sync"]);
-    }
-    ("unknown_error", &["retry_sync"])
 }
 
 #[cfg(test)]
@@ -466,13 +431,15 @@ mod lifecycle_writer_tests {
         assert_eq!(hydrated.profile_id, built.profile_id);
         assert_eq!(hydrated.phase, built.phase);
         assert_eq!(hydrated.phase_message, built.phase_message);
-        assert_eq!(hydrated.current_activity.stage, built.current_activity.stage);
+        assert_eq!(
+            hydrated.current_activity.stage,
+            built.current_activity.stage
+        );
         assert_eq!(
             hydrated.current_activity.progress_mode,
             built.current_activity.progress_mode
         );
         assert_eq!(hydrated.remote_scan_complete, built.remote_scan_complete);
-        assert_eq!(hydrated.two_way_ready, built.two_way_ready);
         assert_eq!(
             hydrated.remote_download_planned_total,
             built.remote_download_planned_total

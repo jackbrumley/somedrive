@@ -1,31 +1,37 @@
-async fn tick_sync_cycle(
+use super::*;
+
+// One sync cycle (docs/sync-engine.md section 5): scan this device, record
+// cloud changes (downloading as pages arrive), plan from the baseline, then
+// apply the plan. There is one mode from the first sync onwards.
+
+/// Below this many synced files a missing sync folder cannot be told apart
+/// from a small drive the user emptied, so the check does not apply.
+pub(crate) const MISSING_ROOT_MIN_TRACKED_FILES: usize = 20;
+pub(crate) const DELETE_GUARD_WINDOW_SECONDS: i64 = 24 * 60 * 60;
+
+pub(crate) async fn tick_sync_cycle(
     profiles_lock: &Arc<std::sync::Mutex<()>>,
     sync_runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<SyncCycleStats, String> {
+) -> SyncResult<SyncCycleStats> {
     ensure_not_cancelled(cancel_flag)?;
     let profile = load_syncable_profile(profiles_lock, profile_id)?;
     let account_prefix = log_context::account_prefix_from_parts(profile_id, &profile.email);
     let cycle_id = new_cycle_id();
     let sync_root = PathBuf::from(profile.sync_root.clone());
-    std::fs::create_dir_all(&sync_root).map_err(|error| {
-        format!(
-            "Failed to create sync root '{}': {}",
-            sync_root.display(),
-            error
-        )
-    })?;
+    ensure_sync_root_available(profile_id, &sync_root)?;
 
-    let session = load_auth_session(profile_id)
-        .map_err(|error| record_sign_in_required(profiles_lock, sync_runtime, profile_id, &error))?;
+    let session = load_auth_session(profile_id).map_err(|error| {
+        record_sign_in_required(profiles_lock, sync_runtime, profile_id, &error)
+    })?;
     if session.access_token.trim().is_empty() {
-        return Err(record_sign_in_required(
+        return Err(SyncError::from(record_sign_in_required(
             profiles_lock,
             sync_runtime,
             profile_id,
             "Saved access token is empty",
-        ));
+        )));
     }
 
     let mut graph = GraphContext {
@@ -37,18 +43,12 @@ async fn tick_sync_cycle(
         profiles_lock: Arc::clone(profiles_lock),
         sync_runtime: Arc::clone(sync_runtime),
         throttled_until: Arc::new(std::sync::Mutex::new(None)),
+        exclusions: Arc::new(ExclusionRules::load()?),
+        http: graph_http_client()?,
+        http_no_redirect: graph_http_client_no_redirect()?,
+        pending_dir_syncs: Arc::new(std::sync::Mutex::new(HashSet::new())),
+        download_limit: Arc::new(AdaptiveDownloadLimit::new(resolve_download_concurrency())),
     };
-
-    runtime_set_phase(
-        &graph.sync_runtime,
-        profile_id,
-        "syncing",
-        "Preparing synchronization cycle",
-    );
-
-    let mut sync_state = load_sync_state(profile_id)?;
-    let mut lifecycle_state = read_sync_lifecycle_operational_state(profile_id)?;
-    let started_two_way_ready = lifecycle_state.two_way_ready;
     let mut stats = SyncCycleStats {
         account_prefix: account_prefix.clone(),
         cycle_id: cycle_id.clone(),
@@ -67,282 +67,146 @@ async fn tick_sync_cycle(
         &format!("{} [cycle:{}] SYNC_CYCLE_START", account_prefix, cycle_id),
     );
 
-    let remote_applied_paths = fetch_and_apply_delta_changes(
+    // Cloud renames recorded by an earlier, interrupted cycle.
+    apply_pending_local_moves(profile_id, &account_prefix, &sync_root)?;
+
+    // 1. This device first, so every download decision knows what is on disk.
+    runtime_set_phase(
+        &graph.sync_runtime,
+        profile_id,
+        "scanning_local",
+        "Checking this device",
+    );
+    let local_snapshot = run_local_scan_with_runtime_updates(
+        &graph.account_prefix,
+        &graph.cycle_id,
+        &graph.sync_runtime,
+        profile_id,
+        &sync_root,
+        Arc::clone(&graph.exclusions),
+        cancel_flag,
+    )
+    .await?;
+    apply_local_scan(profile_id, &local_snapshot)?;
+    apply_exclusion_rules(profile_id, &graph.exclusions)?;
+    stats.local_items_seen = local_snapshot.len();
+    stats.name_issues = record_local_name_issues(profile_id, &local_snapshot)?;
+    log::info!(
+        "{} [cycle:{}] LOCAL_SCAN_COMPLETE items={} name_issues={}",
+        account_prefix,
+        cycle_id,
+        stats.local_items_seen,
+        stats.name_issues
+    );
+
+    // 2. Cloud changes; planned downloads start while pages arrive.
+    fetch_and_apply_delta_changes(&mut graph, &sync_root, &mut stats, cancel_flag).await?;
+
+    // 3. Plan everything from the baseline.
+    runtime_set_phase(
+        &graph.sync_runtime,
+        profile_id,
+        "planning_actions",
+        "Planning sync actions",
+    );
+    let counters = recompute_sync_file_actions(profile_id)?;
+    log::info!(
+        "{} [cycle:{}] SYNC_PLANNER_SUMMARY cloud={} local={} shared_excluded={} download={} upload={} delete_remote={} delete_local={} conflicts={}",
+        account_prefix,
+        cycle_id,
+        counters.cloud_discovered_total,
+        counters.local_discovered_total,
+        counters.shared_reference_total,
+        counters.need_download_total,
+        counters.need_upload_total,
+        counters.need_delete_remote_total,
+        counters.need_delete_local_total,
+        counters.conflict_total
+    );
+    runtime_set_upload_planned_total(&graph.sync_runtime, profile_id, counters.need_upload_total);
+    let planned = collect_planned_actions(profile_id)?;
+
+    // 4. Apply it, starting with the user's conflict choices.
+    runtime_set_phase(
+        &graph.sync_runtime,
+        profile_id,
+        "applying_local",
+        "Applying changes",
+    );
+    apply_conflict_resolutions(&mut graph, &sync_root, &mut stats, cancel_flag).await?;
+    let planned_action_count = planned.verify.len()
+        + planned.conflicts.len()
+        + planned.create_local_folders.len()
+        + planned.create_remote_folders.len()
+        + planned.delete_local.len()
+        + planned.delete_remote.len()
+        + counters.need_upload_total;
+    runtime_set_current_activity(
+        &graph.sync_runtime,
+        profile_id,
+        "applying_local",
+        "indeterminate",
+        None,
+        Some(planned_action_count),
+        Some("items"),
+        Some("Applying planned changes"),
+        Some(&cycle_id),
+    );
+    forget_rows(profile_id, &planned.forget)?;
+    create_local_folders(
+        &graph,
+        &sync_root,
+        &planned.create_local_folders,
+        &mut stats,
+    )?;
+    create_remote_folders(
         &mut graph,
         &sync_root,
-        &mut sync_state,
+        &planned.create_remote_folders,
         &mut stats,
         cancel_flag,
     )
     .await?;
+    reconcile_both_sides(
+        &graph,
+        &sync_root,
+        &planned.verify,
+        ISSUE_CONFLICT_BOTH_NEW,
+        &mut stats,
+        cancel_flag,
+    )
+    .await?;
+    reconcile_both_sides(
+        &graph,
+        &sync_root,
+        &planned.conflicts,
+        ISSUE_CONFLICT_BOTH_CHANGED,
+        &mut stats,
+        cancel_flag,
+    )
+    .await?;
+    materialize_planner_upload_jobs(profile_id)?;
+    upload_planned_files(&mut graph, &sync_root, &mut stats, cancel_flag).await?;
+    apply_deletes_through_guard(&mut graph, &sync_root, &planned, &mut stats, cancel_flag).await?;
 
-    lifecycle_state = read_sync_lifecycle_operational_state(profile_id)?;
-
-    if lifecycle_state.two_way_ready {
-        runtime_set_phase(
-            &graph.sync_runtime,
-            profile_id,
-            "scanning_local",
-            "Scanning local files",
-        );
-        log::info!(
-            "{} [cycle:{}] STAGE_START stage=scanning_local sync_root={}",
-            account_prefix,
-            cycle_id,
-            sync_root.display()
-        );
-        let local_scan_estimated_total = if sync_state.local_snapshot.is_empty() {
-            None
-        } else {
-            Some(sync_state.local_snapshot.len())
-        };
-        let local_snapshot = run_local_scan_with_runtime_updates(
-            &graph.account_prefix,
-            &graph.cycle_id,
-            &graph.sync_runtime,
-            profile_id,
-            &sync_root,
-            local_scan_estimated_total,
-            cancel_flag,
-        )
-        .await?;
-        log::info!(
-            "{} [cycle:{}] STAGE_COMPLETE stage=scanning_local local_items={}",
-            account_prefix,
-            cycle_id,
-            local_snapshot.len()
-        );
-        let index_started_at = std::time::Instant::now();
-        runtime_set_phase(
-            &graph.sync_runtime,
-            profile_id,
-            "building_index",
-            "Building sync index",
-        );
-        log::info!(
-            "{} [cycle:{}] STAGE_START stage=index_rebuild remote_items={} local_items={}",
-            account_prefix,
-            cycle_id,
-            sync_state.remote_by_id.len(),
-            local_snapshot.len()
-        );
-        rebuild_sync_file_index(
-            &graph.sync_runtime,
-            profile_id,
-            &sync_state,
-            &local_snapshot,
-            &graph.account_prefix,
-            &graph.cycle_id,
-        )?;
-        log::info!(
-            "{} [cycle:{}] STAGE_COMPLETE stage=index_rebuild duration_ms={}",
-            account_prefix,
-            cycle_id,
-            index_started_at.elapsed().as_millis()
-        );
-        let planner_started_at = std::time::Instant::now();
-        runtime_set_phase(
-            &graph.sync_runtime,
-            profile_id,
-            "planning_actions",
-            "Planning sync actions",
-        );
-        log::info!(
-            "{} [cycle:{}] STAGE_START stage=planner two_way_ready={}",
-            account_prefix,
-            cycle_id,
-            lifecycle_state.two_way_ready
-        );
-        let planner_counters =
-            recompute_sync_file_actions(profile_id, lifecycle_state.two_way_ready)?;
-        let materialized = materialize_planner_actions(profile_id, &account_prefix, &cycle_id)?;
-        log::info!(
-            "{} [cycle:{}] STAGE_COMPLETE stage=planner duration_ms={} need_download={} need_upload={} conflicts={}",
-            account_prefix,
-            cycle_id,
-            planner_started_at.elapsed().as_millis(),
-            planner_counters.need_download_total,
-            planner_counters.need_upload_total,
-            planner_counters.conflict_total
-        );
-        runtime_set_upload_planned_total(
-            &graph.sync_runtime,
-            profile_id,
-            planner_counters.need_upload_total,
-        );
-        log::info!(
-            "{} [cycle:{}] SYNC_PLANNER_SUMMARY cloud_discovered={} local_discovered={} need_download={} need_upload={} need_delete_remote={} need_delete_local={} conflicts={} shared_references_excluded={} desired_download_jobs={} desired_upload_jobs={} desired_delete_remote_paths={} desired_delete_local_paths={} desired_conflict_paths={} active_download_jobs={} active_upload_jobs={}",
-            account_prefix,
-            cycle_id,
-            planner_counters.cloud_discovered_total,
-            planner_counters.local_discovered_total,
-            planner_counters.need_download_total,
-            planner_counters.need_upload_total,
-            planner_counters.need_delete_remote_total,
-            planner_counters.need_delete_local_total,
-            planner_counters.conflict_total,
-            planner_counters.shared_reference_total,
-            materialized.desired_download_paths,
-            materialized.desired_upload_paths,
-            materialized.desired_delete_remote_paths,
-            materialized.desired_delete_local_paths,
-            materialized.desired_conflict_paths,
-            materialized.active_download_jobs,
-            materialized.active_upload_jobs,
-        );
-        if planner_counters.need_download_total > 0 && materialized.active_download_jobs == 0 {
-            log::warn!(
-                "{} [cycle:{}] PLANNER_DOWNLOAD_MATERIALIZATION_GAP need_download={} active_download_jobs={}",
-                account_prefix,
-                cycle_id,
-                planner_counters.need_download_total,
-                materialized.active_download_jobs,
-            );
-        }
-        if planner_counters.need_upload_total != materialized.upload_paths.len() {
-            log::warn!(
-                "{} [cycle:{}] PLANNER_UPLOAD_MATERIALIZATION_GAP need_upload={} upload_paths={}",
-                account_prefix,
-                cycle_id,
-                planner_counters.need_upload_total,
-                materialized.upload_paths.len(),
-            );
-        }
-        if !materialized.conflict_paths.is_empty() {
-            let conflict_sample = materialized
-                .conflict_paths
-                .iter()
-                .take(3)
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(" | ");
-            log::warn!(
-                "{} [cycle:{}] PLANNER_CONFLICT_PATHS count={} sample_paths={}",
-                account_prefix,
-                cycle_id,
-                materialized.conflict_paths.len(),
-                if conflict_sample.is_empty() {
-                    "(none)".to_string()
-                } else {
-                    conflict_sample
-                }
-            );
-        }
-        stats.local_items_seen = local_snapshot.len();
-        log::info!(
-            "{} [cycle:{}] LOCAL_SCAN_SUMMARY items={}",
-            account_prefix,
-            cycle_id,
-            stats.local_items_seen
-        );
-        runtime_set_phase(
-            &graph.sync_runtime,
-            profile_id,
-            "applying_local",
-            "Applying local changes",
-        );
-        ensure_not_cancelled(cancel_flag)?;
-        apply_local_changes(
-            &mut graph,
-            &sync_root,
-            &local_snapshot,
-            &remote_applied_paths,
-            &materialized.upload_paths,
-            &materialized.delete_remote_paths,
-            &materialized.delete_local_paths,
-            &materialized.conflict_paths,
-            &mut sync_state,
-            &mut stats,
-            cancel_flag,
-        )
-        .await?;
-    } else {
-        let download_counters = read_download_job_counters(profile_id)?;
-        runtime_set_upload_planned_total(&graph.sync_runtime, profile_id, 0);
-        let bootstrap_ready_for_two_way =
-            bootstrap_ready_for_two_way(&lifecycle_state, &download_counters);
-
-        if bootstrap_ready_for_two_way {
-            runtime_set_phase(
-                &graph.sync_runtime,
-                profile_id,
-                "preparing_two_way_baseline",
-                "Preparing two-way sync - building your local baseline",
-            );
-            ensure_not_cancelled(cancel_flag)?;
-            reconcile_bootstrap_local_snapshot(
-                &mut graph,
-                &sync_root,
-                &mut sync_state,
-                &mut stats,
-                cancel_flag,
-            )
-            .await?;
-            lifecycle_state.two_way_ready = true;
-            persist_lifecycle_operational_state(profile_id, &lifecycle_state)?;
-        } else {
-            let blocked_message = if download_counters.failed_terminal > 0 {
-                format!(
-                    "Initial sync blocked: {} failed download{} need retry before two-way sync",
-                    download_counters.failed_terminal,
-                    if download_counters.failed_terminal == 1 {
-                        ""
-                    } else {
-                        "s"
-                    }
-                )
-            } else {
-                "Initial sync in progress - downloading cloud files only".to_string()
-            };
-            runtime_set_phase(&graph.sync_runtime, profile_id, "syncing", &blocked_message);
-            if download_counters.failed_terminal > 0 {
-                let failed_samples = list_terminal_failed_download_paths(profile_id, 5)
-                    .unwrap_or_else(|_| Vec::new());
-                log::warn!(
-                    "{} [cycle:{}] TWO_WAY_BLOCK_REASON reason=failed_terminal_downloads count={} sample_paths={}",
-                    account_prefix,
-                    cycle_id,
-                    download_counters.failed_terminal,
-                    if failed_samples.is_empty() {
-                        "(none)".to_string()
-                    } else {
-                        failed_samples.join(" | ")
-                    }
-                );
-            }
-            log::warn!(
-                "{} [cycle:{}] BOOTSTRAP_TWO_WAY_BLOCKED cursor_active={} bootstrap_full_scan_completed={} queue_remaining={} failed_terminal={}",
-                account_prefix,
-                cycle_id,
-                lifecycle_state.active_delta_next_link.is_some(),
-                lifecycle_state.bootstrap_full_scan_completed,
-                download_counters.remaining,
-                download_counters.failed_terminal
-            );
-        }
-    }
-
-    if started_two_way_ready {
-        sync_state.local_snapshot = collect_local_snapshot(&sync_root)?;
-    }
+    let mut lifecycle_state = read_sync_lifecycle_operational_state(profile_id)?;
     lifecycle_state.last_cycle_at = Some(chrono::Local::now().to_rfc3339());
     persist_lifecycle_operational_state(profile_id, &lifecycle_state)?;
-    save_sync_state(profile_id, &sync_state)?;
-
     update_profile_last_sync(profiles_lock, profile_id)?;
 
     let summary = format!(
-        "Sync cycle complete (downloaded {}, uploaded {}, upload failures {}, upload cooldown skips {}, remote deletes {}, local deletes {}, remote pages {}, remote items {}, remote missing skips {}, local items {})",
+        "Sync cycle complete (downloaded {}, uploaded {}, matched {}, refreshed {}, conflicts held {}, conflict copies {}, local moves {}, cloud deletes {}, local deletes {}, upload failures {}, name issues {})",
         stats.downloaded_files,
         stats.uploaded_files,
-        stats.upload_failures,
-        stats.upload_cooldown_skips,
+        stats.matched_files,
+        stats.baseline_refreshes,
+        stats.conflicts_held,
+        stats.conflict_copies,
+        stats.local_moves,
         stats.deleted_remote,
         stats.deleted_local,
-        stats.remote_pages,
-        stats.remote_items_received,
-        stats.remote_items_skipped_missing,
-        stats.local_items_seen
+        stats.upload_failures,
+        stats.name_issues
     );
     let _ = activity_log::append_event(
         profile_id,
@@ -354,58 +218,142 @@ async fn tick_sync_cycle(
         &graph.sync_runtime,
         profile_id,
         "idle",
-        "Idle - waiting for next sync cycle",
+        "Up to date - waiting for the next check",
     );
     Ok(stats)
 }
 
-fn bootstrap_ready_for_two_way(
-    lifecycle_state: &SyncLifecycleOperationalState,
-    download_counters: &DownloadJobCounters,
-) -> bool {
-    lifecycle_state.active_delta_next_link.is_none()
-        && lifecycle_state.bootstrap_full_scan_completed
-        && download_counters.remaining == 0
-        && download_counters.failed_terminal == 0
+/// The sync folder must be there before anything is planned. Before the
+/// first file is synced a missing folder is simply created; afterwards a
+/// missing or empty folder (an unmounted drive, an empty mount point) stops
+/// the cycle instead of being read as "every file deleted".
+pub(crate) fn ensure_sync_root_available(profile_id: &str, sync_root: &Path) -> SyncResult<()> {
+    let tracked_files = count_tracked_files(profile_id)?;
+    let root_exists = sync_root.is_dir();
+    let root_empty = root_exists
+        && std::fs::read_dir(sync_root)
+            .map(|mut entries| entries.next().is_none())
+            .unwrap_or(false);
+    if tracked_files < MISSING_ROOT_MIN_TRACKED_FILES {
+        if !root_exists {
+            std::fs::create_dir_all(sync_root).map_err(|error| {
+                SyncError::from_io(
+                    &error,
+                    format!(
+                        "Failed to create sync root '{}': {}",
+                        sync_root.display(),
+                        error
+                    ),
+                )
+            })?;
+        }
+        return Ok(());
+    }
+    if !root_exists || root_empty {
+        return Err(SyncError::SyncRootUnavailable(format!(
+            "Sync root unavailable: '{}' is {}, but {} files were synced there. Check the drive is mounted; nothing is deleted while the folder is unavailable.",
+            sync_root.display(),
+            if root_exists { "empty" } else { "missing" },
+            tracked_files
+        )));
+    }
+    Ok(())
 }
 
-#[cfg(test)]
-mod cycle_orchestrator_tests {
-    use super::*;
-
-    #[test]
-    fn bootstrap_gate_blocks_when_cursor_or_queue_or_failures_exist() {
-        let base_lifecycle = SyncLifecycleOperationalState {
-            bootstrap_full_scan_completed: true,
-            ..SyncLifecycleOperationalState::default()
-        };
-        let base_downloads = DownloadJobCounters::default();
-
-        let mut cursor_active = base_lifecycle.clone();
-        cursor_active.active_delta_next_link = Some("https://example.test/next".to_string());
-        assert!(!bootstrap_ready_for_two_way(&cursor_active, &base_downloads));
-
-        let mut queue_remaining = base_downloads.clone();
-        queue_remaining.remaining = 1;
-        assert!(!bootstrap_ready_for_two_way(&base_lifecycle, &queue_remaining));
-
-        let mut failed_terminal = base_downloads;
-        failed_terminal.failed_terminal = 1;
-        assert!(!bootstrap_ready_for_two_way(&base_lifecycle, &failed_terminal));
+/// Applies the plan's deletes, holding them for review when a cycle (with
+/// the last 24 hours of deletes) would remove more than the threshold: 10
+/// files or 10% of synced files, whichever is larger, in either direction.
+/// An approval covers only paths that were on the reviewed list and are
+/// still planned for deletion now.
+pub(crate) async fn apply_deletes_through_guard(
+    graph: &mut GraphContext,
+    sync_root: &Path,
+    planned: &PlannedActions,
+    stats: &mut SyncCycleStats,
+    cancel_flag: &Arc<AtomicBool>,
+) -> SyncResult<()> {
+    let mut guard_state = read_large_delete_guard_state(&graph.profile_id)?;
+    let planned_paths: Vec<String> = planned
+        .delete_local
+        .iter()
+        .chain(planned.delete_remote.iter())
+        .map(|row| row.path.clone())
+        .collect();
+    if planned_paths.is_empty() {
+        if !guard_state.pending_paths.is_empty() {
+            persist_large_delete_guard_state(&graph.profile_id, &LargeDeleteGuardState::default())?;
+            runtime_clear_issue(&graph.sync_runtime, &graph.profile_id);
+        }
+        return Ok(());
     }
 
-    #[test]
-    fn bootstrap_gate_allows_transition_when_requirements_clear() {
-        let lifecycle = SyncLifecycleOperationalState {
-            bootstrap_full_scan_completed: true,
-            active_delta_next_link: None,
-            ..SyncLifecycleOperationalState::default()
-        };
-        let downloads = DownloadJobCounters {
-            remaining: 0,
-            failed_terminal: 0,
-            ..DownloadJobCounters::default()
-        };
-        assert!(bootstrap_ready_for_two_way(&lifecycle, &downloads));
+    let tracked_files = count_tracked_files(&graph.profile_id)?;
+    let threshold = resolve_large_delete_guard_threshold().max(tracked_files / 10);
+    let recent_deletes = count_events_since(
+        &graph.profile_id,
+        DELETE_EVENT_DIRECTION,
+        current_unix_seconds() - DELETE_GUARD_WINDOW_SECONDS,
+    )?;
+    let within_limit = planned_paths.len() + recent_deletes <= threshold;
+
+    let allowed: HashSet<String> = if within_limit {
+        planned_paths.iter().cloned().collect()
+    } else if guard_state.approved {
+        let reviewed: HashSet<&String> = guard_state.pending_paths.iter().collect();
+        planned_paths
+            .iter()
+            .filter(|path| reviewed.contains(path))
+            .cloned()
+            .collect()
+    } else {
+        guard_state.pending_paths = planned_paths.clone();
+        persist_large_delete_guard_state(&graph.profile_id, &guard_state)?;
+        log::warn!(
+            "{} [cycle:{}] LARGE_DELETE_GUARD_HELD planned={} recent_24h={} threshold={}",
+            graph.account_prefix,
+            graph.cycle_id,
+            planned_paths.len(),
+            recent_deletes,
+            threshold
+        );
+        runtime_set_issue(
+            &graph.sync_runtime,
+            &graph.profile_id,
+            "large_delete_guard",
+            &large_delete_guard_issue_message(planned_paths.len()),
+            &["confirm_large_delete", "keep_cloud_files", "open_sync_root"],
+            None,
+            None,
+        );
+        return Ok(());
+    };
+
+    let mut delete_local: Vec<SyncFileRow> = planned
+        .delete_local
+        .iter()
+        .filter(|row| allowed.contains(&row.path))
+        .cloned()
+        .collect();
+    let mut delete_remote: Vec<SyncFileRow> = planned
+        .delete_remote
+        .iter()
+        .filter(|row| allowed.contains(&row.path))
+        .cloned()
+        .collect();
+    // Deepest first, so a folder is only reached after its contents.
+    delete_local.sort_by_key(|row| std::cmp::Reverse(row.path.matches('/').count()));
+    delete_remote.sort_by_key(|row| std::cmp::Reverse(row.path.matches('/').count()));
+    delete_local_items(graph, sync_root, &delete_local, stats)?;
+    delete_remote_items(graph, &delete_remote, stats, cancel_flag).await?;
+
+    if guard_state.approved || !guard_state.pending_paths.is_empty() {
+        persist_large_delete_guard_state(&graph.profile_id, &LargeDeleteGuardState::default())?;
     }
+    Ok(())
+}
+
+pub(crate) fn large_delete_guard_issue_message(pending_count: usize) -> String {
+    format!(
+        "{pending_count} files would be deleted. Review them, then confirm the deletion or keep the files."
+    )
 }

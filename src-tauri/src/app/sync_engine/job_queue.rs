@@ -1,145 +1,131 @@
-use crate::app::sync_runtime::{SyncRuntimeRecentItem, SyncRuntimeTransfer};
+use super::*;
 
-const DOWNLOAD_JOB_DIRECTION: &str = "download";
-const UPLOAD_JOB_DIRECTION: &str = "upload";
-const DELETE_REMOTE_JOB_DIRECTION: &str = "delete_remote";
-const DELETE_LOCAL_JOB_DIRECTION: &str = "delete_local";
-const CONFLICT_JOB_DIRECTION: &str = "conflict";
-const DOWNLOAD_JOB_STATE_QUEUED: &str = "queued";
-const DOWNLOAD_JOB_STATE_IN_PROGRESS: &str = "in_progress";
-const DOWNLOAD_JOB_STATE_RETRY_WAIT: &str = "retry_wait";
-const DOWNLOAD_JOB_STATE_DONE: &str = "done";
-const DOWNLOAD_JOB_STATE_FAILED_TERMINAL: &str = "failed_terminal";
-const DOWNLOAD_JOB_STATE_SKIPPED: &str = "skipped";
-const JOB_RUN_STATE_IDLE: &str = "idle";
-const JOB_RUN_STATE_CLAIMED: &str = "claimed";
-const JOB_RUN_STATE_RUNNING: &str = "running";
-const DOWNLOAD_JOB_LEASE_SECONDS: i64 = 900;
-const ACTION_JOB_LEASE_SECONDS: i64 = 900;
+pub(crate) const DOWNLOAD_JOB_DIRECTION: &str = "download";
+pub(crate) const UPLOAD_JOB_DIRECTION: &str = "upload";
+pub(crate) const DOWNLOAD_JOB_STATE_QUEUED: &str = "queued";
+pub(crate) const DOWNLOAD_JOB_STATE_IN_PROGRESS: &str = "in_progress";
+pub(crate) const DOWNLOAD_JOB_STATE_RETRY_WAIT: &str = "retry_wait";
+pub(crate) const DOWNLOAD_JOB_STATE_DONE: &str = "done";
+pub(crate) const DOWNLOAD_JOB_STATE_FAILED_TERMINAL: &str = "failed_terminal";
+pub(crate) const DOWNLOAD_JOB_STATE_SKIPPED: &str = "skipped";
+pub(crate) const JOB_RUN_STATE_IDLE: &str = "idle";
+pub(crate) const JOB_RUN_STATE_CLAIMED: &str = "claimed";
+pub(crate) const JOB_RUN_STATE_RUNNING: &str = "running";
+pub(crate) const DOWNLOAD_JOB_LEASE_SECONDS: i64 = 900;
+pub(crate) const ACTION_JOB_LEASE_SECONDS: i64 = 900;
 
 #[derive(Debug, Clone)]
-struct ClaimedDownloadJob {
-    job_id: i64,
-    item_id: String,
-    path: String,
-    remote_size: u64,
-    remote_modified_ts: i64,
+pub(crate) struct ClaimedDownloadJob {
+    pub(crate) job_id: i64,
+    pub(crate) item_id: String,
+    pub(crate) path: String,
 }
 
 #[derive(Debug, Clone, Default)]
-struct DownloadJobCounters {
-    planned_total: usize,
-    planned_bytes: u64,
-    in_progress: usize,
-    in_flight_bytes_done: u64,
-    retry_waiting: usize,
-    completed: usize,
-    completed_bytes: u64,
-    failed_terminal: usize,
-    remaining: usize,
-    remaining_bytes: u64,
+pub(crate) struct DownloadJobCounters {
+    pub(crate) planned_total: usize,
+    pub(crate) planned_bytes: u64,
+    pub(crate) in_progress: usize,
+    pub(crate) in_flight_bytes_done: u64,
+    pub(crate) retry_waiting: usize,
+    pub(crate) completed: usize,
+    pub(crate) completed_bytes: u64,
+    pub(crate) failed_terminal: usize,
+    pub(crate) remaining: usize,
+    pub(crate) remaining_bytes: u64,
 }
 
 #[derive(Debug, Clone, Default)]
-struct UploadJobCounters {
-    planned_total: usize,
-    planned_bytes: u64,
-    in_progress: usize,
-    in_flight_bytes_done: u64,
-    retry_waiting: usize,
-    completed: usize,
-    completed_bytes: u64,
-    failed_terminal: usize,
-    remaining_bytes: u64,
+pub(crate) struct UploadJobCounters {
+    pub(crate) planned_total: usize,
+    pub(crate) planned_bytes: u64,
+    pub(crate) in_progress: usize,
+    pub(crate) in_flight_bytes_done: u64,
+    pub(crate) retry_waiting: usize,
+    pub(crate) completed: usize,
+    pub(crate) completed_bytes: u64,
+    pub(crate) failed_terminal: usize,
+    pub(crate) remaining_bytes: u64,
 }
 
 #[derive(Debug, Clone, Default)]
-struct SyncJobActivityProjection {
-    active: Vec<SyncRuntimeTransfer>,
-    recent_completed: Vec<SyncRuntimeRecentItem>,
-    recent_retry_waiting: Vec<SyncRuntimeRecentItem>,
-    recent_failed: Vec<SyncRuntimeRecentItem>,
-    active_download_count: usize,
-    active_upload_count: usize,
+pub(crate) struct SyncJobActivityProjection {
+    pub(crate) active: Vec<SyncRuntimeTransfer>,
+    pub(crate) recent_completed: Vec<SyncRuntimeRecentItem>,
+    pub(crate) recent_retry_waiting: Vec<SyncRuntimeRecentItem>,
+    pub(crate) recent_failed: Vec<SyncRuntimeRecentItem>,
+    pub(crate) active_download_count: usize,
+    pub(crate) active_upload_count: usize,
 }
 
 #[derive(Debug, Clone, Default)]
-struct SyncFilePlannerCounters {
-    cloud_discovered_total: usize,
-    local_discovered_total: usize,
-    none_total: usize,
-    need_download_total: usize,
-    need_upload_total: usize,
-    need_delete_remote_total: usize,
-    need_delete_local_total: usize,
-    conflict_total: usize,
-    shared_reference_total: usize,
+pub(crate) struct SyncFilePlannerCounters {
+    pub(crate) cloud_discovered_total: usize,
+    pub(crate) local_discovered_total: usize,
+    pub(crate) none_total: usize,
+    pub(crate) need_download_total: usize,
+    pub(crate) need_upload_total: usize,
+    pub(crate) need_delete_remote_total: usize,
+    pub(crate) need_delete_local_total: usize,
+    pub(crate) conflict_total: usize,
+    pub(crate) shared_reference_total: usize,
 }
 
 #[derive(Debug, Clone)]
-struct PersistedSyncIssue {
-    issue_code: String,
-    issue_message: String,
-    issue_actions: Vec<String>,
-    issue_path: Option<String>,
-    issue_secondary_path: Option<String>,
+pub(crate) struct PersistedSyncIssue {
+    pub(crate) issue_code: String,
+    pub(crate) issue_message: String,
+    pub(crate) issue_actions: Vec<String>,
+    pub(crate) issue_path: Option<String>,
+    pub(crate) issue_secondary_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
-struct ThrottleCounters {
-    download_total: usize,
-    download_last_minute: usize,
-    upload_total: usize,
-    upload_last_minute: usize,
+pub(crate) struct ThrottleCounters {
+    pub(crate) download_total: usize,
+    pub(crate) download_last_minute: usize,
+    pub(crate) upload_total: usize,
+    pub(crate) upload_last_minute: usize,
 }
 
 #[derive(Debug, Clone)]
-struct SyncLifecycleStateRow {
-    two_way_ready: bool,
-    bootstrap_scan_initialized: bool,
-    bootstrap_full_scan_completed: bool,
-    delta_link: Option<String>,
-    active_delta_next_link: Option<String>,
-    last_cycle_at: Option<String>,
-    phase: String,
-    phase_message: String,
-    remote_scan_complete: bool,
-    activity_stage: String,
-    activity_progress_mode: String,
-    activity_current: Option<usize>,
-    activity_total: Option<usize>,
-    activity_unit: Option<String>,
-    activity_detail: Option<String>,
-    activity_cycle_id: Option<String>,
-    activity_updated_at: i64,
-    large_delete_guard_approved: bool,
-    large_delete_pending_paths_json: String,
-    agent_state: String,
-    last_sync_at: Option<String>,
+pub(crate) struct SyncLifecycleStateRow {
+    pub(crate) delta_link: Option<String>,
+    pub(crate) active_delta_next_link: Option<String>,
+    pub(crate) last_cycle_at: Option<String>,
+    pub(crate) phase: String,
+    pub(crate) phase_message: String,
+    pub(crate) remote_scan_complete: bool,
+    pub(crate) activity_stage: String,
+    pub(crate) activity_progress_mode: String,
+    pub(crate) activity_current: Option<usize>,
+    pub(crate) activity_total: Option<usize>,
+    pub(crate) activity_unit: Option<String>,
+    pub(crate) activity_detail: Option<String>,
+    pub(crate) activity_cycle_id: Option<String>,
+    pub(crate) activity_updated_at: i64,
+    pub(crate) large_delete_guard_approved: bool,
+    pub(crate) large_delete_pending_paths_json: String,
+    pub(crate) agent_state: String,
+    pub(crate) last_sync_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
-struct LargeDeleteGuardState {
-    approved: bool,
-    pending_paths: Vec<String>,
+pub(crate) struct LargeDeleteGuardState {
+    pub(crate) approved: bool,
+    pub(crate) pending_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default)]
-struct SyncLifecycleOperationalState {
-    two_way_ready: bool,
-    bootstrap_scan_initialized: bool,
-    bootstrap_full_scan_completed: bool,
-    delta_link: Option<String>,
-    active_delta_next_link: Option<String>,
-    last_cycle_at: Option<String>,
+pub(crate) struct SyncLifecycleOperationalState {
+    pub(crate) delta_link: Option<String>,
+    pub(crate) active_delta_next_link: Option<String>,
+    pub(crate) last_cycle_at: Option<String>,
 }
 
 impl Default for SyncLifecycleStateRow {
     fn default() -> Self {
         Self {
-            two_way_ready: false,
-            bootstrap_scan_initialized: false,
-            bootstrap_full_scan_completed: false,
             delta_link: None,
             active_delta_next_link: None,
             last_cycle_at: None,
@@ -174,12 +160,3 @@ pub struct RetryAllFailedDownloadJobsReport {
     pub skipped_permission_denied: usize,
     pub already_retrying: usize,
 }
-
-include!("job_queue_db.rs");
-include!("job_queue_lifecycle_store.rs");
-include!("job_queue_state_store.rs");
-include!("job_queue_download_store.rs");
-include!("job_queue_upload_store.rs");
-include!("job_queue_activity_projection.rs");
-include!("job_queue_issue_throttle_store.rs");
-include!("job_queue_tests.rs");

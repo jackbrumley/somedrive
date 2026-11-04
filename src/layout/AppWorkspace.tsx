@@ -62,6 +62,8 @@ export function AppWorkspace({ runtime, updates }: AppWorkspaceProps) {
           onKeepCloudFiles={runtime.keepCloudFilesAfterLargeDelete}
           onFetchLargeDeletePreview={runtime.fetchAccountLargeDeletePreview}
           onExportLargeDeletePreview={runtime.exportAccountLargeDeletePreview}
+          onFetchSyncProblems={runtime.fetchSyncProblems}
+          onResolveSyncConflicts={runtime.resolveSyncConflicts}
         />
       )}
       renderSettings={() => (
@@ -74,6 +76,10 @@ export function AppWorkspace({ runtime, updates }: AppWorkspaceProps) {
           onToggleRawLoggerMode={runtime.toggleRawLoggerMode}
           syncDownloadConcurrency={runtime.syncDownloadConcurrency}
           onChangeSyncDownloadConcurrency={runtime.updateSyncDownloadConcurrency}
+          conflictPolicy={runtime.conflictPolicy}
+          onChangeConflictPolicy={runtime.updateConflictPolicy}
+          excludePatterns={runtime.excludePatterns}
+          onChangeExcludePatterns={runtime.updateExcludePatterns}
           appVersion={runtime.status.appVersion}
           checkingUpdates={updates.checkingUpdates}
           lastCheckedAt={updates.lastCheckedAt}

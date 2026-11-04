@@ -1,7 +1,12 @@
 import { useEffect, useState } from "preact/hooks";
 import { AccountSettingsPanel } from "./AccountSettingsPanel";
 import { AccountSyncActivityPanel } from "./AccountSyncActivityPanel";
-import type { AccountProfile, SyncRuntimeAccountStatus } from "../../types/somedrive";
+import type {
+  AccountProfile,
+  ConflictResolution,
+  SyncProblem,
+  SyncRuntimeAccountStatus,
+} from "../../types/somedrive";
 import { computeEffectiveSyncState, computeHasCompletedInitialSync } from "./syncStateSelectors";
 
 interface AccountDetailUnifiedPanelProps {
@@ -23,6 +28,8 @@ interface AccountDetailUnifiedPanelProps {
   onKeepCloudFiles: (accountId: string) => Promise<void>;
   onFetchLargeDeletePreview: (accountId: string) => Promise<string[]>;
   onExportLargeDeletePreview: (accountId: string) => Promise<void>;
+  onFetchSyncProblems: (accountId: string) => Promise<SyncProblem[]>;
+  onResolveSyncConflicts: (accountId: string, paths: string[], resolution: ConflictResolution) => Promise<void>;
 }
 
 export function AccountDetailUnifiedPanel({
@@ -44,6 +51,8 @@ export function AccountDetailUnifiedPanel({
   onKeepCloudFiles,
   onFetchLargeDeletePreview,
   onExportLargeDeletePreview,
+  onFetchSyncProblems,
+  onResolveSyncConflicts,
 }: AccountDetailUnifiedPanelProps) {
   const [largeDeletePreviewPaths, setLargeDeletePreviewPaths] = useState<string[]>([]);
 
@@ -83,8 +92,9 @@ export function AccountDetailUnifiedPanel({
   if (mode === "sync") {
     return (
       <AccountSyncActivityPanel
+        accountId={account.id}
         runtimeStatus={runtimeStatus}
-        hasCompletedInitialSync={computeHasCompletedInitialSync(runtimeStatus)}
+        hasCompletedInitialSync={computeHasCompletedInitialSync(account)}
         issueMessage={hasBlockingIssue ? syncIssueMessage : null}
         issueKind={issueKind}
         issueActions={issueActions}
@@ -100,6 +110,8 @@ export function AccountDetailUnifiedPanel({
         onKeepCloudFiles={() => onKeepCloudFiles(account.id)}
         largeDeletePreviewPaths={largeDeletePreviewPaths}
         onExportLargeDeletePreview={() => onExportLargeDeletePreview(account.id)}
+        onFetchSyncProblems={onFetchSyncProblems}
+        onResolveSyncConflicts={onResolveSyncConflicts}
       />
     );
   }

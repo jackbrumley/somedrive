@@ -1,53 +1,9 @@
-pub(crate) fn list_terminal_failed_download_paths(
-    profile_id: &str,
-    limit: usize,
-) -> Result<Vec<String>, String> {
-    let connection = open_sync_jobs_connection(profile_id)?;
-    let mut statement = connection
-        .prepare(
-            "SELECT path
-             FROM sync_jobs
-             WHERE profile_id = ?1
-               AND direction = ?2
-               AND state = ?3
-             ORDER BY finished_at DESC, updated_at DESC
-             LIMIT ?4",
-        )
-        .map_err(|error| format!("Failed preparing terminal failed path query: {error}"))?;
-    let rows = statement
-        .query_map(
-            params![
-                profile_id,
-                DOWNLOAD_JOB_DIRECTION,
-                DOWNLOAD_JOB_STATE_FAILED_TERMINAL,
-                limit as i64,
-            ],
-            |row| row.get::<_, String>(0),
-        )
-        .map_err(|error| format!("Failed querying terminal failed download paths: {error}"))?;
+use super::*;
 
-    let mut paths: Vec<String> = Vec::new();
-    for row in rows {
-        paths.push(row.map_err(|error| format!("Failed reading terminal failed path row: {error}"))?);
-    }
-    Ok(paths)
-}
-
-fn remove_download_job_by_item_id(profile_id: &str, item_id: &str) -> Result<(), String> {
-    let connection = open_sync_jobs_connection(profile_id)?;
-    connection
-        .execute(
-            "DELETE FROM sync_jobs
-             WHERE profile_id = ?1
-               AND direction = ?2
-               AND item_id = ?3",
-            params![profile_id, DOWNLOAD_JOB_DIRECTION, item_id],
-        )
-        .map_err(|error| format!("Failed removing download job by item id: {error}"))?;
-    Ok(())
-}
-
-fn upsert_download_job(
+/// Queues a download for `item_id`. A job that already finished (done,
+/// failed or skipped) is queued again: the planner only asks for a download
+/// when the file needs one now.
+pub(crate) fn upsert_download_job(
     profile_id: &str,
     item_id: &str,
     path: &str,
@@ -102,6 +58,11 @@ fn upsert_download_job(
              SET path = ?1,
                  remote_size = ?2,
                  remote_modified_ts = ?3,
+                 state = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN 'queued' ELSE state END,
+                 run_state = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN 'idle' ELSE run_state END,
+                 attempt_count = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN 0 ELSE attempt_count END,
+                 last_error = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN NULL ELSE last_error END,
+                 finished_at = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN NULL ELSE finished_at END,
                  bytes_total = CASE WHEN ?2 > 0 THEN ?2 ELSE bytes_total END,
                  progress_updated_at = COALESCE(progress_updated_at, ?4),
                  updated_at = ?4
@@ -120,10 +81,16 @@ fn upsert_download_job(
     Ok(false)
 }
 
-fn claim_download_jobs(
+/// Claims up to `max_jobs` queued downloads, oldest first, in two lanes:
+/// files of `LARGE_DOWNLOAD_BYTES` or more may hold at most
+/// `large_file_slots` running downloads while smaller files are waiting, so
+/// a few big videos cannot stall thousands of documents. Slots no small file
+/// needs go to large files.
+pub(crate) fn claim_download_jobs(
     profile_id: &str,
     lease_owner: &str,
     max_jobs: usize,
+    large_file_slots: usize,
 ) -> Result<Vec<ClaimedDownloadJob>, String> {
     if max_jobs == 0 {
         return Ok(Vec::new());
@@ -162,46 +129,51 @@ fn claim_download_jobs(
         )
         .map_err(|error| format!("Failed recovering stale in-progress download jobs: {error}"))?;
 
-    let mut statement = transaction
-        .prepare(
-            "SELECT id, item_id, path, remote_size, remote_modified_ts
-             FROM sync_jobs
-             WHERE profile_id = ?1
-               AND direction = ?2
-               AND state IN (?3, ?4)
-               AND (next_retry_at IS NULL OR next_retry_at <= ?5)
-             ORDER BY created_at ASC
-             LIMIT ?6",
-        )
-        .map_err(|error| format!("Failed preparing download claim query: {error}"))?;
-
-    let mut jobs: Vec<ClaimedDownloadJob> = Vec::new();
-    let rows = statement
-        .query_map(
+    let large_in_flight: i64 = transaction
+        .query_row(
+            "SELECT COUNT(1) FROM sync_jobs
+             WHERE profile_id = ?1 AND direction = ?2 AND state = ?3 AND remote_size >= ?4",
             params![
                 profile_id,
                 DOWNLOAD_JOB_DIRECTION,
-                DOWNLOAD_JOB_STATE_QUEUED,
-                DOWNLOAD_JOB_STATE_RETRY_WAIT,
-                now,
-                max_jobs as i64,
+                DOWNLOAD_JOB_STATE_IN_PROGRESS,
+                LARGE_DOWNLOAD_BYTES as i64,
             ],
-            |row| {
-                Ok(ClaimedDownloadJob {
-                    job_id: row.get(0)?,
-                    item_id: row.get(1)?,
-                    path: row.get(2)?,
-                    remote_size: row.get::<_, i64>(3)?.max(0) as u64,
-                    remote_modified_ts: row.get(4)?,
-                })
-            },
+            |row| row.get(0),
         )
-        .map_err(|error| format!("Failed executing download claim query: {error}"))?;
+        .map_err(|error| format!("Failed counting running large downloads: {error}"))?;
+    let large_allowance = large_file_slots
+        .saturating_sub(usize::try_from(large_in_flight).unwrap_or(usize::MAX))
+        .min(max_jobs);
 
-    for row in rows {
-        jobs.push(row.map_err(|error| format!("Failed reading claimed download job: {error}"))?);
-    }
-    drop(statement);
+    let mut jobs = select_claimable_downloads(
+        &transaction,
+        profile_id,
+        now,
+        DownloadLane::Large,
+        large_allowance,
+        0,
+    )?;
+    let small = select_claimable_downloads(
+        &transaction,
+        profile_id,
+        now,
+        DownloadLane::Small,
+        max_jobs - jobs.len(),
+        0,
+    )?;
+    let large_claimed = jobs.len();
+    jobs.extend(small);
+    let idle_slots = max_jobs - jobs.len();
+    let spare_large = select_claimable_downloads(
+        &transaction,
+        profile_id,
+        now,
+        DownloadLane::Large,
+        idle_slots,
+        large_claimed,
+    )?;
+    jobs.extend(spare_large);
 
     for job in &jobs {
         transaction
@@ -238,7 +210,11 @@ fn claim_download_jobs(
     Ok(jobs)
 }
 
-fn mark_download_job_done(profile_id: &str, job_id: i64, skipped: bool) -> Result<(), String> {
+pub(crate) fn mark_download_job_done(
+    profile_id: &str,
+    job_id: i64,
+    skipped: bool,
+) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let now = current_unix_seconds();
     let final_state = if skipped {
@@ -271,140 +247,7 @@ fn mark_download_job_done(profile_id: &str, job_id: i64, skipped: bool) -> Resul
     Ok(())
 }
 
-fn mark_download_job_done_with_local_index(
-    profile_id: &str,
-    job_id: i64,
-    remote_entry: &RemoteKnownItem,
-    local_entry: &LocalSnapshotEntry,
-) -> Result<(), String> {
-    let mut connection = open_sync_jobs_connection(profile_id)?;
-    let transaction = connection
-        .transaction()
-        .map_err(|error| format!("Failed starting download completion transaction: {error}"))?;
-    let now = current_unix_seconds();
-
-    transaction
-        .execute(
-            "UPDATE sync_jobs
-             SET state = ?1,
-                 run_state = ?2,
-                 lease_owner = NULL,
-                 lease_until = NULL,
-                 bytes_done = COALESCE(bytes_total, bytes_done),
-                 updated_at = ?3,
-                 finished_at = ?3,
-                 progress_updated_at = ?3
-             WHERE profile_id = ?4 AND direction = ?5 AND id = ?6",
-            params![
-                DOWNLOAD_JOB_STATE_DONE,
-                JOB_RUN_STATE_IDLE,
-                now,
-                profile_id,
-                DOWNLOAD_JOB_DIRECTION,
-                job_id,
-            ],
-        )
-        .map_err(|error| format!("Failed marking download job done: {error}"))?;
-
-    transaction
-        .execute(
-            "INSERT INTO sync_files (
-                profile_id, path, is_dir, is_shared_reference, shared_drive_id, shared_item_id, shared_kind,
-                remote_item_id, remote_present, local_present,
-                remote_size, local_size, remote_modified_ts, local_modified_ts,
-                desired_action, conflict_state, updated_at
-             ) VALUES (
-                ?1, ?2, ?3, ?4, ?5, ?6, ?7,
-                ?8, 1, 1,
-                ?9, ?10, ?11, ?12,
-                'none', NULL, ?13
-             )
-             ON CONFLICT(profile_id, path)
-             DO UPDATE SET
-                is_dir = excluded.is_dir,
-                is_shared_reference = excluded.is_shared_reference,
-                shared_drive_id = excluded.shared_drive_id,
-                shared_item_id = excluded.shared_item_id,
-                shared_kind = excluded.shared_kind,
-                remote_item_id = excluded.remote_item_id,
-                remote_present = 1,
-                local_present = 1,
-                remote_size = excluded.remote_size,
-                local_size = excluded.local_size,
-                remote_modified_ts = excluded.remote_modified_ts,
-                local_modified_ts = excluded.local_modified_ts,
-                updated_at = excluded.updated_at",
-            params![
-                profile_id,
-                remote_entry.path,
-                bool_to_sql(remote_entry.is_dir),
-                bool_to_sql(remote_entry.is_shared_reference),
-                remote_entry.shared_drive_id.as_deref(),
-                remote_entry.shared_item_id.as_deref(),
-                remote_entry.shared_kind.as_deref(),
-                remote_entry.id,
-                remote_entry.size as i64,
-                local_entry.size as i64,
-                remote_entry.modified_ts,
-                local_entry.modified_ts,
-                now,
-            ],
-        )
-        .map_err(|error| format!("Failed upserting local sync file row during completion: {error}"))?;
-
-    transaction
-        .commit()
-        .map_err(|error| format!("Failed committing download completion transaction: {error}"))?;
-    Ok(())
-}
-
-fn upsert_sync_file_remote_presence(profile_id: &str, remote_entry: &RemoteKnownItem) -> Result<(), String> {
-    let connection = open_sync_jobs_connection(profile_id)?;
-    let now = current_unix_seconds();
-    connection
-        .execute(
-            "INSERT INTO sync_files (
-                profile_id, path, is_dir, is_shared_reference, shared_drive_id, shared_item_id, shared_kind,
-                remote_item_id, remote_present, local_present,
-                remote_size, local_size, remote_modified_ts, local_modified_ts,
-                desired_action, conflict_state, updated_at
-             ) VALUES (
-                ?1, ?2, ?3, ?4, ?5, ?6, ?7,
-                ?8, 1, 0,
-                ?9, 0, ?10, 0,
-                'none', NULL, ?11
-             )
-             ON CONFLICT(profile_id, path)
-             DO UPDATE SET
-                is_dir = excluded.is_dir,
-                is_shared_reference = excluded.is_shared_reference,
-                shared_drive_id = excluded.shared_drive_id,
-                shared_item_id = excluded.shared_item_id,
-                shared_kind = excluded.shared_kind,
-                remote_item_id = excluded.remote_item_id,
-                remote_present = 1,
-                remote_size = excluded.remote_size,
-                remote_modified_ts = excluded.remote_modified_ts,
-                updated_at = excluded.updated_at",
-            params![
-                profile_id,
-                remote_entry.path,
-                bool_to_sql(remote_entry.is_dir),
-                bool_to_sql(remote_entry.is_shared_reference),
-                remote_entry.shared_drive_id.as_deref(),
-                remote_entry.shared_item_id.as_deref(),
-                remote_entry.shared_kind.as_deref(),
-                remote_entry.id,
-                remote_entry.size as i64,
-                remote_entry.modified_ts,
-                now,
-            ],
-        )
-        .map_err(|error| format!("Failed upserting remote sync file row: {error}"))?;
-    Ok(())
-}
-
-fn mark_download_job_running(profile_id: &str, job_id: i64) -> Result<(), String> {
+pub(crate) fn mark_download_job_running(profile_id: &str, job_id: i64) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let now = current_unix_seconds();
     let lease_until = now.saturating_add(DOWNLOAD_JOB_LEASE_SECONDS);
@@ -432,7 +275,7 @@ fn mark_download_job_running(profile_id: &str, job_id: i64) -> Result<(), String
     Ok(())
 }
 
-fn update_download_job_progress(
+pub(crate) fn update_download_job_progress(
     profile_id: &str,
     job_id: i64,
     bytes_done: u64,
@@ -468,7 +311,11 @@ fn update_download_job_progress(
     Ok(())
 }
 
-fn mark_download_job_failed(profile_id: &str, job_id: i64, error_text: &str) -> Result<(), String> {
+pub(crate) fn mark_download_job_failed(
+    profile_id: &str,
+    job_id: i64,
+    error_text: &str,
+) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let now = current_unix_seconds();
     connection
@@ -497,134 +344,7 @@ fn mark_download_job_failed(profile_id: &str, job_id: i64, error_text: &str) -> 
     Ok(())
 }
 
-pub fn retry_failed_download_job(
-    profile_id: &str,
-    recent_item_id: &str,
-) -> Result<RetryFailedDownloadJobStatus, String> {
-    let job_id_text = recent_item_id
-        .strip_prefix("job-")
-        .ok_or_else(|| "Invalid sync activity item id; expected 'job-<id>'".to_string())?;
-    let job_id = job_id_text
-        .parse::<i64>()
-        .map_err(|_| "Invalid sync activity job id".to_string())?;
-    if job_id <= 0 {
-        return Err("Invalid sync activity job id".to_string());
-    }
-
-    let connection = open_sync_jobs_connection(profile_id)?;
-    let current_state: Option<String> = connection
-        .query_row(
-            "SELECT state
-             FROM sync_jobs
-             WHERE profile_id = ?1 AND direction = ?2 AND id = ?3",
-            params![profile_id, DOWNLOAD_JOB_DIRECTION, job_id],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|error| format!("Failed loading failed download job: {error}"))?;
-
-    let Some(state) = current_state else {
-        return Ok(RetryFailedDownloadJobStatus::AlreadyRetrying);
-    };
-
-    if state != DOWNLOAD_JOB_STATE_FAILED_TERMINAL {
-        return Ok(RetryFailedDownloadJobStatus::AlreadyRetrying);
-    }
-
-    let now = current_unix_seconds();
-    let updated = connection
-        .execute(
-            "UPDATE sync_jobs
-             SET state = ?1,
-                 run_state = ?2,
-                 lease_owner = NULL,
-                 lease_until = NULL,
-                 last_error = NULL,
-                 next_retry_at = NULL,
-                 bytes_done = 0,
-                 finished_at = NULL,
-                 updated_at = ?3,
-                 progress_updated_at = ?3
-             WHERE profile_id = ?4
-               AND direction = ?5
-               AND id = ?6
-               AND state = ?7",
-            params![
-                DOWNLOAD_JOB_STATE_QUEUED,
-                JOB_RUN_STATE_IDLE,
-                now,
-                profile_id,
-                DOWNLOAD_JOB_DIRECTION,
-                job_id,
-                DOWNLOAD_JOB_STATE_FAILED_TERMINAL,
-            ],
-        )
-        .map_err(|error| format!("Failed retrying failed download job: {error}"))?;
-
-    if updated == 0 {
-        return Ok(RetryFailedDownloadJobStatus::AlreadyRetrying);
-    }
-
-    Ok(RetryFailedDownloadJobStatus::Retried)
-}
-
-pub fn retry_all_failed_download_jobs(
-    profile_id: &str,
-) -> Result<RetryAllFailedDownloadJobsReport, String> {
-    let connection = open_sync_jobs_connection(profile_id)?;
-    let failed_total: usize = connection
-        .query_row(
-            "SELECT
-                SUM(CASE WHEN state = ?1 THEN 1 ELSE 0 END)
-             FROM sync_jobs
-             WHERE profile_id = ?2
-               AND direction = ?3",
-            params![
-                DOWNLOAD_JOB_STATE_FAILED_TERMINAL,
-                profile_id,
-                DOWNLOAD_JOB_DIRECTION,
-            ],
-            |row| Ok(row.get::<_, Option<i64>>(0)?.unwrap_or(0).max(0) as usize),
-        )
-        .map_err(|error| format!("Failed counting failed download jobs: {error}"))?;
-    let now = current_unix_seconds();
-    let retried = connection
-        .execute(
-            "UPDATE sync_jobs
-             SET state = ?1,
-                 run_state = ?2,
-                 lease_owner = NULL,
-                 lease_until = NULL,
-                 last_error = NULL,
-                 next_retry_at = NULL,
-                 bytes_done = 0,
-                 finished_at = NULL,
-                 updated_at = ?3,
-                 progress_updated_at = ?3
-             WHERE profile_id = ?4
-               AND direction = ?5
-                AND state = ?6",
-            params![
-                DOWNLOAD_JOB_STATE_QUEUED,
-                JOB_RUN_STATE_IDLE,
-                now,
-                profile_id,
-                DOWNLOAD_JOB_DIRECTION,
-                DOWNLOAD_JOB_STATE_FAILED_TERMINAL,
-            ],
-        )
-        .map_err(|error| format!("Failed retrying failed download jobs: {error}"))?;
-
-    let already_retrying = failed_total.saturating_sub(retried);
-
-    Ok(RetryAllFailedDownloadJobsReport {
-        retried,
-        skipped_permission_denied: 0,
-        already_retrying,
-    })
-}
-
-fn mark_download_job_retry_wait(
+pub(crate) fn mark_download_job_retry_wait(
     profile_id: &str,
     job_id: i64,
     error_text: &str,
@@ -666,7 +386,7 @@ fn mark_download_job_retry_wait(
 /// The job stays claimed (state and lease unchanged): releasing it here would
 /// let the dispatcher hand the file to a second worker while this one still
 /// retries it, and both would write the same temporary file.
-fn record_download_job_retrying_in_place(
+pub(crate) fn record_download_job_retrying_in_place(
     profile_id: &str,
     job_id: i64,
     error_text: &str,
@@ -687,7 +407,7 @@ fn record_download_job_retrying_in_place(
     Ok(())
 }
 
-fn reset_running_sync_jobs_for_pause(profile_id: &str) -> Result<usize, String> {
+pub(crate) fn reset_running_sync_jobs_for_pause(profile_id: &str) -> Result<usize, String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let now = current_unix_seconds();
     connection
@@ -718,13 +438,17 @@ fn reset_running_sync_jobs_for_pause(profile_id: &str) -> Result<usize, String> 
         .map_err(|error| format!("Failed resetting running sync jobs for pause: {error}"))
 }
 
-fn read_download_job_counters(profile_id: &str) -> Result<DownloadJobCounters, String> {
-    query_download_job_counters(&open_sync_jobs_connection(profile_id)?, profile_id)
+pub(crate) fn read_download_job_counters(profile_id: &str) -> Result<DownloadJobCounters, String> {
+    let connection = open_sync_jobs_connection(profile_id)?;
+    query_download_job_counters(&connection, profile_id)
 }
 
 /// The download counters read on a caller-owned connection, so they can share
 /// one snapshot with other reads (see `hydrate_runtime_status_from_db`).
-fn query_download_job_counters(connection: &Connection, profile_id: &str) -> Result<DownloadJobCounters, String> {
+pub(crate) fn query_download_job_counters(
+    connection: &Connection,
+    profile_id: &str,
+) -> Result<DownloadJobCounters, String> {
     connection
         .query_row(
             "SELECT
@@ -776,4 +500,65 @@ fn query_download_job_counters(connection: &Connection, profile_id: &str) -> Res
             },
         )
         .map_err(|error| format!("Failed reading download counters: {error}"))
+}
+
+#[derive(Clone, Copy)]
+enum DownloadLane {
+    Small,
+    Large,
+}
+
+/// Queued downloads of one lane that may start now, oldest first, skipping
+/// the first `skip` (already taken by this claim).
+fn select_claimable_downloads(
+    transaction: &rusqlite::Transaction<'_>,
+    profile_id: &str,
+    now: i64,
+    lane: DownloadLane,
+    limit: usize,
+    skip: usize,
+) -> Result<Vec<ClaimedDownloadJob>, String> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    let size_condition = match lane {
+        DownloadLane::Small => "remote_size < ?6",
+        DownloadLane::Large => "remote_size >= ?6",
+    };
+    let mut statement = transaction
+        .prepare(&format!(
+            "SELECT id, item_id, path
+             FROM sync_jobs
+             WHERE profile_id = ?1
+               AND direction = ?2
+               AND state IN (?3, ?4)
+               AND (next_retry_at IS NULL OR next_retry_at <= ?5)
+               AND {size_condition}
+             ORDER BY created_at ASC, id ASC
+             LIMIT ?7 OFFSET ?8"
+        ))
+        .map_err(|error| format!("Failed preparing download claim query: {error}"))?;
+    let rows = statement
+        .query_map(
+            params![
+                profile_id,
+                DOWNLOAD_JOB_DIRECTION,
+                DOWNLOAD_JOB_STATE_QUEUED,
+                DOWNLOAD_JOB_STATE_RETRY_WAIT,
+                now,
+                LARGE_DOWNLOAD_BYTES as i64,
+                limit as i64,
+                skip as i64,
+            ],
+            |row| {
+                Ok(ClaimedDownloadJob {
+                    job_id: row.get(0)?,
+                    item_id: row.get(1)?,
+                    path: row.get(2)?,
+                })
+            },
+        )
+        .map_err(|error| format!("Failed executing download claim query: {error}"))?;
+    rows.map(|row| row.map_err(|error| format!("Failed reading claimed download job: {error}")))
+        .collect()
 }

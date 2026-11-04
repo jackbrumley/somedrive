@@ -1,3 +1,5 @@
+use super::*;
+
 // Sync shutdown: before SomeDrive exits for any reason (an in-app update, tray
 // Quit, closing with close-to-tray off, SIGTERM/SIGINT/SIGHUP, session logout),
 // sync is brought to a clean stop so an exit never kills a transfer mid-flight
@@ -18,7 +20,7 @@
 // twice.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SyncShutdownPhase {
+pub(crate) enum SyncShutdownPhase {
     Running,
     FinishingTransfers,
     StoppingWorkers,
@@ -40,7 +42,7 @@ impl SyncShutdownReason {
     /// How long in-flight transfers may run to completion before they are
     /// cancelled (cancelling is safe: downloads write to a temp file that is
     /// discarded, and the job is requeued).
-    fn transfer_drain_timeout(self) -> Duration {
+    pub(crate) fn transfer_drain_timeout(self) -> Duration {
         match self {
             Self::Update => Duration::from_secs(30),
             Self::Exit => Duration::from_secs(10),
@@ -49,7 +51,7 @@ impl SyncShutdownReason {
 
     /// How long cancelled sync workers may take to unwind. Cancellation is
     /// normally observed within a second.
-    fn worker_stop_timeout(self) -> Duration {
+    pub(crate) fn worker_stop_timeout(self) -> Duration {
         match self {
             Self::Update => Duration::from_secs(20),
             Self::Exit => Duration::from_secs(10),
@@ -61,7 +63,7 @@ impl SyncShutdownReason {
         self.transfer_drain_timeout() + self.worker_stop_timeout()
     }
 
-    fn activity_message(self) -> &'static str {
+    pub(crate) fn activity_message(self) -> &'static str {
         match self {
             Self::Update => "Sync paused to install an app update",
             Self::Exit => "Sync paused because SomeDrive is closing",
@@ -69,24 +71,24 @@ impl SyncShutdownReason {
     }
 }
 
-static SYNC_SHUTDOWN_PHASE: std::sync::Mutex<SyncShutdownPhase> =
+pub(crate) static SYNC_SHUTDOWN_PHASE: std::sync::Mutex<SyncShutdownPhase> =
     std::sync::Mutex::new(SyncShutdownPhase::Running);
 
 /// Download worker tasks still alive across all accounts. They outlive their
 /// cycle briefly after a cancel (removing temp files, requeueing their job), so
 /// shutdown waits for them as well as for the sync workers.
-static ACTIVE_DOWNLOAD_WORKER_TASKS: AtomicUsize = AtomicUsize::new(0);
+pub(crate) static ACTIVE_DOWNLOAD_WORKER_TASKS: AtomicUsize = AtomicUsize::new(0);
 
-const SYNC_SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(200);
+pub(crate) const SYNC_SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
-fn sync_shutdown_phase() -> SyncShutdownPhase {
+pub(crate) fn sync_shutdown_phase() -> SyncShutdownPhase {
     SYNC_SHUTDOWN_PHASE
         .lock()
         .map(|phase| *phase)
         .unwrap_or(SyncShutdownPhase::Stopped)
 }
 
-fn set_sync_shutdown_phase(next_phase: SyncShutdownPhase) {
+pub(crate) fn set_sync_shutdown_phase(next_phase: SyncShutdownPhase) {
     if let Ok(mut phase) = SYNC_SHUTDOWN_PHASE.lock() {
         log::info!("SYNC_SHUTDOWN_PHASE from={:?} to={:?}", *phase, next_phase);
         *phase = next_phase;
@@ -95,13 +97,13 @@ fn set_sync_shutdown_phase(next_phase: SyncShutdownPhase) {
 
 /// False once a shutdown has started: no new sync cycle, download or upload
 /// may begin.
-fn sync_accepts_new_work() -> bool {
+pub(crate) fn sync_accepts_new_work() -> bool {
     sync_shutdown_phase() == SyncShutdownPhase::Running
 }
 
 /// Unwinds the current cycle (as a cancellation) instead of starting another
 /// transfer while sync is shutting down.
-fn ensure_accepting_new_transfers() -> Result<(), String> {
+pub(crate) fn ensure_accepting_new_transfers() -> Result<(), String> {
     if sync_accepts_new_work() {
         Ok(())
     } else {
@@ -110,10 +112,10 @@ fn ensure_accepting_new_transfers() -> Result<(), String> {
 }
 
 /// Counts a download worker task from before it is spawned until it exits.
-struct DownloadWorkerTaskGuard;
+pub(crate) struct DownloadWorkerTaskGuard;
 
 impl DownloadWorkerTaskGuard {
-    fn register() -> Self {
+    pub(crate) fn register() -> Self {
         ACTIVE_DOWNLOAD_WORKER_TASKS.fetch_add(1, Ordering::SeqCst);
         Self
     }
@@ -125,7 +127,9 @@ impl Drop for DownloadWorkerTaskGuard {
     }
 }
 
-fn count_in_flight_transfers(sync_runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>) -> usize {
+pub(crate) fn count_in_flight_transfers(
+    sync_runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
+) -> usize {
     sync_runtime
         .lock()
         .map(|runtime_map| {
@@ -188,7 +192,7 @@ pub async fn wait_for_sync_stopped(timeout: Duration) -> bool {
     }
 }
 
-async fn wait_for_in_flight_transfers(
+pub(crate) async fn wait_for_in_flight_transfers(
     sync_runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     timeout: Duration,
 ) {
@@ -215,7 +219,7 @@ async fn wait_for_in_flight_transfers(
 
 /// Cancels every running worker through the same signals as Pause, without
 /// touching the persisted agent state.
-fn stop_all_sync_workers(
+pub(crate) fn stop_all_sync_workers(
     state: &tauri::State<'_, AppState>,
     reason: SyncShutdownReason,
 ) -> Result<(), String> {
@@ -246,7 +250,7 @@ fn stop_all_sync_workers(
     Ok(())
 }
 
-async fn wait_for_sync_workers_to_exit(
+pub(crate) async fn wait_for_sync_workers_to_exit(
     state: &tauri::State<'_, AppState>,
     timeout: Duration,
 ) -> Result<(), String> {
@@ -294,7 +298,7 @@ async fn wait_for_sync_workers_to_exit(
 
 /// Returns any job still marked claimed or running to the queue, so the next
 /// start picks it up (startup does the same, this keeps the DB tidy at exit).
-fn requeue_interrupted_jobs() -> Result<(), String> {
+pub(crate) fn requeue_interrupted_jobs() -> Result<(), String> {
     for profile in load_profiles()? {
         match reset_running_sync_jobs_for_pause(&profile.id) {
             Ok(requeued_jobs) => log::info!(

@@ -1,29 +1,73 @@
+use super::*;
+
 /// Per-cycle connection to Microsoft Graph for one account: the access token
 /// (refreshed on demand), the account-wide throttle window, and the single
 /// path that records a sign-in Microsoft no longer accepts.
 #[derive(Clone)]
-struct GraphContext {
-    profile_id: String,
-    account_prefix: String,
-    cycle_id: String,
-    access_token: Arc<tokio::sync::RwLock<String>>,
-    token_refresh_lock: Arc<tokio::sync::Mutex<()>>,
-    profiles_lock: Arc<std::sync::Mutex<()>>,
-    sync_runtime: Arc<std::sync::Mutex<SyncRuntimeMap>>,
+pub(crate) struct GraphContext {
+    pub(crate) profile_id: String,
+    pub(crate) account_prefix: String,
+    pub(crate) cycle_id: String,
+    pub(crate) access_token: Arc<tokio::sync::RwLock<String>>,
+    pub(crate) token_refresh_lock: Arc<tokio::sync::Mutex<()>>,
+    pub(crate) profiles_lock: Arc<std::sync::Mutex<()>>,
+    pub(crate) sync_runtime: Arc<std::sync::Mutex<SyncRuntimeMap>>,
     /// Account-wide throttle window: after Microsoft answers 429, no Graph
     /// request for this account starts before this instant, so parallel
     /// workers back off together instead of each hitting the limit again.
-    throttled_until: Arc<std::sync::Mutex<Option<tokio::time::Instant>>>,
+    pub(crate) throttled_until: Arc<std::sync::Mutex<Option<tokio::time::Instant>>>,
+    /// The exclude rules for this cycle.
+    pub(crate) exclusions: Arc<ExclusionRules>,
+    /// HTTP clients shared by every request of the cycle, so connections
+    /// (and TLS sessions) are reused instead of opened per file.
+    pub(crate) http: reqwest::Client,
+    pub(crate) http_no_redirect: reqwest::Client,
+    /// Folders that received a downloaded file since the last flush. They
+    /// are flushed to disk before those downloads are recorded as synced.
+    pub(crate) pending_dir_syncs: Arc<std::sync::Mutex<HashSet<PathBuf>>>,
+    /// How many downloads may run at once right now (adapts to throttling).
+    pub(crate) download_limit: Arc<AdaptiveDownloadLimit>,
 }
 
 impl GraphContext {
-    async fn current_access_token(&self) -> String {
+    /// Notes that `folder` gained a downloaded file whose directory entry
+    /// still needs flushing.
+    pub(crate) fn note_dir_needs_sync(&self, folder: &Path) {
+        if let Ok(mut pending) = self.pending_dir_syncs.lock() {
+            pending.insert(folder.to_path_buf());
+        }
+    }
+
+    /// Flushes every noted folder once. Called before a batch of downloads
+    /// is recorded as synced, so a crash cannot lose a file the database
+    /// already counts as downloaded.
+    pub(crate) fn flush_pending_dir_syncs(&self) -> Result<usize, String> {
+        let folders: Vec<PathBuf> = self
+            .pending_dir_syncs
+            .lock()
+            .map_err(|_| "Folder sync lock is poisoned".to_string())?
+            .drain()
+            .collect();
+        for folder in &folders {
+            std::fs::File::open(folder)
+                .and_then(|handle| handle.sync_all())
+                .map_err(|error| {
+                    format!("Failed flushing folder '{}': {error}", folder.display())
+                })?;
+        }
+        Ok(folders.len())
+    }
+
+    pub(crate) async fn current_access_token(&self) -> String {
         self.access_token.read().await.clone()
     }
 
     /// Holds every Graph request back until the account's throttle window
     /// (set by `extend_throttle_window`) has passed.
-    async fn wait_for_throttle_window(&self, cancel_flag: &Arc<AtomicBool>) -> Result<(), String> {
+    pub(crate) async fn wait_for_throttle_window(
+        &self,
+        cancel_flag: &Arc<AtomicBool>,
+    ) -> Result<(), String> {
         loop {
             let resume_at = self
                 .throttled_until
@@ -39,7 +83,7 @@ impl GraphContext {
 
     /// Records a 429 for the whole account: pushes the throttle window out to
     /// `retry_after` from now (never shortens it).
-    fn extend_throttle_window(&self, retry_after: Duration) -> Result<(), String> {
+    pub(crate) fn extend_throttle_window(&self, retry_after: Duration) -> Result<(), String> {
         let resume_at = tokio::time::Instant::now() + retry_after;
         let mut throttled_until = self
             .throttled_until
@@ -54,10 +98,37 @@ impl GraphContext {
                 retry_after.as_millis()
             );
         }
+        drop(throttled_until);
+        if let Some(change) = self.download_limit.record_throttle() {
+            log::warn!(
+                "{} [cycle:{}] DOWNLOAD_LIMIT_LOWERED from={} to={} reason=throttled",
+                self.account_prefix,
+                self.cycle_id,
+                change.from,
+                change.to
+            );
+        }
         Ok(())
     }
 
-    async fn refresh_token_if_needed(&self, stale_token: &str) -> Result<String, String> {
+    /// Records a finished download, letting the download limit grow.
+    pub(crate) fn record_download_success(&self) {
+        if let Some(change) = self.download_limit.record_success() {
+            log::info!(
+                "{} [cycle:{}] DOWNLOAD_LIMIT_RAISED from={} to={} maximum={}",
+                self.account_prefix,
+                self.cycle_id,
+                change.from,
+                change.to,
+                self.download_limit.maximum()
+            );
+        }
+    }
+
+    pub(crate) async fn refresh_token_if_needed(
+        &self,
+        stale_token: &str,
+    ) -> Result<String, String> {
         let _refresh_guard = self.token_refresh_lock.lock().await;
 
         let current_token = self.current_access_token().await;
@@ -88,7 +159,7 @@ impl GraphContext {
 /// The single path for "this account's saved sign-in no longer works":
 /// persists the signed-out state, marks the runtime not auth-ready (which
 /// raises the `auth_required` issue) and returns the cycle error.
-fn record_sign_in_required(
+pub(crate) fn record_sign_in_required(
     profiles_lock: &std::sync::Mutex<()>,
     sync_runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,

@@ -9,7 +9,7 @@ import {
 import { memo } from "preact/compat";
 import { PageHeader } from "../components/shell/PageHeader";
 import { AccountDetailUnifiedPanel } from "../components/accounts/AccountDetailUnifiedPanel";
-import type { AccountProfile, SyncRuntimeAccountStatus } from "../types/somedrive";
+import type { AccountProfile, ConflictResolution, SyncProblem, SyncRuntimeAccountStatus } from "../types/somedrive";
 import { computeEffectiveSyncState } from "../components/accounts/syncStateSelectors";
 
 interface AccountDetailPageProps {
@@ -35,6 +35,8 @@ interface AccountDetailPageProps {
   onKeepCloudFiles: (accountId: string) => Promise<void>;
   onFetchLargeDeletePreview: (accountId: string) => Promise<string[]>;
   onExportLargeDeletePreview: (accountId: string) => Promise<void>;
+  onFetchSyncProblems: (accountId: string) => Promise<SyncProblem[]>;
+  onResolveSyncConflicts: (accountId: string, paths: string[], resolution: ConflictResolution) => Promise<void>;
 }
 
 interface AccountDetailHeaderProps {
@@ -135,6 +137,8 @@ export function AccountDetailPage({
   onKeepCloudFiles,
   onFetchLargeDeletePreview,
   onExportLargeDeletePreview,
+  onFetchSyncProblems,
+  onResolveSyncConflicts,
 }: AccountDetailPageProps) {
   if (!account) {
     return (
@@ -181,6 +185,8 @@ export function AccountDetailPage({
           onKeepCloudFiles={onKeepCloudFiles}
           onFetchLargeDeletePreview={onFetchLargeDeletePreview}
           onExportLargeDeletePreview={onExportLargeDeletePreview}
+          onFetchSyncProblems={onFetchSyncProblems}
+          onResolveSyncConflicts={onResolveSyncConflicts}
         />
       </div>
     </section>

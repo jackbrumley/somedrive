@@ -1,18 +1,23 @@
+use super::*;
+
 // Diagnostics for HTTP 403 download failures: the Graph error and request
 // ids a Microsoft support case needs. On unless SOMEDRIVE_SYNC_403_DIAGNOSTICS
 // is 0, false, off or no.
 
-fn download_403_diagnostics_enabled() -> bool {
+pub(crate) fn download_403_diagnostics_enabled() -> bool {
     std::env::var("SOMEDRIVE_SYNC_403_DIAGNOSTICS")
         .ok()
         .map(|value| {
             let normalized = value.trim().to_ascii_lowercase();
-            !(normalized == "0" || normalized == "false" || normalized == "off" || normalized == "no")
+            !(normalized == "0"
+                || normalized == "false"
+                || normalized == "off"
+                || normalized == "no")
         })
         .unwrap_or(true)
 }
 
-fn extract_graph_error_summary(body: &str) -> (String, String, String, String) {
+pub(crate) fn extract_graph_error_summary(body: &str) -> (String, String, String, String) {
     let parsed = serde_json::from_str::<serde_json::Value>(body).ok();
     let error_code = parsed
         .as_ref()
@@ -44,10 +49,15 @@ fn extract_graph_error_summary(body: &str) -> (String, String, String, String) {
         .and_then(serde_json::Value::as_str)
         .unwrap_or("")
         .to_string();
-    (error_code, error_message, body_request_id, body_client_request_id)
+    (
+        error_code,
+        error_message,
+        body_request_id,
+        body_client_request_id,
+    )
 }
 
-fn header_value_text(headers: &reqwest::header::HeaderMap, key: &str) -> String {
+pub(crate) fn header_value_text(headers: &reqwest::header::HeaderMap, key: &str) -> String {
     headers
         .get(key)
         .and_then(|value| value.to_str().ok())
@@ -55,7 +65,7 @@ fn header_value_text(headers: &reqwest::header::HeaderMap, key: &str) -> String 
         .to_string()
 }
 
-async fn log_download_403_diagnostics(
+pub(crate) async fn log_download_403_diagnostics(
     graph: &GraphContext,
     item_id: &str,
     relative_path: &str,
@@ -88,20 +98,7 @@ async fn log_download_403_diagnostics(
         body_client_request_id
     );
 
-    let client = match graph_http_client() {
-        Ok(value) => value,
-        Err(error) => {
-            log::warn!(
-                "{} [cycle:{}] DOWNLOAD_403_DIAGNOSTIC_METADATA_FAILED item_id={} path={} error={}",
-                graph.account_prefix,
-                graph.cycle_id,
-                item_id,
-                relative_path,
-                error
-            );
-            return;
-        }
-    };
+    let client = graph.http.clone();
     let access_token = graph.current_access_token().await;
 
     let metadata_url = format!(

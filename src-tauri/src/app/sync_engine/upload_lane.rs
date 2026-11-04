@@ -1,9 +1,31 @@
-async fn upload_file_by_path(
+use super::*;
+
+/// How an upload may treat an item already at its path in OneDrive.
+#[derive(Debug, Clone)]
+pub(crate) enum UploadTarget {
+    /// A new file: fail if something appeared at the path since the plan.
+    New,
+    /// Replace the synced version; an upload session only proceeds if the
+    /// cloud still holds `base_etag`.
+    Replace { base_etag: Option<String> },
+}
+
+impl UploadTarget {
+    pub(crate) fn conflict_behavior(&self) -> &'static str {
+        match self {
+            Self::New => "fail",
+            Self::Replace { .. } => "replace",
+        }
+    }
+}
+
+pub(crate) async fn upload_file_by_path(
     graph: &mut GraphContext,
     sync_root: &Path,
     relative_path: &str,
+    target: &UploadTarget,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<DriveItemResponse, String> {
+) -> Result<GraphDriveItem, String> {
     ensure_not_cancelled(cancel_flag)?;
     let local_path = sync_root.join(path_to_local(relative_path));
     let metadata = std::fs::metadata(&local_path).map_err(|error| {
@@ -57,6 +79,7 @@ async fn upload_file_by_path(
             graph,
             upload_job_id,
             relative_path,
+            target,
             content,
             content_len,
             transfer_id.as_deref(),
@@ -100,6 +123,7 @@ async fn upload_file_by_path(
         graph,
         upload_job_id,
         relative_path,
+        target,
         &local_path,
         content_len,
         transfer_id.as_deref(),
@@ -139,7 +163,7 @@ async fn upload_file_by_path(
     result
 }
 
-fn sync_upload_counters_from_db(graph: &GraphContext) {
+pub(crate) fn sync_upload_counters_from_db(graph: &GraphContext) {
     match read_upload_job_counters(&graph.profile_id) {
         Ok(counters) => runtime_set_upload_counters(
             &graph.sync_runtime,
@@ -160,24 +184,32 @@ fn sync_upload_counters_from_db(graph: &GraphContext) {
     }
 }
 
-fn resolve_upload_retry_delay(attempt_count: u32) -> Duration {
+pub(crate) fn resolve_upload_retry_delay(attempt_count: u32) -> Duration {
     let exponent = attempt_count.saturating_sub(1).min(10);
     let retry_seconds = 2_u64.saturating_pow(exponent).min(MAX_RETRY_DELAY_SECONDS);
     Duration::from_secs(retry_seconds.max(1))
 }
 
-async fn upload_small_file_simple(
+// the upload needs the job, the path, the target, the bytes and the transfer
+// row; an upload request struct is tracked with the cycle context.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn upload_small_file_simple(
     graph: &mut GraphContext,
     upload_job_id: i64,
     relative_path: &str,
+    target: &UploadTarget,
     content: Vec<u8>,
     content_len: u64,
     transfer_id: Option<&str>,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<DriveItemResponse, String> {
+) -> Result<GraphDriveItem, String> {
     let encoded_path = encode_graph_path(relative_path);
-    let url = format!("{GRAPH_ROOT}/me/drive/root:/{}:/content", encoded_path);
-    let client = graph_http_client()?;
+    let url = format!(
+        "{GRAPH_ROOT}/me/drive/root:/{}:/content?@microsoft.graph.conflictBehavior={}",
+        encoded_path,
+        target.conflict_behavior()
+    );
+    let client = graph.http.clone();
     let mut refreshed = false;
     loop {
         ensure_not_cancelled(cancel_flag)?;
@@ -248,7 +280,7 @@ async fn upload_small_file_simple(
                 relative_path, status, snippet
             ));
         }
-        let parsed = serde_json::from_str::<DriveItemResponse>(&text)
+        let parsed = serde_json::from_str::<GraphDriveItem>(&text)
             .map_err(|error| format!("Failed decoding upload response JSON: {error}"))?;
         let _ = update_upload_job_progress(
             &graph.profile_id,
@@ -282,18 +314,21 @@ async fn upload_small_file_simple(
     }
 }
 
-async fn upload_large_file_session(
+// see upload_small_file_simple.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn upload_large_file_session(
     graph: &mut GraphContext,
     upload_job_id: i64,
     relative_path: &str,
+    target: &UploadTarget,
     local_path: &Path,
     content_len: u64,
     transfer_id: Option<&str>,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<DriveItemResponse, String> {
-    let upload_url = create_upload_session(graph, relative_path, cancel_flag).await?;
+) -> Result<GraphDriveItem, String> {
+    let upload_url = create_upload_session(graph, relative_path, target, cancel_flag).await?;
     let chunk_size = resolve_upload_chunk_bytes();
-    let client = graph_http_client()?;
+    let client = graph.http.clone();
     let mut file = std::fs::File::open(local_path).map_err(|error| {
         format!(
             "Failed opening local upload file '{}': {}",
@@ -396,7 +431,7 @@ async fn upload_large_file_session(
             }
 
             if status.is_success() {
-                let parsed = serde_json::from_str::<DriveItemResponse>(&text).map_err(|error| {
+                let parsed = serde_json::from_str::<GraphDriveItem>(&text).map_err(|error| {
                     format!("Failed decoding upload-session completion response JSON: {error}")
                 })?;
                 let _ = update_upload_job_progress(
@@ -452,9 +487,12 @@ async fn upload_large_file_session(
     ))
 }
 
-async fn create_upload_session(
+/// Starts an upload session. `If-Match` is sent only here (never on chunk
+/// uploads, where the eTag changes as the session runs).
+pub(crate) async fn create_upload_session(
     graph: &mut GraphContext,
     relative_path: &str,
+    target: &UploadTarget,
     cancel_flag: &Arc<AtomicBool>,
 ) -> Result<String, String> {
     let encoded_path = encode_graph_path(relative_path);
@@ -464,10 +502,14 @@ async fn create_upload_session(
     );
     let payload = serde_json::json!({
         "item": {
-            "@microsoft.graph.conflictBehavior": "replace"
+            "@microsoft.graph.conflictBehavior": target.conflict_behavior()
         }
     });
-    let client = graph_http_client()?;
+    let if_match = match target {
+        UploadTarget::Replace { base_etag } => base_etag.clone(),
+        UploadTarget::New => None,
+    };
+    let client = graph.http.clone();
     let mut refreshed = false;
 
     loop {
@@ -478,11 +520,14 @@ async fn create_upload_session(
             _ = wait_for_cancellation(Arc::clone(cancel_flag)) => {
                 return Err(SYNC_CANCELLED_ERROR.to_string());
             }
-            value = client
-                .post(&url)
-                .bearer_auth(&access_token)
-                .json(&payload)
-                .send() => {
+            value = {
+                let request = client.post(&url).bearer_auth(&access_token).json(&payload);
+                let request = match if_match.as_deref() {
+                    Some(etag) => request.header(reqwest::header::IF_MATCH, etag),
+                    None => request,
+                };
+                request.send()
+            } => {
                 value.map_err(|error| format!("Create upload session request failed: {error}"))?
             }
         };
@@ -499,7 +544,8 @@ async fn create_upload_session(
             continue;
         }
         if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
-            let delay = parse_retry_after_delay(response.headers()).unwrap_or_else(|| Duration::from_secs(2));
+            let delay = parse_retry_after_delay(response.headers())
+                .unwrap_or_else(|| Duration::from_secs(2));
             if status == StatusCode::TOO_MANY_REQUESTS {
                 let _ = record_throttle_event(&graph.profile_id, UPLOAD_JOB_DIRECTION);
                 graph.extend_throttle_window(delay)?;
@@ -528,8 +574,9 @@ async fn create_upload_session(
             ));
         }
 
-        let session = serde_json::from_str::<UploadSessionResponse>(&text)
-            .map_err(|error| format!("Failed decoding create upload session response JSON: {error}"))?;
+        let session = serde_json::from_str::<UploadSessionResponse>(&text).map_err(|error| {
+            format!("Failed decoding create upload session response JSON: {error}")
+        })?;
         return Ok(session.upload_url);
     }
 }

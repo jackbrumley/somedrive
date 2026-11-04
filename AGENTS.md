@@ -110,10 +110,13 @@ comment saying why; dead code is deleted, not silenced.
 - `app/session_log.rs` is the `log` backend (see Variations for the log
   files); `app/system_info.rs` builds the log header and the System info
   block.
-- `app/sync_engine.rs` assembles the sync engine from the files in
-  `app/sync_engine/` (`include!`d into one module): cycle orchestration,
-  remote delta pipeline, download/upload lanes, planner and job queue, all
-  backed by each account's SQLite `sync_jobs.db`.
+- `app/sync_engine.rs` declares the sync engine's modules in
+  `app/sync_engine/` (one module per file, sharing the imports declared in
+  `sync_engine.rs` through `use super::*`): cycle orchestration, the cloud
+  change pipeline, download and upload lanes, the baseline planner
+  (`docs/sync-engine.md`) and the job queue, all backed by each account's
+  SQLite `sync_jobs.db`. `app/auth.rs` and `app/commands/accounts.rs` follow
+  the same layout.
 - `app/sync_runtime.rs` holds the live per-account status the UI renders,
   emitted as `sync-status` events.
 - `app/tray/` and `app/shutdown.rs` are the app shell and the single exit

@@ -1,12 +1,14 @@
-async fn run_local_scan_with_runtime_updates(
+use super::*;
+
+pub(crate) async fn run_local_scan_with_runtime_updates(
     account_prefix: &str,
     cycle_id: &str,
     sync_runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     sync_root: &Path,
-    estimated_total: Option<usize>,
+    exclusions: Arc<ExclusionRules>,
     cancel_flag: &Arc<AtomicBool>,
-) -> Result<HashMap<String, LocalSnapshotEntry>, String> {
+) -> Result<HashMap<String, LocalEntry>, String> {
     use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering as AtomicOrdering};
     use std::sync::Mutex;
 
@@ -20,9 +22,10 @@ async fn run_local_scan_with_runtime_updates(
     let sync_root_owned = sync_root.to_path_buf();
 
     let mut scan_handle = tauri::async_runtime::spawn_blocking(move || {
-        collect_local_snapshot_with_progress(&sync_root_owned, |relative_path| {
+        collect_local_snapshot_with_progress(&sync_root_owned, &exclusions, |relative_path| {
             thread_scanned_count.fetch_add(1, AtomicOrdering::Relaxed);
-            thread_last_progress_unix.store(chrono::Utc::now().timestamp(), AtomicOrdering::Relaxed);
+            thread_last_progress_unix
+                .store(chrono::Utc::now().timestamp(), AtomicOrdering::Relaxed);
             if let Ok(mut value) = thread_current_path.lock() {
                 *value = Some(relative_path.to_string());
             }
@@ -39,7 +42,7 @@ async fn run_local_scan_with_runtime_updates(
         cycle_id,
         sync_root.display()
     );
-    runtime_set_local_scan_progress(sync_runtime, profile_id, 0, estimated_total, None, Some(cycle_id));
+    runtime_set_local_scan_progress(sync_runtime, profile_id, 0, None, None, Some(cycle_id));
 
     loop {
         ensure_not_cancelled(cancel_flag)?;
@@ -76,7 +79,7 @@ async fn run_local_scan_with_runtime_updates(
                         sync_runtime,
                         profile_id,
                         scanned,
-                        estimated_total,
+                        None,
                         path.as_deref(),
                         Some(cycle_id),
                     );
@@ -125,230 +128,13 @@ async fn run_local_scan_with_runtime_updates(
     }
 }
 
-fn rebuild_sync_file_index(
-    sync_runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
-    profile_id: &str,
-    sync_state: &PersistedSyncState,
-    local_snapshot: &HashMap<String, LocalSnapshotEntry>,
-    account_prefix: &str,
-    cycle_id: &str,
-) -> Result<(), String> {
-    let connection = open_sync_jobs_connection(profile_id)?;
-    let transaction = connection
-        .unchecked_transaction()
-        .map_err(|error| format!("Failed opening sync index transaction: {error}"))?;
-
-    let now = current_unix_seconds();
-    transaction
-        .execute(
-            "UPDATE sync_files
-             SET remote_present = 0,
-                 local_present = 0,
-                 updated_at = ?2
-             WHERE profile_id = ?1",
-            params![profile_id, now],
-        )
-        .map_err(|error| format!("Failed preparing sync file index refresh: {error}"))?;
-    let mut remote_statement = transaction
-        .prepare(
-            "INSERT INTO sync_files (
-                profile_id, path, is_dir, is_shared_reference, shared_drive_id, shared_item_id, shared_kind, remote_item_id,
-                remote_present, local_present,
-                remote_size, local_size,
-                remote_modified_ts, local_modified_ts,
-                desired_action, conflict_state, updated_at
-             ) VALUES (
-                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8,
-                1, 0,
-                ?9, 0,
-                ?10, 0,
-                'none', NULL, ?11
-             )
-             ON CONFLICT(profile_id, path)
-             DO UPDATE SET
-                 is_dir = excluded.is_dir,
-                 is_shared_reference = excluded.is_shared_reference,
-                 shared_drive_id = excluded.shared_drive_id,
-                 shared_item_id = excluded.shared_item_id,
-                 shared_kind = excluded.shared_kind,
-                 remote_item_id = excluded.remote_item_id,
-                 remote_present = 1,
-                 remote_size = excluded.remote_size,
-                remote_modified_ts = excluded.remote_modified_ts,
-                updated_at = excluded.updated_at",
-        )
-        .map_err(|error| format!("Failed preparing remote sync file upsert: {error}"))?;
-
-    let mut local_statement = transaction
-        .prepare(
-            "INSERT INTO sync_files (
-                profile_id, path, is_dir, is_shared_reference, shared_drive_id, shared_item_id, shared_kind, remote_item_id,
-                remote_present, local_present,
-                remote_size, local_size,
-                remote_modified_ts, local_modified_ts,
-                desired_action, conflict_state, updated_at
-             ) VALUES (
-                ?1, ?2, ?3, 0, NULL, NULL, NULL, NULL,
-                0, 1,
-                0, ?4,
-                0, ?5,
-                'none', NULL, ?6
-             )
-             ON CONFLICT(profile_id, path)
-             DO UPDATE SET
-                is_dir = excluded.is_dir,
-                local_present = 1,
-                local_size = excluded.local_size,
-                local_modified_ts = excluded.local_modified_ts,
-                updated_at = excluded.updated_at",
-        )
-        .map_err(|error| format!("Failed preparing local sync file upsert: {error}"))?;
-
-    let total_entries = sync_state
-        .remote_by_id
-        .len()
-        .saturating_add(local_snapshot.len());
-    let mut processed_entries = 0_usize;
-    let mut last_progress_emit_at = std::time::Instant::now();
-
-    runtime_set_current_activity(
-        sync_runtime,
-        profile_id,
-        "building_index",
-        "determinate",
-        Some(0),
-        Some(total_entries),
-        Some("entries"),
-        Some("Indexing remote snapshot"),
-        Some(cycle_id),
-    );
-
-    for remote_item in sync_state.remote_by_id.values() {
-        remote_statement
-            .execute(params![
-                profile_id,
-                remote_item.path,
-                if remote_item.is_dir { 1 } else { 0 },
-                if remote_item.is_shared_reference { 1 } else { 0 },
-                remote_item.shared_drive_id.as_deref(),
-                remote_item.shared_item_id.as_deref(),
-                remote_item.shared_kind.as_deref(),
-                remote_item.id,
-                remote_item.size as i64,
-                remote_item.modified_ts,
-                now,
-            ])
-            .map_err(|error| format!("Failed upserting remote sync file row: {error}"))?;
-        processed_entries = processed_entries.saturating_add(1);
-        if processed_entries.is_multiple_of(250) || last_progress_emit_at.elapsed() >= Duration::from_millis(600) {
-            runtime_set_current_activity(
-                sync_runtime,
-                profile_id,
-                "building_index",
-                "determinate",
-                Some(processed_entries),
-                Some(total_entries),
-                Some("entries"),
-                Some("Indexing remote snapshot"),
-                Some(cycle_id),
-            );
-            log::info!(
-                "{} [cycle:{}] INDEX_PROGRESS phase=remote current={} total={}",
-                account_prefix,
-                cycle_id,
-                processed_entries,
-                total_entries
-            );
-            last_progress_emit_at = std::time::Instant::now();
-        }
-    }
-
-    runtime_set_current_activity(
-        sync_runtime,
-        profile_id,
-        "building_index",
-        "determinate",
-        Some(processed_entries),
-        Some(total_entries),
-        Some("entries"),
-        Some("Indexing local snapshot"),
-        Some(cycle_id),
-    );
-
-    for (path, local_entry) in local_snapshot {
-        local_statement
-            .execute(params![
-                profile_id,
-                path,
-                if local_entry.is_dir { 1 } else { 0 },
-                local_entry.size as i64,
-                local_entry.modified_ts,
-                now,
-            ])
-            .map_err(|error| format!("Failed upserting local sync file row: {error}"))?;
-        processed_entries = processed_entries.saturating_add(1);
-        if processed_entries.is_multiple_of(250) || last_progress_emit_at.elapsed() >= Duration::from_millis(600) {
-            runtime_set_current_activity(
-                sync_runtime,
-                profile_id,
-                "building_index",
-                "determinate",
-                Some(processed_entries),
-                Some(total_entries),
-                Some("entries"),
-                Some("Indexing local snapshot"),
-                Some(cycle_id),
-            );
-            log::info!(
-                "{} [cycle:{}] INDEX_PROGRESS phase=local current={} total={}",
-                account_prefix,
-                cycle_id,
-                processed_entries,
-                total_entries
-            );
-            last_progress_emit_at = std::time::Instant::now();
-        }
-    }
-
-    drop(remote_statement);
-    drop(local_statement);
-
-    transaction
-        .execute(
-            "DELETE FROM sync_files
-             WHERE profile_id = ?1
-               AND remote_present = 0
-               AND local_present = 0",
-            params![profile_id],
-        )
-        .map_err(|error| format!("Failed cleaning stale sync file rows: {error}"))?;
-
-    transaction
-        .commit()
-        .map_err(|error| format!("Failed committing sync index transaction: {error}"))?;
-
-    runtime_set_current_activity(
-        sync_runtime,
-        profile_id,
-        "building_index",
-        "determinate",
-        Some(processed_entries),
-        Some(total_entries),
-        Some("entries"),
-        Some("Index rebuild complete"),
-        Some(cycle_id),
-    );
-
-    Ok(())
-}
-
-fn new_cycle_id() -> String {
+pub(crate) fn new_cycle_id() -> String {
     let nanos = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
     let pid = std::process::id();
     format!("{}-{}", nanos, pid)
 }
 
-fn remaining_until_next_cycle(profile_id: &str, interval: Duration) -> Option<Duration> {
+pub(crate) fn remaining_until_next_cycle(profile_id: &str, interval: Duration) -> Option<Duration> {
     let lifecycle_state = read_sync_lifecycle_operational_state(profile_id).ok()?;
     let last_cycle_at = lifecycle_state.last_cycle_at?;
     let timestamp = chrono::DateTime::parse_from_rfc3339(&last_cycle_at).ok()?;
@@ -363,7 +149,7 @@ fn remaining_until_next_cycle(profile_id: &str, interval: Duration) -> Option<Du
     Some(interval - elapsed_duration)
 }
 
-fn load_syncable_profile(
+pub(crate) fn load_syncable_profile(
     profiles_lock: &Arc<std::sync::Mutex<()>>,
     profile_id: &str,
 ) -> Result<AccountProfile, String> {
@@ -384,7 +170,7 @@ fn load_syncable_profile(
     Ok(profile)
 }
 
-fn update_profile_last_sync(
+pub(crate) fn update_profile_last_sync(
     profiles_lock: &Arc<std::sync::Mutex<()>>,
     profile_id: &str,
 ) -> Result<(), String> {

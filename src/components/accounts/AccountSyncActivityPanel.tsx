@@ -1,10 +1,13 @@
-import type { SyncRuntimeAccountStatus } from "../../types/somedrive";
+import type { ConflictResolution, SyncProblem, SyncRuntimeAccountStatus } from "../../types/somedrive";
+import { useSyncProblems } from "../../hooks/useSyncProblems";
+import { AccountSyncProblems } from "./AccountSyncProblems";
 import { useTransferRates } from "../../hooks/useTransferRates";
 import { AccountSyncActivityList } from "./AccountSyncActivityList";
 import { AccountSyncIssues } from "./AccountSyncIssues";
 import { AccountSyncOverview } from "./AccountSyncOverview";
 
 interface AccountSyncActivityPanelProps {
+  accountId: string;
   runtimeStatus: SyncRuntimeAccountStatus | null;
   hasCompletedInitialSync: boolean;
   issueMessage: string | null;
@@ -22,6 +25,8 @@ interface AccountSyncActivityPanelProps {
   onKeepCloudFiles: () => Promise<void>;
   largeDeletePreviewPaths: string[];
   onExportLargeDeletePreview: () => Promise<void>;
+  onFetchSyncProblems: (accountId: string) => Promise<SyncProblem[]>;
+  onResolveSyncConflicts: (accountId: string, paths: string[], resolution: ConflictResolution) => Promise<void>;
 }
 
 /**
@@ -30,6 +35,7 @@ interface AccountSyncActivityPanelProps {
  * counters, retry queues) lives on the Debug Tools page.
  */
 export function AccountSyncActivityPanel({
+  accountId,
   runtimeStatus,
   hasCompletedInitialSync,
   issueMessage,
@@ -47,8 +53,15 @@ export function AccountSyncActivityPanel({
   onKeepCloudFiles,
   largeDeletePreviewPaths,
   onExportLargeDeletePreview,
+  onFetchSyncProblems,
+  onResolveSyncConflicts,
 }: AccountSyncActivityPanelProps) {
   const rates = useTransferRates(runtimeStatus);
+  const { problems, resolve } = useSyncProblems(accountId, runtimeStatus?.updatedAt, {
+    fetchProblems: onFetchSyncProblems,
+    resolveConflicts: onResolveSyncConflicts,
+  });
+  const openConflictCount = problems.filter((problem) => problem.isConflict && problem.resolution === null).length;
   return (
     <div class="sync-panel" role="region" aria-label="Sync status">
       <AccountSyncOverview
@@ -56,6 +69,7 @@ export function AccountSyncActivityPanel({
         hasCompletedInitialSync={hasCompletedInitialSync}
         downloadBytesPerSecond={rates.downloadBytesPerSecond}
         uploadBytesPerSecond={rates.uploadBytesPerSecond}
+        openConflictCount={openConflictCount}
       />
       <AccountSyncIssues
         issueMessage={issueMessage}
@@ -63,20 +77,30 @@ export function AccountSyncActivityPanel({
         issueActions={issueActions}
         issuePath={issuePath}
         issueSecondaryPath={issueSecondaryPath}
-        recentFailed={runtimeStatus?.recentFailed ?? []}
         largeDeletePreviewPaths={largeDeletePreviewPaths}
         onOpenItemFolder={onOpenItemFolder}
         onOpenSyncRootFolder={onOpenSyncRootFolder}
         onReauthenticate={onReauthenticate}
         onRetrySync={onRetrySync}
-        onRetryFailedDownload={onRetryFailedDownload}
-        onRetryAllFailedDownloads={onRetryAllFailedDownloads}
         onConfirmLargeDelete={onConfirmLargeDelete}
         onKeepCloudFiles={onKeepCloudFiles}
         onExportLargeDeletePreview={onExportLargeDeletePreview}
       />
       {runtimeStatus?.authReady !== false && (
-        <AccountSyncActivityList runtimeStatus={runtimeStatus} onOpenItemFolder={onOpenItemFolder} />
+        <AccountSyncActivityList
+          runtimeStatus={runtimeStatus}
+          problemCount={problems.length}
+          problems={
+            <AccountSyncProblems
+              problems={problems}
+              onResolve={resolve}
+              onRetryFailedDownload={onRetryFailedDownload}
+              onRetryAllFailedDownloads={onRetryAllFailedDownloads}
+              onOpenItemFolder={onOpenItemFolder}
+            />
+          }
+          onOpenItemFolder={onOpenItemFolder}
+        />
       )}
     </div>
   );
