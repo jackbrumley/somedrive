@@ -26,7 +26,7 @@ pub(crate) async fn download_remote_item_content(
     );
     let url = format!("{GRAPH_ROOT}/me/drive/items/{}/content", item_id);
     let graph_client = graph.http_no_redirect.clone();
-    let content_client = graph.http.clone();
+    let content_client = graph.content_http.clone();
     let download_request_timeout = compute_download_request_timeout(Some(version.size));
     log::info!(
         "{} [cycle:{}] DOWNLOAD_TIMEOUT_POLICY path={} known_size_bytes={} timeout_seconds={}",

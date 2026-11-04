@@ -207,14 +207,6 @@ pub(crate) fn current_unix_seconds() -> i64 {
     chrono::Utc::now().timestamp()
 }
 
-pub(crate) fn graph_http_client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
-        .connect_timeout(resolve_connect_timeout())
-        .timeout(resolve_request_timeout())
-        .build()
-        .map_err(|error| format!("Failed creating Graph HTTP client: {error}"))
-}
-
 pub(crate) fn parse_retry_after_delay(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
     let retry_after = headers.get(reqwest::header::RETRY_AFTER)?;
     let text = retry_after.to_str().ok()?.trim();

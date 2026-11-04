@@ -1,14 +1,5 @@
 use super::*;
 
-pub(crate) fn graph_http_client_no_redirect() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
-        .connect_timeout(resolve_connect_timeout())
-        .timeout(resolve_request_timeout())
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|error| format!("Failed creating no-redirect Graph HTTP client: {error}"))
-}
-
 // the transfer needs the job, the item, the planned version and the target;
 // a download request struct is tracked with the cycle context in docs/TODO.md.
 pub(crate) async fn create_remote_folder(
