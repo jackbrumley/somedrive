@@ -33,7 +33,7 @@ review, 2026-11-04). Design: `docs/sync-engine.md`. Built on branch
    their text (`classify_sync_issue`).
 10. [x] Replace the `include!` modules in `app/sync_engine.rs` and
     `app/auth.rs` with real Rust modules.
-11. [ ] Split the files over the 600-line soft budget
+11. [x] Split the files over the 600-line soft budget
     (`npm run check:structure` lists them).
 
 ### Project-owned Microsoft Entra app registration
@@ -87,5 +87,3 @@ SomeDrive must not ship with a third-party client ID.
 
 - Show only the relevant tray item (Pause all or Resume all syncing) by
   rebuilding the tray menu when sync state changes.
-- Split the remaining files over the 1000-line budget (see the allowlist in
-  `scripts/check-file-lines.mjs`).
