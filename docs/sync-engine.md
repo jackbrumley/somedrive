@@ -228,12 +228,18 @@ Removing the rule brings it back under normal sync.
 Downloads are the bulk of a first sync, so the download path avoids repeated
 setup work:
 
-- **Shared HTTP clients:** one client per cycle (HTTP/2, keep-alive), so
-  connections and TLS sessions are reused instead of opened per file.
-- **Direct download links:** the change feed's
-  `@microsoft.graph.downloadUrl` is stored with the item and used while it is
-  under 50 minutes old, skipping one Graph request per file. A link refused
-  with 401/403/404/410 falls back to the normal Graph download.
+- **Shared HTTP clients:** built once per cycle, so connections and TLS
+  sessions are reused instead of opened per file. Graph API requests use
+  HTTP/2 (small requests multiplexed on one connection). File contents use a
+  separate HTTP/1.1 client with one connection per transfer: over HTTP/2 all
+  parallel downloads shared one connection's flow-control window, which held
+  32 downloads to about 2 MB/s combined on a 57 MB/s line.
+- **Direct download links:** when the change feed includes
+  `@microsoft.graph.downloadUrl`, it is stored with the item and used while
+  it is under 50 minutes old, skipping one Graph request per file. A link
+  refused with 401/403/404/410 falls back to the normal Graph download.
+  Microsoft did not include these links in the change feed for the personal
+  account tested (2026-11-04), so there every download goes through Graph.
 - **Connection pool:** each account reuses its SQLite connections; a
   connection returned inside an open transaction is dropped, never reused.
 - **Folder flush per batch:** a downloaded file's folder is flushed once per

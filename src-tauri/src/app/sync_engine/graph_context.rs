@@ -22,6 +22,8 @@ pub(crate) struct GraphContext {
     /// (and TLS sessions) are reused instead of opened per file.
     pub(crate) http: reqwest::Client,
     pub(crate) http_no_redirect: reqwest::Client,
+    /// File contents (downloads and uploads), one connection per transfer.
+    pub(crate) content_http: reqwest::Client,
     /// Folders that received a downloaded file since the last flush. They
     /// are flushed to disk before those downloads are recorded as synced.
     pub(crate) pending_dir_syncs: Arc<std::sync::Mutex<HashSet<PathBuf>>>,

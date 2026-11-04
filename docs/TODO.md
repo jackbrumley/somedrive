@@ -38,6 +38,10 @@ review, 2026-11-04). Design: `docs/sync-engine.md`. Built on branch
 12. [x] Download throughput (`docs/sync-engine.md` section 7a): shared HTTP
     clients, direct download links, SQLite connection reuse, one folder
     flush per batch, adaptive concurrency and a large-file lane.
+13. [ ] Polish found in the first real sync: show a OneNote notebook as one
+    informational line instead of a sync problem per section; the 403
+    diagnostics (item metadata and permissions look-ups) are refused with 401
+    InvalidAuthenticationToken, so they explain nothing.
 
 ### Project-owned Microsoft Entra app registration
 SomeDrive must not ship with a third-party client ID.

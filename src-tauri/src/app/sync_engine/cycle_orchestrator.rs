@@ -46,6 +46,7 @@ pub(crate) async fn tick_sync_cycle(
         exclusions: Arc::new(ExclusionRules::load()?),
         http: graph_http_client()?,
         http_no_redirect: graph_http_client_no_redirect()?,
+        content_http: content_http_client()?,
         pending_dir_syncs: Arc::new(std::sync::Mutex::new(HashSet::new())),
         download_limit: Arc::new(AdaptiveDownloadLimit::new(resolve_download_concurrency())),
     };
