@@ -375,6 +375,7 @@
 .sync-activity-size {
   flex: none;
   width: 150px;
+  min-width: 0;
   margin-left: auto;
   display: grid;
   justify-items: end;
@@ -411,7 +412,21 @@
 }
 
 .sync-activity-state.is-deleted {
-  color: var(--text-muted);
+  color: var(--danger);
+}
+
+/* Two short lines (what happened, then when), clipped so a long label can
+   never run under the state icon. */
+.sync-activity-detail,
+.sync-activity-when {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-activity-when {
+  color: var(--text-faint);
 }
 
 .sync-activity-state.is-failed {
