@@ -330,12 +330,12 @@ fn download_retrying_in_place_stays_claimed_by_its_worker() {
         None,
     );
 
-    let claimed = claim_download_jobs(&profile_id, "cycle-1", 10).expect("claim job");
+    let claimed = claim_download_jobs(&profile_id, "cycle-1", 10, 10).expect("claim job");
     assert_eq!(claimed.len(), 1);
     record_download_job_retrying_in_place(&profile_id, claimed[0].job_id, "stream reset")
         .expect("record in-place retry");
 
-    let second_claim = claim_download_jobs(&profile_id, "cycle-1", 10).expect("claim again");
+    let second_claim = claim_download_jobs(&profile_id, "cycle-1", 10, 10).expect("claim again");
     assert!(
         second_claim.is_empty(),
         "a job being retried in place must not be handed to a second worker"
@@ -375,7 +375,7 @@ fn multi_cycle_download_claims_progress_queued_and_retry_wait_jobs() {
     );
 
     let first_cycle_claimed =
-        claim_download_jobs(&profile_id, "cycle-1", 10).expect("claim first cycle jobs");
+        claim_download_jobs(&profile_id, "cycle-1", 10, 10).expect("claim first cycle jobs");
     assert_eq!(first_cycle_claimed.len(), 2);
 
     for job in &first_cycle_claimed {
@@ -404,7 +404,7 @@ fn multi_cycle_download_claims_progress_queued_and_retry_wait_jobs() {
         .expect("expire retry-future job for second cycle");
 
     let second_cycle_claimed =
-        claim_download_jobs(&profile_id, "cycle-2", 10).expect("claim second cycle jobs");
+        claim_download_jobs(&profile_id, "cycle-2", 10, 10).expect("claim second cycle jobs");
     assert_eq!(second_cycle_claimed.len(), 1);
     assert_eq!(second_cycle_claimed[0].item_id, "retry-future");
 
@@ -532,4 +532,58 @@ fn pooled_connections_are_reused_but_never_inside_a_transaction() {
         )
         .expect("count");
     assert_eq!(events, 0, "the abandoned transaction was rolled back");
+}
+
+#[test]
+fn large_files_hold_only_their_lane_while_small_files_wait() {
+    let profile_id = test_profile_id("download-lanes");
+    clear_profile_rows(&profile_id);
+    let large = LARGE_DOWNLOAD_BYTES;
+    for index in 0..4 {
+        upsert_download_job(
+            &profile_id,
+            &format!("big-{index}"),
+            &format!("big-{index}.mkv"),
+            large,
+            1,
+        )
+        .expect("queue large");
+    }
+    for index in 0..6 {
+        upsert_download_job(
+            &profile_id,
+            &format!("small-{index}"),
+            &format!("small-{index}.txt"),
+            10,
+            1,
+        )
+        .expect("queue small");
+    }
+
+    let first = claim_download_jobs(&profile_id, "cycle-1", 4, 1).expect("claim");
+    let first_large = first
+        .iter()
+        .filter(|job| job.item_id.starts_with("big-"))
+        .count();
+    assert_eq!(first.len(), 4);
+    assert_eq!(first_large, 1, "one large slot, the rest go to small files");
+
+    let second = claim_download_jobs(&profile_id, "cycle-1", 4, 1).expect("claim");
+    let second_small = second
+        .iter()
+        .filter(|job| job.item_id.starts_with("small-"))
+        .count();
+    assert_eq!(
+        second_small, 3,
+        "small files first while the large lane is full"
+    );
+    assert_eq!(
+        second.len(),
+        4,
+        "the slot no small file needs goes to a large file"
+    );
+    let third = claim_download_jobs(&profile_id, "cycle-1", 4, 1).expect("claim");
+    assert_eq!(third.len(), 2);
+    assert!(third.iter().all(|job| job.item_id.starts_with("big-")));
+    clear_profile_rows(&profile_id);
 }

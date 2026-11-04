@@ -11,7 +11,7 @@ pub(crate) async fn fetch_and_apply_delta_changes(
 ) -> SyncResult<()> {
     let delta_page_queue_capacity = resolve_delta_page_queue_capacity();
     let download_queue_capacity = resolve_download_queue_capacity();
-    let download_concurrency = resolve_download_concurrency();
+    let download_concurrency = graph.download_limit.maximum();
 
     runtime_set_phase(
         &graph.sync_runtime,
@@ -22,11 +22,12 @@ pub(crate) async fn fetch_and_apply_delta_changes(
     runtime_set_remote_scan_complete(&graph.sync_runtime, &graph.profile_id, false);
     runtime_set_remote_download_counters(&graph.sync_runtime, &graph.profile_id, 0, 0, 0, 0, 0);
     log::info!(
-        "{} [cycle:{}] REMOTE_PIPELINE_START delta_queue_capacity={} download_queue_capacity={} download_concurrency={}",
+        "{} [cycle:{}] REMOTE_PIPELINE_START delta_queue_capacity={} download_queue_capacity={} download_limit_start={} download_limit_max={}",
         graph.account_prefix,
         graph.cycle_id,
         delta_page_queue_capacity,
         download_queue_capacity,
+        graph.download_limit.current(),
         download_concurrency
     );
 
@@ -90,7 +91,6 @@ pub(crate) async fn fetch_and_apply_delta_changes(
     spawn_remote_download_dispatcher(
         graph,
         sync_root,
-        download_concurrency,
         Arc::clone(&pending_download_count),
         dispatcher_stop_flag,
         dispatcher_download_tx,

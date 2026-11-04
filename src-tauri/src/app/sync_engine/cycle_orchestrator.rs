@@ -47,6 +47,7 @@ pub(crate) async fn tick_sync_cycle(
         http: graph_http_client()?,
         http_no_redirect: graph_http_client_no_redirect()?,
         pending_dir_syncs: Arc::new(std::sync::Mutex::new(HashSet::new())),
+        download_limit: Arc::new(AdaptiveDownloadLimit::new(resolve_download_concurrency())),
     };
     let mut stats = SyncCycleStats {
         account_prefix: account_prefix.clone(),

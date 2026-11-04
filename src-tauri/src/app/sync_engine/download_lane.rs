@@ -28,7 +28,12 @@ pub(crate) async fn dispatch_claimed_download_jobs(
         return Ok(0);
     }
 
-    let claimed = claim_download_jobs(&graph.profile_id, &graph.cycle_id, available_slots)?;
+    let claimed = claim_download_jobs(
+        &graph.profile_id,
+        &graph.cycle_id,
+        available_slots,
+        graph.download_limit.large_download_slots(),
+    )?;
     if claimed.is_empty() {
         return Ok(0);
     }
@@ -194,6 +199,7 @@ pub(crate) fn apply_remote_download_result(
         RemoteDownloadResultStatus::Success(RemoteDownloadOutcome::Downloaded(entry)) => {
             commit_baseline(&graph.profile_id, &result.path, &result.version, &entry)?;
             mark_download_job_done(&graph.profile_id, result.job_id, false)?;
+            graph.record_download_success();
             runtime_record_remote_download_completed(
                 &graph.sync_runtime,
                 &graph.profile_id,

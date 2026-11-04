@@ -25,6 +25,8 @@ pub(crate) struct GraphContext {
     /// Folders that received a downloaded file since the last flush. They
     /// are flushed to disk before those downloads are recorded as synced.
     pub(crate) pending_dir_syncs: Arc<std::sync::Mutex<HashSet<PathBuf>>>,
+    /// How many downloads may run at once right now (adapts to throttling).
+    pub(crate) download_limit: Arc<AdaptiveDownloadLimit>,
 }
 
 impl GraphContext {
@@ -96,7 +98,31 @@ impl GraphContext {
                 retry_after.as_millis()
             );
         }
+        drop(throttled_until);
+        if let Some(change) = self.download_limit.record_throttle() {
+            log::warn!(
+                "{} [cycle:{}] DOWNLOAD_LIMIT_LOWERED from={} to={} reason=throttled",
+                self.account_prefix,
+                self.cycle_id,
+                change.from,
+                change.to
+            );
+        }
         Ok(())
+    }
+
+    /// Records a finished download, letting the download limit grow.
+    pub(crate) fn record_download_success(&self) {
+        if let Some(change) = self.download_limit.record_success() {
+            log::info!(
+                "{} [cycle:{}] DOWNLOAD_LIMIT_RAISED from={} to={} maximum={}",
+                self.account_prefix,
+                self.cycle_id,
+                change.from,
+                change.to,
+                self.download_limit.maximum()
+            );
+        }
     }
 
     pub(crate) async fn refresh_token_if_needed(

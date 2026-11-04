@@ -81,10 +81,16 @@ pub(crate) fn upsert_download_job(
     Ok(false)
 }
 
+/// Claims up to `max_jobs` queued downloads, oldest first, in two lanes:
+/// files of `LARGE_DOWNLOAD_BYTES` or more may hold at most
+/// `large_file_slots` running downloads while smaller files are waiting, so
+/// a few big videos cannot stall thousands of documents. Slots no small file
+/// needs go to large files.
 pub(crate) fn claim_download_jobs(
     profile_id: &str,
     lease_owner: &str,
     max_jobs: usize,
+    large_file_slots: usize,
 ) -> Result<Vec<ClaimedDownloadJob>, String> {
     if max_jobs == 0 {
         return Ok(Vec::new());
@@ -123,44 +129,51 @@ pub(crate) fn claim_download_jobs(
         )
         .map_err(|error| format!("Failed recovering stale in-progress download jobs: {error}"))?;
 
-    let mut statement = transaction
-        .prepare(
-            "SELECT id, item_id, path
-             FROM sync_jobs
-             WHERE profile_id = ?1
-               AND direction = ?2
-               AND state IN (?3, ?4)
-               AND (next_retry_at IS NULL OR next_retry_at <= ?5)
-             ORDER BY created_at ASC
-             LIMIT ?6",
-        )
-        .map_err(|error| format!("Failed preparing download claim query: {error}"))?;
-
-    let mut jobs: Vec<ClaimedDownloadJob> = Vec::new();
-    let rows = statement
-        .query_map(
+    let large_in_flight: i64 = transaction
+        .query_row(
+            "SELECT COUNT(1) FROM sync_jobs
+             WHERE profile_id = ?1 AND direction = ?2 AND state = ?3 AND remote_size >= ?4",
             params![
                 profile_id,
                 DOWNLOAD_JOB_DIRECTION,
-                DOWNLOAD_JOB_STATE_QUEUED,
-                DOWNLOAD_JOB_STATE_RETRY_WAIT,
-                now,
-                max_jobs as i64,
+                DOWNLOAD_JOB_STATE_IN_PROGRESS,
+                LARGE_DOWNLOAD_BYTES as i64,
             ],
-            |row| {
-                Ok(ClaimedDownloadJob {
-                    job_id: row.get(0)?,
-                    item_id: row.get(1)?,
-                    path: row.get(2)?,
-                })
-            },
+            |row| row.get(0),
         )
-        .map_err(|error| format!("Failed executing download claim query: {error}"))?;
+        .map_err(|error| format!("Failed counting running large downloads: {error}"))?;
+    let large_allowance = large_file_slots
+        .saturating_sub(usize::try_from(large_in_flight).unwrap_or(usize::MAX))
+        .min(max_jobs);
 
-    for row in rows {
-        jobs.push(row.map_err(|error| format!("Failed reading claimed download job: {error}"))?);
-    }
-    drop(statement);
+    let mut jobs = select_claimable_downloads(
+        &transaction,
+        profile_id,
+        now,
+        DownloadLane::Large,
+        large_allowance,
+        0,
+    )?;
+    let small = select_claimable_downloads(
+        &transaction,
+        profile_id,
+        now,
+        DownloadLane::Small,
+        max_jobs - jobs.len(),
+        0,
+    )?;
+    let large_claimed = jobs.len();
+    jobs.extend(small);
+    let idle_slots = max_jobs - jobs.len();
+    let spare_large = select_claimable_downloads(
+        &transaction,
+        profile_id,
+        now,
+        DownloadLane::Large,
+        idle_slots,
+        large_claimed,
+    )?;
+    jobs.extend(spare_large);
 
     for job in &jobs {
         transaction
@@ -487,4 +500,65 @@ pub(crate) fn query_download_job_counters(
             },
         )
         .map_err(|error| format!("Failed reading download counters: {error}"))
+}
+
+#[derive(Clone, Copy)]
+enum DownloadLane {
+    Small,
+    Large,
+}
+
+/// Queued downloads of one lane that may start now, oldest first, skipping
+/// the first `skip` (already taken by this claim).
+fn select_claimable_downloads(
+    transaction: &rusqlite::Transaction<'_>,
+    profile_id: &str,
+    now: i64,
+    lane: DownloadLane,
+    limit: usize,
+    skip: usize,
+) -> Result<Vec<ClaimedDownloadJob>, String> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    let size_condition = match lane {
+        DownloadLane::Small => "remote_size < ?6",
+        DownloadLane::Large => "remote_size >= ?6",
+    };
+    let mut statement = transaction
+        .prepare(&format!(
+            "SELECT id, item_id, path
+             FROM sync_jobs
+             WHERE profile_id = ?1
+               AND direction = ?2
+               AND state IN (?3, ?4)
+               AND (next_retry_at IS NULL OR next_retry_at <= ?5)
+               AND {size_condition}
+             ORDER BY created_at ASC, id ASC
+             LIMIT ?7 OFFSET ?8"
+        ))
+        .map_err(|error| format!("Failed preparing download claim query: {error}"))?;
+    let rows = statement
+        .query_map(
+            params![
+                profile_id,
+                DOWNLOAD_JOB_DIRECTION,
+                DOWNLOAD_JOB_STATE_QUEUED,
+                DOWNLOAD_JOB_STATE_RETRY_WAIT,
+                now,
+                LARGE_DOWNLOAD_BYTES as i64,
+                limit as i64,
+                skip as i64,
+            ],
+            |row| {
+                Ok(ClaimedDownloadJob {
+                    job_id: row.get(0)?,
+                    item_id: row.get(1)?,
+                    path: row.get(2)?,
+                })
+            },
+        )
+        .map_err(|error| format!("Failed executing download claim query: {error}"))?;
+    rows.map(|row| row.map_err(|error| format!("Failed reading claimed download job: {error}")))
+        .collect()
 }
