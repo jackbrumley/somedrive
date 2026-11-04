@@ -105,8 +105,8 @@ pub(crate) fn list_conflict_resolutions(
         .query_map(params![profile_id, CONFLICT_ISSUE_PREFIX], |row| {
             Ok(ConflictResolution {
                 row: sync_file_row_from_sql(row)?,
-                resolution: row.get(17)?,
-                chosen_local_mtime_ns: row.get(18)?,
+                resolution: row.get(18)?,
+                chosen_local_mtime_ns: row.get(19)?,
             })
         })
         .map_err(|error| format!("Failed querying resolutions: {error}"))?;

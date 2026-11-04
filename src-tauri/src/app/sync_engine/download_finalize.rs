@@ -61,6 +61,19 @@ pub(crate) fn place_downloaded_file(
         let replaceable = row
             .as_ref()
             .is_some_and(|row| row.local_matches_baseline(&existing));
+        if !replaceable && same_content(local_path, temp_path)? {
+            // The file in the way already holds exactly the downloaded
+            // content (it finished just before a restart, say): keep it and
+            // record it as synced instead of raising a conflict.
+            let _ = std::fs::remove_file(temp_path);
+            log::info!(
+                "{} [cycle:{}] DOWNLOAD_ALREADY_PRESENT path={}",
+                graph.account_prefix,
+                graph.cycle_id,
+                relative_path
+            );
+            return Ok(Some(existing));
+        }
         if !replaceable {
             let _ = std::fs::remove_file(temp_path);
             let cloud_mtime = row.map(|row| row.cloud_mtime).unwrap_or(0);
@@ -88,4 +101,41 @@ pub(crate) fn place_downloaded_file(
     read_local_entry(local_path)?
         .map(Some)
         .ok_or_else(|| format!("'{relative_path}' is missing right after it was downloaded"))
+}
+
+/// Whether two files hold the same bytes (size first, then QuickXorHash).
+fn same_content(existing: &Path, downloaded: &Path) -> Result<bool, String> {
+    let existing_size = std::fs::metadata(existing)
+        .map_err(|error| format!("Failed reading '{}': {error}", existing.display()))?
+        .len();
+    let downloaded_size = std::fs::metadata(downloaded)
+        .map_err(|error| format!("Failed reading '{}': {error}", downloaded.display()))?
+        .len();
+    if existing_size != downloaded_size {
+        return Ok(false);
+    }
+    Ok(quick_xor_hash_file(existing)? == quick_xor_hash_file(downloaded)?)
+}
+
+#[cfg(test)]
+mod same_content_tests {
+    use super::*;
+
+    #[test]
+    fn identical_bytes_match_and_different_bytes_do_not() {
+        let folder = std::env::temp_dir().join(format!(
+            "somedrive-same-content-{}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&folder).expect("folder");
+        let first = folder.join("first.bin");
+        let second = folder.join("second.bin");
+        let third = folder.join("third.bin");
+        std::fs::write(&first, b"same bytes").expect("write");
+        std::fs::write(&second, b"same bytes").expect("write");
+        std::fs::write(&third, b"diff bytes").expect("write");
+        assert!(same_content(&first, &second).expect("compare"));
+        assert!(!same_content(&first, &third).expect("compare"));
+        let _ = std::fs::remove_dir_all(&folder);
+    }
 }
