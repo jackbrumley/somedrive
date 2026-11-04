@@ -24,6 +24,7 @@ mod cloud_state_store;
 #[cfg(test)]
 mod cloud_state_tests;
 mod conflict_copy;
+mod content_check;
 mod cycle;
 mod cycle_orchestrator;
 mod delta_resync_store;
@@ -84,6 +85,7 @@ mod worker_lifecycle;
 
 pub(crate) use cloud_state_store::*;
 pub(crate) use conflict_copy::*;
+pub(crate) use content_check::*;
 pub(crate) use cycle::*;
 pub(crate) use cycle_orchestrator::*;
 pub(crate) use delta_resync_store::*;

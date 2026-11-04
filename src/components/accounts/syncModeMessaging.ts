@@ -19,6 +19,25 @@ function hasActiveTransfers(runtimeStatus: SyncRuntimeAccountStatus): boolean {
   return (runtimeStatus.remoteDownloadInFlight ?? 0) > 0 || (runtimeStatus.uploadInFlight ?? 0) > 0;
 }
 
+/**
+ * The engine's own counted progress, when it reports one, e.g.
+ * "Checking files against OneDrive · 12,345 of 15,600 files (79%)".
+ */
+export function countedActivityLine(runtimeStatus: SyncRuntimeAccountStatus): string | null {
+  const activity = runtimeStatus.currentActivity;
+  if (!activity || activity.progressMode !== "determinate" || !activity.detail) {
+    return null;
+  }
+  const current = activity.current ?? 0;
+  const total = activity.total ?? 0;
+  if (total <= 0) {
+    return activity.detail;
+  }
+  const percent = Math.floor((current / total) * 100);
+  const unit = activity.unit ? ` ${activity.unit}` : "";
+  return `${activity.detail} · ${current.toLocaleString()} of ${total.toLocaleString()}${unit} (${percent}%)`;
+}
+
 /** The one-line, plain-language headline for an account's sync state. */
 export function syncModeMessage(
   runtimeStatus: SyncRuntimeAccountStatus | null,
@@ -56,19 +75,27 @@ export function syncModeMessage(
     };
   }
 
+  const counted = phase === "paused" ? null : countedActivityLine(runtimeStatus);
+
   if (!hasCompletedInitialSync) {
     if (phase === "paused") {
       return { title: "Paused", detail: "The first sync is paused. Resume when you're ready.", tone: "caution" };
     }
     return {
       title: "First sync in progress",
-      detail: "Bringing this device and OneDrive into step. Files already here are compared, never overwritten.",
+      detail:
+        counted ??
+        "Bringing this device and OneDrive into step. Files already here are compared, never overwritten.",
       tone: "caution",
     };
   }
 
   if (phase === "paused") {
     return { title: "Paused", detail: "Resume to keep this device and OneDrive in step.", tone: "info" };
+  }
+
+  if (counted) {
+    return { title: "Syncing", detail: counted, tone: "success" };
   }
 
   if (hasActiveTransfers(runtimeStatus)) {
