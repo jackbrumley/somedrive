@@ -46,3 +46,9 @@ zbus = "5"
 [target.'cfg(unix)'.dependencies]
 # setsid() detaches the in-app updater from the app's session.
 libc = "0.2"
+
+# Dependencies are optimized even in dev builds: unoptimized SQLite, TLS and
+# hashing are several times slower and made dev sync speeds unrepresentative.
+# Only the first dev build pays the extra compile time.
+[profile.dev.package."*"]
+opt-level = 2

@@ -38,20 +38,7 @@ pub(crate) fn collect_planned_actions(profile_id: &str) -> Result<PlannedActions
 /// Queues every planned download (re-queuing finished jobs) and drops queued
 /// downloads the plan no longer wants. Returns the number planned.
 pub(crate) fn materialize_planner_download_jobs(profile_id: &str) -> Result<usize, String> {
-    let candidates = list_sync_file_download_candidates(profile_id)?;
-    let mut planned_item_ids: HashSet<String> = HashSet::new();
-    for candidate in &candidates {
-        planned_item_ids.insert(candidate.item_id.clone());
-        upsert_download_job(
-            profile_id,
-            &candidate.item_id,
-            &candidate.path,
-            candidate.remote_size,
-            candidate.remote_modified_ts,
-        )?;
-    }
-    prune_unplanned_queued_jobs(profile_id, DOWNLOAD_JOB_DIRECTION, &planned_item_ids)?;
-    Ok(candidates.len())
+    queue_planned_downloads(profile_id)
 }
 
 /// Queues every planned upload (re-queuing finished jobs) and drops queued
