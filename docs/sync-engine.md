@@ -268,6 +268,11 @@ setup work:
     the level Microsoft refused, then probe above it one small step a
     minute, so the rate settles instead of repeatedly paying a 30-second
     stop.
+- **Content check on every core:** rows present on both sides are hashed
+  on one worker thread per CPU core (`content_check.rs`), and the window
+  shows "Checking files against OneDrive · N of M files". Each file is read
+  again after hashing; one that changed meanwhile is skipped and planned
+  again next cycle, never recorded as matching.
 - **Big files in ranges, resumable:** Microsoft's file server limits each
   connection to a couple of MB/s, so files of 64 MB or more download in
   16 MB ranges, 8 at a time, into a pre-sized partial file

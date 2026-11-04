@@ -47,8 +47,12 @@ zbus = "5"
 # setsid() detaches the in-app updater from the app's session.
 libc = "0.2"
 
-# Dependencies are optimized even in dev builds: unoptimized SQLite, TLS and
-# hashing are several times slower and made dev sync speeds unrepresentative.
-# Only the first dev build pays the extra compile time.
+# Dev builds are optimized too: unoptimized SQLite, TLS and file hashing are
+# several times slower and made dev sync speeds unrepresentative. The
+# dependencies (built once) get full optimization; SomeDrive's own code a
+# light level, which keeps rebuilds quick but makes hashing fast.
+[profile.dev]
+opt-level = 1
+
 [profile.dev.package."*"]
 opt-level = 2

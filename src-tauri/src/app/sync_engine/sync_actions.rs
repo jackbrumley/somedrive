@@ -19,26 +19,6 @@ pub(crate) fn local_path_for(sync_root: &Path, relative_path: &str) -> PathBuf {
     sync_root.join(path_to_local(relative_path))
 }
 
-/// Whether the local file's content equals the cloud version in `row`.
-/// Empty files match without a hash; a non-empty file is never assumed equal
-/// without one.
-pub(crate) async fn local_matches_cloud(
-    row: &SyncFileRow,
-    local_path: &Path,
-    entry: &LocalEntry,
-) -> SyncResult<bool> {
-    if entry.size == 0 && row.cloud_size == 0 {
-        return Ok(true);
-    }
-    if entry.size != row.cloud_size {
-        return Ok(false);
-    }
-    match row.cloud_hash.as_deref() {
-        Some(cloud_hash) => Ok(hash_local_file(local_path).await? == cloud_hash),
-        None => Ok(false),
-    }
-}
-
 pub(crate) fn forget_rows(profile_id: &str, rows: &[SyncFileRow]) -> SyncResult<()> {
     for row in rows {
         forget_sync_file(profile_id, &row.path)?;
@@ -169,6 +149,10 @@ pub(crate) fn keep_both_versions(
 /// and items changed on both sides: identical content is adopted; anything
 /// else is held as a conflict for the user to resolve. Nothing is copied or
 /// overwritten.
+/// Settles rows present on both sides: a file with the same content as the
+/// cloud version gets its baseline; one with different content is held as
+/// a conflict (`conflict_code`). Files are hashed on every core at once and
+/// the progress is shown as "Checking files against OneDrive".
 pub(crate) async fn reconcile_both_sides(
     graph: &GraphContext,
     sync_root: &Path,
@@ -177,16 +161,61 @@ pub(crate) async fn reconcile_both_sides(
     stats: &mut SyncCycleStats,
     cancel_flag: &Arc<AtomicBool>,
 ) -> SyncResult<()> {
-    for row in rows {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let total = rows.len();
+    let started_at = std::time::Instant::now();
+    log::info!(
+        "{} [cycle:{}] CONTENT_CHECK_START files={} threads={}",
+        graph.account_prefix,
+        graph.cycle_id,
+        total,
+        content_check_threads()
+    );
+    let report_progress = |done: usize| {
+        runtime_set_current_activity(
+            &graph.sync_runtime,
+            &graph.profile_id,
+            "applying_local",
+            "determinate",
+            Some(done),
+            Some(total),
+            Some("files"),
+            Some("Checking files against OneDrive"),
+            Some(&graph.cycle_id),
+        );
+    };
+    report_progress(0);
+
+    let mut results = spawn_content_checks(
+        rows.to_vec(),
+        sync_root.to_path_buf(),
+        Arc::clone(cancel_flag),
+    );
+    let mut done = 0;
+    let mut last_report = std::time::Instant::now();
+    while let Some((index, result)) = results.recv().await {
         ensure_not_cancelled(cancel_flag)?;
-        let local_path = local_path_for(sync_root, &row.path);
-        let Some(entry) = read_local_entry(&local_path)? else {
-            continue;
-        };
-        if row.is_dir || entry.is_dir {
-            if row.is_dir && entry.is_dir {
+        let row = &rows[index];
+        match result? {
+            ContentCheck::Matches(entry) => {
                 commit_baseline(&graph.profile_id, &row.path, &row.cloud_version(), &entry)?;
-            } else {
+                if !row.is_dir {
+                    stats.matched_files += 1;
+                }
+            }
+            ContentCheck::Differs(entry) => {
+                hold_conflict(
+                    graph,
+                    &row.path,
+                    conflict_code,
+                    entry.mtime_ns,
+                    row.cloud_mtime,
+                )?;
+                stats.conflicts_held += 1;
+            }
+            ContentCheck::KindMismatch => {
                 record_sync_file_issue(
                     &graph.profile_id,
                     &row.path,
@@ -194,22 +223,34 @@ pub(crate) async fn reconcile_both_sides(
                     "This name is a file on one side and a folder on the other.",
                 )?;
             }
-            continue;
+            ContentCheck::Skip => {}
         }
-        if local_matches_cloud(row, &local_path, &entry).await? {
-            commit_baseline(&graph.profile_id, &row.path, &row.cloud_version(), &entry)?;
-            stats.matched_files += 1;
-        } else {
-            hold_conflict(
-                graph,
-                &row.path,
-                conflict_code,
-                entry.mtime_ns,
-                row.cloud_mtime,
-            )?;
-            stats.conflicts_held += 1;
+        done += 1;
+        if last_report.elapsed() >= Duration::from_millis(250) {
+            last_report = std::time::Instant::now();
+            report_progress(done);
         }
     }
+    ensure_not_cancelled(cancel_flag)?;
+    // The check is over: the rest of the cycle shows its own activity.
+    runtime_set_current_activity(
+        &graph.sync_runtime,
+        &graph.profile_id,
+        "applying_local",
+        "indeterminate",
+        None,
+        None,
+        None,
+        Some("Applying planned changes"),
+        Some(&graph.cycle_id),
+    );
+    log::info!(
+        "{} [cycle:{}] CONTENT_CHECK_DONE files={} elapsed_ms={}",
+        graph.account_prefix,
+        graph.cycle_id,
+        done,
+        started_at.elapsed().as_millis()
+    );
     Ok(())
 }
 
