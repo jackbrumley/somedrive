@@ -4,7 +4,7 @@ async fn run_local_scan_with_runtime_updates(
     sync_runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
     sync_root: &Path,
-    estimated_total: Option<usize>,
+    exclusions: Arc<ExclusionRules>,
     cancel_flag: &Arc<AtomicBool>,
 ) -> Result<HashMap<String, LocalEntry>, String> {
     use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering as AtomicOrdering};
@@ -20,7 +20,7 @@ async fn run_local_scan_with_runtime_updates(
     let sync_root_owned = sync_root.to_path_buf();
 
     let mut scan_handle = tauri::async_runtime::spawn_blocking(move || {
-        collect_local_snapshot_with_progress(&sync_root_owned, |relative_path| {
+        collect_local_snapshot_with_progress(&sync_root_owned, &exclusions, |relative_path| {
             thread_scanned_count.fetch_add(1, AtomicOrdering::Relaxed);
             thread_last_progress_unix.store(chrono::Utc::now().timestamp(), AtomicOrdering::Relaxed);
             if let Ok(mut value) = thread_current_path.lock() {
@@ -39,7 +39,7 @@ async fn run_local_scan_with_runtime_updates(
         cycle_id,
         sync_root.display()
     );
-    runtime_set_local_scan_progress(sync_runtime, profile_id, 0, estimated_total, None, Some(cycle_id));
+    runtime_set_local_scan_progress(sync_runtime, profile_id, 0, None, None, Some(cycle_id));
 
     loop {
         ensure_not_cancelled(cancel_flag)?;
@@ -76,7 +76,7 @@ async fn run_local_scan_with_runtime_updates(
                         sync_runtime,
                         profile_id,
                         scanned,
-                        estimated_total,
+                        None,
                         path.as_deref(),
                         Some(cycle_id),
                     );

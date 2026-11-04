@@ -26,4 +26,5 @@ include!("sync_engine/graph_item_queries.rs");
 include!("sync_engine/download_finalize.rs");
 include!("sync_engine/graph_download_diagnostics.rs");
 include!("sync_engine/path_state.rs");
+include!("sync_engine/exclusion_rules.rs");
 include!("sync_engine/planner_tests.rs");

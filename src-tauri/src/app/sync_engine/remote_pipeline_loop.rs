@@ -235,6 +235,7 @@ async fn run_remote_pipeline_loop(
                 )?;
                 stats.remote_items_skipped_unresolved += page_summary.skipped_unresolved;
                 stats.local_moves += apply_pending_local_moves(&graph.profile_id, &graph.account_prefix, sync_root)?;
+                apply_exclusion_rules(&graph.profile_id, &graph.exclusions)?;
                 recompute_sync_file_actions(&graph.profile_id)?;
                 materialize_planner_download_jobs(&graph.profile_id)?;
                 let _ = sync_download_counters_from_db(graph)?;

@@ -36,6 +36,8 @@ pub fn run(launch: LaunchOptions) {
             set_sync_download_concurrency,
             get_conflict_policy,
             set_conflict_policy,
+            get_exclude_patterns,
+            set_exclude_patterns,
             check_for_updates,
             install_update,
             minimize_to_tray_or_taskbar,

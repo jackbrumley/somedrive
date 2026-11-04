@@ -151,12 +151,12 @@ fn list_file_problems(profile_id: &str) -> Result<Vec<SyncProblem>, String> {
                     local_present, local_size, local_mtime_ns,
                     cloud_present, cloud_size, cloud_mtime
              FROM sync_files
-             WHERE profile_id = ?1 AND issue_code IS NOT NULL
+             WHERE profile_id = ?1 AND issue_code IS NOT NULL AND issue_code != ?2
              ORDER BY path",
         )
         .map_err(|error| format!("Failed preparing problems query: {error}"))?;
     let rows = statement
-        .query_map(params![profile_id], |row| {
+        .query_map(params![profile_id, ISSUE_EXCLUDED_BY_RULE], |row| {
             let code: String = row.get(1)?;
             let local_present = sql_to_bool(row.get(4)?);
             let cloud_present = sql_to_bool(row.get(7)?);

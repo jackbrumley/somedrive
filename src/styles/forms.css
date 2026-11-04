@@ -512,3 +512,30 @@ input::placeholder {
 .modal-shell:focus {
   outline: none;
 }
+
+/* Settings -> Excluded from sync (ExcludeRulesCard) */
+.exclude-rule-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.exclude-rule {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+}
+
+.exclude-rule code,
+.card p code {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 0.8rem;
+  color: var(--text-main);
+}

@@ -189,10 +189,19 @@ its id" (fixes A6, A9).
   names) and non-UTF-8 names are per-file issues, shown in the UI, not cycle
   errors.
 
-### 6.6 Temp and junk files
+### 6.6 Temp files and exclude rules
 SomeDrive's `.somedrive-part-*.tmp` files are excluded from the local scan
-and removed at cycle start (fixes C). An exclude list (Settings, later)
-covers caches such as browser profiles.
+and removed when found (fixes C).
+
+Exclude rules (Settings → Excluded from sync) keep paths out of sync in both
+directions. A rule with a `/` is a path from the top of the sync folder (it
+and everything under it, e.g. `Documents/Chromium`); a rule without one
+matches a name anywhere (`node_modules`, `*.tmp`). The local scan does not
+enter excluded folders, and excluded rows are marked before every plan
+(also after each delta page, so nothing excluded starts downloading). An
+excluded item is never uploaded, downloaded or deleted: a synced file that
+disappears from the scan because of a new rule is not deleted in OneDrive.
+Removing the rule brings it back under normal sync.
 
 ## 7. Robustness
 

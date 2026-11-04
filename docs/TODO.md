@@ -27,7 +27,7 @@ review, 2026-11-04). Design: `docs/sync-engine.md`. Built on branch
    real data; then merge `sync-baseline` into `dev`.
 7. [x] Optional setting "When a file changes on both sides: Ask me / Keep
    the newest automatically" (default Ask me).
-8. [ ] Exclude rules (Settings): folders and patterns never synced, such as
+8. [x] Exclude rules (Settings): folders and patterns never synced, such as
    browser caches.
 9. [ ] Typed `SyncError` through the engine instead of classifying errors by
    their text (`classify_sync_issue`).

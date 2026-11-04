@@ -14,6 +14,8 @@ struct GraphContext {
     /// request for this account starts before this instant, so parallel
     /// workers back off together instead of each hitting the limit again.
     throttled_until: Arc<std::sync::Mutex<Option<tokio::time::Instant>>>,
+    /// The exclude rules for this cycle.
+    exclusions: Arc<ExclusionRules>,
 }
 
 impl GraphContext {

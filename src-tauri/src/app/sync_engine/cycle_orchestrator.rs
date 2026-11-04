@@ -40,6 +40,7 @@ async fn tick_sync_cycle(
         profiles_lock: Arc::clone(profiles_lock),
         sync_runtime: Arc::clone(sync_runtime),
         throttled_until: Arc::new(std::sync::Mutex::new(None)),
+        exclusions: Arc::new(ExclusionRules::load()?),
     };
     let mut stats = SyncCycleStats {
         account_prefix: account_prefix.clone(),
@@ -70,11 +71,12 @@ async fn tick_sync_cycle(
         &graph.sync_runtime,
         profile_id,
         &sync_root,
-        None,
+        Arc::clone(&graph.exclusions),
         cancel_flag,
     )
     .await?;
     apply_local_scan(profile_id, &local_snapshot)?;
+    apply_exclusion_rules(profile_id, &graph.exclusions)?;
     stats.local_items_seen = local_snapshot.len();
     stats.name_issues = record_local_name_issues(profile_id, &local_snapshot)?;
     log::info!(

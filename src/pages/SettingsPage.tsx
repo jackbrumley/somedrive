@@ -1,5 +1,6 @@
 import { PageHeader } from "../components/shell/PageHeader";
 import { DebugSettingsCard } from "../components/settings/DebugSettingsCard";
+import { ExcludeRulesCard } from "../components/settings/ExcludeRulesCard";
 import { SettingRow } from "../components/ui/SettingRow";
 import { ToggleSwitch } from "../components/ui/ToggleSwitch";
 import { SelectField, type SelectFieldOption } from "../components/ui/SelectField";
@@ -20,6 +21,8 @@ interface SettingsPageProps {
   syncDownloadConcurrency: DownloadConcurrencySetting | null;
   conflictPolicy: ConflictPolicy | null;
   onChangeConflictPolicy: (policy: ConflictPolicy) => Promise<void>;
+  excludePatterns: string[] | null;
+  onChangeExcludePatterns: (patterns: string[]) => Promise<void>;
   onChangeSyncDownloadConcurrency: (value: number) => Promise<void>;
   appVersion: string;
   checkingUpdates: boolean;
@@ -48,6 +51,8 @@ export function SettingsPage({
   onChangeSyncDownloadConcurrency,
   conflictPolicy,
   onChangeConflictPolicy,
+  excludePatterns,
+  onChangeExcludePatterns,
   appVersion,
   checkingUpdates,
   lastCheckedAt,
@@ -138,6 +143,8 @@ export function SettingsPage({
             )}
           </div>
         </article>
+
+        <ExcludeRulesCard patterns={excludePatterns} onChange={onChangeExcludePatterns} />
 
         <DebugSettingsCard
           systemInfo={systemInfo}

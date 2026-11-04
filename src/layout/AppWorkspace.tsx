@@ -78,6 +78,8 @@ export function AppWorkspace({ runtime, updates }: AppWorkspaceProps) {
           onChangeSyncDownloadConcurrency={runtime.updateSyncDownloadConcurrency}
           conflictPolicy={runtime.conflictPolicy}
           onChangeConflictPolicy={runtime.updateConflictPolicy}
+          excludePatterns={runtime.excludePatterns}
+          onChangeExcludePatterns={runtime.updateExcludePatterns}
           appVersion={runtime.status.appVersion}
           checkingUpdates={updates.checkingUpdates}
           lastCheckedAt={updates.lastCheckedAt}

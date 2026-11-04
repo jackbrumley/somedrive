@@ -54,6 +54,7 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
   const [logLevel, setLogLevel] = useState<LogLevel>("info");
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [conflictPolicy, setConflictPolicy] = useState<ConflictPolicy | null>(null);
+  const [excludePatterns, setExcludePatterns] = useState<string[] | null>(null);
   const [syncDownloadConcurrency, setSyncDownloadConcurrency] =
     useState<DownloadConcurrencySetting | null>(null);
 
@@ -171,6 +172,7 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
     void systemActions.fetchSystemInfo().then(setSystemInfo);
     void systemActions.fetchSyncDownloadConcurrency().then(setSyncDownloadConcurrency);
     void systemActions.fetchConflictPolicy().then(setConflictPolicy);
+    void systemActions.fetchExcludePatterns().then(setExcludePatterns);
     return () => {
       isDisposed = true;
       window.removeEventListener("hashchange", syncRoute);
@@ -243,6 +245,13 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
     }
   };
 
+  const updateExcludePatterns = async (patterns: string[]) => {
+    const saved = await systemActions.setExcludePatterns(patterns);
+    if (saved !== null) {
+      setExcludePatterns(saved);
+    }
+  };
+
   const updateConflictPolicy = async (policy: ConflictPolicy) => {
     const updated = await systemActions.setConflictPolicy(policy);
     if (updated !== null) {
@@ -307,6 +316,8 @@ export function useAppRuntime({ showToast }: UseAppRuntimeProps) {
     updateSyncDownloadConcurrency,
     conflictPolicy,
     updateConflictPolicy,
+    excludePatterns,
+    updateExcludePatterns,
     fetchSessionLogText: systemActions.fetchSessionLogText,
     copySessionLog: systemActions.copySessionLog,
     openSessionLog: systemActions.openSessionLog,

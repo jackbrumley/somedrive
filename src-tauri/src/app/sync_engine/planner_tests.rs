@@ -456,6 +456,23 @@ mod planner_tests {
     }
 
     #[test]
+    fn excluded_items_are_never_deleted_and_come_back_when_the_rule_goes() {
+        let profile_id = test_profile_id("excluded-rule");
+        // Synced before; now the scan skips it, so it looks deleted locally.
+        insert_row(&profile_id, "Cache/blob.bin", &RowSpec { cloud: Some((10, "hash-a")), local: None, base: BASE, ..RowSpec::default() });
+        let rules = ExclusionRules::compile(&["Cache".to_string()]).expect("rules");
+        assert_eq!(apply_exclusion_rules(&profile_id, &rules).expect("apply"), 1);
+        recompute_sync_file_actions(&profile_id).expect("plan");
+        assert_eq!(action_for(&profile_id, "Cache/blob.bin"), PLANNER_ACTION_NONE, "excluded, so never deleted in OneDrive");
+        assert!(list_file_problems(&profile_id).expect("problems").is_empty(), "exclusions are not problems");
+
+        let no_rules = ExclusionRules::compile(&[]).expect("no rules");
+        apply_exclusion_rules(&profile_id, &no_rules).expect("clear");
+        recompute_sync_file_actions(&profile_id).expect("replan");
+        assert_eq!(action_for(&profile_id, "Cache/blob.bin"), PLANNER_ACTION_DELETE_REMOTE);
+    }
+
+    #[test]
     fn local_names_onedrive_rejects_become_issues() {
         assert!(invalid_onedrive_name_reason("report:final.docx").is_some());
         assert!(invalid_onedrive_name_reason("trailing.").is_some());

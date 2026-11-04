@@ -83,6 +83,7 @@ fn read_local_entry(path: &Path) -> Result<Option<LocalEntry>, String> {
 /// look like deletions).
 fn collect_local_snapshot_with_progress<F>(
     sync_root: &Path,
+    exclusions: &ExclusionRules,
     mut on_progress: F,
 ) -> Result<HashMap<String, LocalEntry>, String>
 where
@@ -126,7 +127,7 @@ where
                 .to_string_lossy()
                 .replace('\\', "/");
             let normalized = normalize_relative_path(&relative);
-            if normalized.is_empty() {
+            if normalized.is_empty() || exclusions.excludes(&normalized) {
                 continue;
             }
             on_progress(&normalized);

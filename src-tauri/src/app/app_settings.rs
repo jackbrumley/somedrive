@@ -46,6 +46,9 @@ struct SyncSettings {
     download_concurrency: usize,
     #[serde(default)]
     conflict_policy: ConflictPolicy,
+    /// Exclude rules (see `sync_engine::ExclusionRules`), one per entry.
+    #[serde(default)]
+    exclude_patterns: Vec<String>,
 }
 
 impl Default for SyncSettings {
@@ -53,6 +56,7 @@ impl Default for SyncSettings {
         Self {
             download_concurrency: default_download_concurrency(),
             conflict_policy: ConflictPolicy::default(),
+            exclude_patterns: Vec::new(),
         }
     }
 }
@@ -67,6 +71,16 @@ pub enum ConflictPolicy {
     /// Keep whichever version changed last; the other stays in OneDrive's
     /// version history or the Trash.
     KeepNewest,
+}
+
+pub fn load_exclude_patterns() -> Result<Vec<String>, String> {
+    Ok(load_or_create_app_settings()?.sync.exclude_patterns)
+}
+
+pub fn save_exclude_patterns(patterns: Vec<String>) -> Result<(), String> {
+    let mut settings = load_or_create_app_settings()?;
+    settings.sync.exclude_patterns = patterns;
+    save_app_settings(&settings)
 }
 
 pub fn load_conflict_policy() -> Result<ConflictPolicy, String> {
