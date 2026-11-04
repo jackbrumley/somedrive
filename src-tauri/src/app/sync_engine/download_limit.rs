@@ -20,6 +20,11 @@ const START_RATE_STEP: f64 = 0.10;
 const START_RATE_INITIAL: f64 = 8.0;
 const START_RATE_FLOOR: f64 = 2.0;
 const START_RATE_CEILING: f64 = 40.0;
+/// A cut covers Microsoft's whole penalty: the "wait N seconds" it asked
+/// for, the staggered release of the requests it held, and this much grace.
+/// Microsoft keeps refusing for a moment after the wait, so without it each
+/// request released after the wait would count as a new cut.
+const CUT_GRACE: Duration = Duration::from_secs(10);
 /// Files at least this big take the large-file lane (see
 /// `large_download_slots`).
 pub(crate) const LARGE_DOWNLOAD_BYTES: u64 = 8 * 1024 * 1024;
@@ -27,9 +32,9 @@ pub(crate) const LARGE_DOWNLOAD_BYTES: u64 = 8 * 1024 * 1024;
 /// How fast one account downloads during a cycle: how many downloads run at
 /// once, and how many may start per second. Both start low, creep up one
 /// small step per `RAISE_INTERVAL` while downloads succeed, and drop to three
-/// quarters when Microsoft answers 429. A 429 only counts when its request
-/// started after the last cut: answers to requests sent at the old rate say
-/// nothing about the new one.
+/// quarters when Microsoft answers 429. One cut covers the whole penalty
+/// (`CUT_GRACE`): a 429 only counts when its request started after that, so
+/// one throttle episode is one cut, never a cascade.
 pub(crate) struct AdaptiveDownloadLimit {
     maximum: usize,
     state: std::sync::Mutex<AdaptiveDownloadLimitState>,
@@ -42,7 +47,8 @@ struct AdaptiveDownloadLimitState {
     permits_refilled_at: Instant,
     successes_since_change: usize,
     last_change_at: Instant,
-    last_cut_at: Option<Instant>,
+    /// 429s for requests started before this belong to the last cut.
+    cut_covers_until: Option<Instant>,
 }
 
 /// A change to the limits, for the caller to log.
@@ -65,7 +71,7 @@ impl AdaptiveDownloadLimit {
                 permits_refilled_at: Instant::now(),
                 successes_since_change: 0,
                 last_change_at: Instant::now(),
-                last_cut_at: None,
+                cut_covers_until: None,
             }),
         }
     }
@@ -154,31 +160,34 @@ impl AdaptiveDownloadLimit {
         }
     }
 
-    /// Records a 429 for a request that started at `request_started_at`.
-    /// Lowers both limits to three quarters, unless the request was sent
-    /// before the last cut. Returns the change when it lowered them.
+    /// Records a 429 for a request that started at `request_started_at`,
+    /// answered with "wait `retry_after`". Lowers both limits to three
+    /// quarters, unless the request started while the last cut's penalty
+    /// was still running. Returns the change when it lowered them.
     pub(crate) fn record_throttle(
         &self,
         request_started_at: Instant,
+        retry_after: Duration,
     ) -> Option<DownloadLimitChange> {
-        self.record_throttle_at(request_started_at, Instant::now())
+        self.record_throttle_at(request_started_at, retry_after, Instant::now())
     }
 
     fn record_throttle_at(
         &self,
         request_started_at: Instant,
+        retry_after: Duration,
         now: Instant,
     ) -> Option<DownloadLimitChange> {
         let mut state = self.state.lock().ok()?;
         state.successes_since_change = 0;
         if state
-            .last_cut_at
-            .is_some_and(|cut_at| request_started_at <= cut_at)
+            .cut_covers_until
+            .is_some_and(|covered| request_started_at <= covered)
         {
             return None;
         }
-        state.last_cut_at = Some(now);
-        state.last_change_at = now;
+        state.cut_covers_until = Some(now + retry_after + CUT_GRACE);
+        state.last_change_at = now + retry_after;
         let from = state.current;
         state.current = (state.current * 3 / 4).max(self.floor());
         state.starts_per_second = (state.starts_per_second * 0.75).max(START_RATE_FLOOR);
@@ -233,7 +242,9 @@ mod adaptive_limit_tests {
         let limit = AdaptiveDownloadLimit::new(32);
         let sent = Instant::now();
         let cut_at = sent + RAISE_INTERVAL;
-        limit.record_throttle_at(sent, cut_at).expect("cut");
+        limit
+            .record_throttle_at(sent, Duration::ZERO, cut_at)
+            .expect("cut");
         assert_eq!(
             limit.record_success_at(cut_at + Duration::from_secs(1)),
             None
@@ -247,20 +258,45 @@ mod adaptive_limit_tests {
         let sent_early = Instant::now();
         let first_cut = sent_early + Duration::from_millis(10);
         let change = limit
-            .record_throttle_at(sent_early, first_cut)
+            .record_throttle_at(sent_early, Duration::ZERO, first_cut)
             .expect("cut");
         assert_eq!((change.from, change.to), (8, 6), "three quarters");
 
         let late_answer = first_cut + Duration::from_secs(6);
+        let after_the_penalty = first_cut + CUT_GRACE + Duration::from_secs(1);
         assert_eq!(
-            limit.record_throttle_at(sent_early, late_answer),
+            limit.record_throttle_at(sent_early, Duration::ZERO, late_answer),
             None,
             "sent at the old rate"
         );
         assert_eq!(limit.current(), 6);
 
-        let sent_after = first_cut + Duration::from_secs(1);
-        assert!(limit.record_throttle_at(sent_after, late_answer).is_some());
+        let sent_during_penalty = first_cut + Duration::from_secs(1);
+        assert_eq!(
+            limit.record_throttle_at(sent_during_penalty, Duration::ZERO, late_answer),
+            None,
+            "sent while the penalty was still running"
+        );
+        assert!(limit
+            .record_throttle_at(after_the_penalty, Duration::ZERO, after_the_penalty)
+            .is_some());
+    }
+
+    #[test]
+    fn a_wait_and_its_staggered_release_are_one_cut() {
+        let limit = AdaptiveDownloadLimit::new(32);
+        let sent = Instant::now();
+        let wait = Duration::from_secs(30);
+        limit.record_throttle_at(sent, wait, sent).expect("cut");
+        for released_after in [30, 31, 32, 33, 35, 39] {
+            let released = sent + Duration::from_secs(released_after);
+            assert_eq!(
+                limit.record_throttle_at(released, wait, released),
+                None,
+                "still the same penalty at {released_after} s"
+            );
+        }
+        assert_eq!(limit.current(), 6);
     }
 
     #[test]
@@ -268,9 +304,9 @@ mod adaptive_limit_tests {
         let limit = AdaptiveDownloadLimit::new(32);
         let mut now = Instant::now();
         for _ in 0..10 {
-            let sent = now + Duration::from_millis(1);
+            let sent = now + CUT_GRACE + Duration::from_millis(1);
             now = sent + Duration::from_millis(1);
-            limit.record_throttle_at(sent, now);
+            limit.record_throttle_at(sent, Duration::ZERO, now);
         }
         assert_eq!(limit.current(), DOWNLOAD_LIMIT_FLOOR);
     }
