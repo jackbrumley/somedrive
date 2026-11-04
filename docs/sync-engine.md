@@ -263,6 +263,19 @@ setup work:
     values.
   - Transfers have no total deadline; they fail only when no data arrives
     for 60 seconds.
+  - After a 429 the limits climb back at the normal pace only to 90% of the
+    level Microsoft refused, then probe above it one small step a minute,
+    so the rate settles instead of repeatedly paying a 30-second stop.
+- **Big files in ranges, resumable:** Microsoft's file server limits each
+  connection to a couple of MB/s, so files of 64 MB or more download in
+  16 MB ranges, 8 at a time, into a pre-sized partial file
+  (`.somedrive-partial-<key>.part`, the key including the cloud version).
+  Each finished range is flushed and recorded in `.somedrive-partial-<key>.ranges`;
+  a stall, a 429, an expired link or a restart fetches only the missing
+  ranges. The whole file is checked against OneDrive's hash before it is put
+  in place (a mismatch discards the partial). The local scan never syncs
+  these files and removes ones untouched for 7 days. A server that ignores
+  ranges falls back to a single download.
 - **Size lanes:** files of 8 MB or more may hold a quarter of the slots (at
   least one) while smaller files are waiting; slots no small file needs go
   to large files.

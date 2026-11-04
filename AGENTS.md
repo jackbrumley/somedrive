@@ -244,7 +244,8 @@ The step-by-step procedure is `docs/RELEASE.md`. Never run
   1. *FinishingTransfers*: no new sync cycle, download or upload starts;
      transfers already running finish. Anything still running at the
      deadline is cancelled exactly as Pause does (downloads write to a temp
-     file that is discarded; the job is requeued).
+     file that is discarded, except that files of 64 MB or more keep their
+     finished ranges to resume; the job is requeued).
   2. *StoppingWorkers*: every sync worker is cancelled and must fully exit,
      including its download worker tasks.
   3. *Stopped*: claimed/running jobs are returned to the queue. Everything

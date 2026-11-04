@@ -117,6 +117,135 @@ fn same_content(existing: &Path, downloaded: &Path) -> Result<bool, String> {
     Ok(quick_xor_hash_file(existing)? == quick_xor_hash_file(downloaded)?)
 }
 
+/// What finishing a downloaded file asks of the download loop.
+pub(crate) enum FinishStep {
+    Done(RemoteDownloadOutcome),
+    Retry,
+}
+
+/// Puts a verified download in place: sets OneDrive's modified time, then
+/// moves it over the target only if that is still safe (see
+/// `place_downloaded_file`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn finish_downloaded_file(
+    graph: &GraphContext,
+    job_id: Option<i64>,
+    transfer_id: &Option<String>,
+    attempt: u32,
+    item_id: &str,
+    relative_path: &str,
+    temp_path: &Path,
+    local_path: &Path,
+    cloud_mtime: i64,
+    downloaded_bytes: u64,
+    cancel_flag: &Arc<AtomicBool>,
+) -> Result<FinishStep, String> {
+    // OneDrive's time, so both sides agree on when the file changed.
+    match std::fs::OpenOptions::new().write(true).open(temp_path) {
+        Ok(file) => set_file_modified_seconds(&file, cloud_mtime),
+        Err(error) => log::warn!("DOWNLOAD_SET_MTIME_OPEN_FAILED error={}", error),
+    }
+
+    if cancel_flag.load(Ordering::Relaxed) {
+        runtime_finish_transfer_cancelled(&graph.sync_runtime, &graph.profile_id, transfer_id);
+        let _ = std::fs::remove_file(temp_path);
+        return Err(SYNC_CANCELLED_ERROR.to_string());
+    }
+
+    let placed_entry = match place_downloaded_file(graph, relative_path, temp_path, local_path) {
+        Ok(Some(entry)) => entry,
+        Ok(None) => {
+            runtime_finish_transfer_cancelled(&graph.sync_runtime, &graph.profile_id, transfer_id);
+            return Ok(FinishStep::Done(RemoteDownloadOutcome::HeldAsConflict));
+        }
+        Err(reason) => {
+            if handle_download_retry(
+                graph,
+                job_id,
+                cancel_flag,
+                transfer_id,
+                attempt,
+                relative_path,
+                &reason,
+                Some(temp_path),
+                &reason,
+            )
+            .await?
+            {
+                return Ok(FinishStep::Retry);
+            }
+            return Err(reason);
+        }
+    };
+
+    runtime_finish_transfer_download_success(
+        &graph.sync_runtime,
+        &graph.profile_id,
+        transfer_id,
+        downloaded_bytes,
+    );
+    if attempt > 1 {
+        log::info!(
+            "{} [cycle:{}] DOWNLOAD_RETRY_RECOVERED attempts={} path={}",
+            graph.account_prefix,
+            graph.cycle_id,
+            attempt,
+            relative_path
+        );
+    }
+    log::info!(
+        "{} [cycle:{}] DOWNLOAD_OK item_id={} path={} bytes={}",
+        graph.account_prefix,
+        graph.cycle_id,
+        item_id,
+        relative_path,
+        downloaded_bytes
+    );
+    Ok(FinishStep::Done(RemoteDownloadOutcome::Downloaded(
+        placed_entry,
+    )))
+}
+
+/// Microsoft answered 429: the whole account waits `delay`, the download
+/// limits are lowered, and this job goes back to the queue until then.
+/// Returns the error the download ends with.
+pub(crate) fn defer_download_after_throttle(
+    graph: &GraphContext,
+    job_id: Option<i64>,
+    transfer_id: &Option<String>,
+    relative_path: &str,
+    status: StatusCode,
+    delay: Duration,
+    request_started_at: std::time::Instant,
+) -> Result<String, String> {
+    let _ = record_throttle_event(&graph.profile_id, DOWNLOAD_JOB_DIRECTION);
+    graph.extend_throttle_window(delay, request_started_at)?;
+    if let Some(active_job_id) = job_id {
+        let retry_reason = format!("Download retry scheduled for HTTP status {status}");
+        if let Err(error) =
+            mark_download_job_retry_wait(&graph.profile_id, active_job_id, &retry_reason, delay)
+        {
+            log::warn!(
+                "{} [cycle:{}] DOWNLOAD_RETRY_WAIT_PERSIST_FAILED path={} error={}",
+                graph.account_prefix,
+                graph.cycle_id,
+                relative_path,
+                error
+            );
+        }
+    }
+    runtime_finish_transfer_cancelled(&graph.sync_runtime, &graph.profile_id, transfer_id);
+    log::warn!(
+        "{} [cycle:{}] DOWNLOAD_RETRY_DEFERRED status={} path={} delay_ms={}",
+        graph.account_prefix,
+        graph.cycle_id,
+        status,
+        relative_path,
+        delay.as_millis()
+    );
+    Ok(DOWNLOAD_RETRY_DEFERRED_ERROR.to_string())
+}
+
 #[cfg(test)]
 mod same_content_tests {
     use super::*;
