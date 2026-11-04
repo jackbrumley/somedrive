@@ -29,7 +29,16 @@ pub(crate) struct GraphContext {
     pub(crate) pending_dir_syncs: Arc<std::sync::Mutex<HashSet<PathBuf>>>,
     /// How many downloads may run at once right now (adapts to throttling).
     pub(crate) download_limit: Arc<AdaptiveDownloadLimit>,
+    /// Requests released by the end of a throttle window, counted so they
+    /// can be spread out instead of all firing at once.
+    pub(crate) throttle_releases: Arc<AtomicUsize>,
 }
+
+/// Requests released together after a throttle window are spread over this
+/// many steps of `THROTTLE_RELEASE_STEP`, so the release itself does not
+/// trip the limit again.
+const THROTTLE_RELEASE_SPREAD: usize = 10;
+const THROTTLE_RELEASE_STEP: Duration = Duration::from_millis(300);
 
 impl GraphContext {
     /// Notes that `folder` gained a downloaded file whose directory entry
@@ -65,11 +74,14 @@ impl GraphContext {
     }
 
     /// Holds every Graph request back until the account's throttle window
-    /// (set by `extend_throttle_window`) has passed.
+    /// (set by `extend_throttle_window`) has passed, then spreads the
+    /// requests it held over a few seconds. Returns the moment the request
+    /// may start, which the caller passes back if it gets a 429.
     pub(crate) async fn wait_for_throttle_window(
         &self,
         cancel_flag: &Arc<AtomicBool>,
-    ) -> Result<(), String> {
+    ) -> Result<std::time::Instant, String> {
+        let mut waited = false;
         loop {
             let resume_at = self
                 .throttled_until
@@ -77,15 +89,28 @@ impl GraphContext {
                 .map_err(|_| "Graph throttle lock is poisoned".to_string())?
                 .filter(|resume_at| *resume_at > tokio::time::Instant::now());
             let Some(resume_at) = resume_at else {
-                return Ok(());
+                break;
             };
+            waited = true;
             sleep_with_cancellation(cancel_flag, resume_at - tokio::time::Instant::now()).await?;
         }
+        if waited {
+            let release = self.throttle_releases.fetch_add(1, Ordering::Relaxed);
+            let step = u32::try_from(release % THROTTLE_RELEASE_SPREAD).unwrap_or(0);
+            sleep_with_cancellation(cancel_flag, THROTTLE_RELEASE_STEP * step).await?;
+        }
+        Ok(std::time::Instant::now())
     }
 
     /// Records a 429 for the whole account: pushes the throttle window out to
-    /// `retry_after` from now (never shortens it).
-    pub(crate) fn extend_throttle_window(&self, retry_after: Duration) -> Result<(), String> {
+    /// `retry_after` from now (never shortens it) and lowers the download
+    /// limits, unless the refused request (started at `request_started_at`)
+    /// was sent before the last cut.
+    pub(crate) fn extend_throttle_window(
+        &self,
+        retry_after: Duration,
+        request_started_at: std::time::Instant,
+    ) -> Result<(), String> {
         let resume_at = tokio::time::Instant::now() + retry_after;
         let mut throttled_until = self
             .throttled_until
@@ -101,13 +126,14 @@ impl GraphContext {
             );
         }
         drop(throttled_until);
-        if let Some(change) = self.download_limit.record_throttle() {
+        if let Some(change) = self.download_limit.record_throttle(request_started_at) {
             log::warn!(
-                "{} [cycle:{}] DOWNLOAD_LIMIT_LOWERED from={} to={} reason=throttled",
+                "{} [cycle:{}] DOWNLOAD_LIMIT_LOWERED from={} to={} starts_per_second={:.1} reason=throttled",
                 self.account_prefix,
                 self.cycle_id,
                 change.from,
-                change.to
+                change.to,
+                change.starts_per_second
             );
         }
         Ok(())
@@ -117,12 +143,13 @@ impl GraphContext {
     pub(crate) fn record_download_success(&self) {
         if let Some(change) = self.download_limit.record_success() {
             log::info!(
-                "{} [cycle:{}] DOWNLOAD_LIMIT_RAISED from={} to={} maximum={}",
+                "{} [cycle:{}] DOWNLOAD_LIMIT_RAISED from={} to={} maximum={} starts_per_second={:.1}",
                 self.account_prefix,
                 self.cycle_id,
                 change.from,
                 change.to,
-                self.download_limit.maximum()
+                self.download_limit.maximum(),
+                change.starts_per_second
             );
         }
     }

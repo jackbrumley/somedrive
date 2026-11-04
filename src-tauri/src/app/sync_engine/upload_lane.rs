@@ -358,7 +358,7 @@ pub(crate) async fn upload_large_file_session(
         let mut attempt: u32 = 0;
         loop {
             ensure_not_cancelled(cancel_flag)?;
-            graph.wait_for_throttle_window(cancel_flag).await?;
+            let request_started_at = graph.wait_for_throttle_window(cancel_flag).await?;
             attempt += 1;
             let response = tokio::select! {
                 _ = wait_for_cancellation(Arc::clone(cancel_flag)) => {
@@ -389,6 +389,7 @@ pub(crate) async fn upload_large_file_session(
                     graph.extend_throttle_window(
                         parse_retry_after_delay(response.headers())
                             .unwrap_or_else(|| exponential_backoff_delay(attempt)),
+                        request_started_at,
                     )?;
                 }
                 if attempt < MAX_DOWNLOAD_RETRIES {
@@ -514,7 +515,7 @@ pub(crate) async fn create_upload_session(
 
     loop {
         ensure_not_cancelled(cancel_flag)?;
-        graph.wait_for_throttle_window(cancel_flag).await?;
+        let request_started_at = graph.wait_for_throttle_window(cancel_flag).await?;
         let access_token = graph.current_access_token().await;
         let response = tokio::select! {
             _ = wait_for_cancellation(Arc::clone(cancel_flag)) => {
@@ -548,7 +549,7 @@ pub(crate) async fn create_upload_session(
                 .unwrap_or_else(|| Duration::from_secs(2));
             if status == StatusCode::TOO_MANY_REQUESTS {
                 let _ = record_throttle_event(&graph.profile_id, UPLOAD_JOB_DIRECTION);
-                graph.extend_throttle_window(delay)?;
+                graph.extend_throttle_window(delay, request_started_at)?;
             }
             log::warn!(
                 "{} [cycle:{}] GRAPH_UPLOAD_SESSION_RETRY status={} path={} delay_ms={}",

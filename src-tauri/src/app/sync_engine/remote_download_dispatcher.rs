@@ -26,6 +26,13 @@ pub(crate) fn spawn_remote_download_dispatcher(
             if available_slots == 0 {
                 continue;
             }
+            // Free slots are filled no faster than the start rate allows.
+            let available_slots = dispatcher_graph
+                .download_limit
+                .take_start_permits(available_slots);
+            if available_slots == 0 {
+                continue;
+            }
 
             // No queue count here: the claim itself finds nothing when the
             // queue is empty, and counting 15,000 jobs 20 times a second
@@ -43,6 +50,9 @@ pub(crate) fn spawn_remote_download_dispatcher(
                     if dispatched > 0 {
                         pending_download_count.fetch_add(dispatched, Ordering::Relaxed);
                     }
+                    dispatcher_graph
+                        .download_limit
+                        .return_start_permits(available_slots.saturating_sub(dispatched));
                 }
                 Err(error) => {
                     if error.contains("queue closed unexpectedly") {

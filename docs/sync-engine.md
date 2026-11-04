@@ -245,10 +245,24 @@ setup work:
 - **Folder flush per batch:** a downloaded file's folder is flushed once per
   batch of results, before that batch is recorded as synced, instead of
   after every file.
-- **Adaptive concurrency:** a cycle starts at 8 parallel downloads, adds one
-  after every 20 successful downloads up to the "Parallel downloads"
-  setting, and halves on a 429 (once per 5-second throttle episode, never
-  below 2). Logged as `DOWNLOAD_LIMIT_RAISED` / `DOWNLOAD_LIMIT_LOWERED`.
+- **Adaptive rate, aiming for a steady equilibrium:** two limits per
+  account, parallel downloads (start 8, floor 4, ceiling the "Parallel
+  downloads" setting) and download starts per second (start 8, floor 2,
+  ceiling 40). Microsoft limits files per minute as well as bandwidth, so
+  the start rate is what keeps thousands of tiny files under its quota.
+  - Up: at most one small step per 10 seconds while downloads succeed
+    (+1 parallel, +10% starts per second), so the rate creeps up rather
+    than jumping.
+  - Down: on a 429 both drop to three quarters. A 429 only counts when its
+    request started after the last cut; answers to requests sent at the old
+    rate are ignored, so one burst of 429s is one cut, not a cascade.
+  - After a "wait N seconds" answer, the requests held are released over
+    about 3 seconds, and new starts are paced by the start rate, so the
+    release does not trip the limit again.
+  - Logged as `DOWNLOAD_LIMIT_RAISED` / `DOWNLOAD_LIMIT_LOWERED` with both
+    values.
+  - Transfers have no total deadline; they fail only when no data arrives
+    for 60 seconds.
 - **Size lanes:** files of 8 MB or more may hold a quarter of the slots (at
   least one) while smaller files are waiting; slots no small file needs go
   to large files.
