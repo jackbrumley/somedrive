@@ -126,7 +126,10 @@ impl GraphContext {
             );
         }
         drop(throttled_until);
-        if let Some(change) = self.download_limit.record_throttle(request_started_at) {
+        if let Some(change) = self
+            .download_limit
+            .record_throttle(request_started_at, retry_after)
+        {
             log::warn!(
                 "{} [cycle:{}] DOWNLOAD_LIMIT_LOWERED from={} to={} starts_per_second={:.1} reason=throttled",
                 self.account_prefix,

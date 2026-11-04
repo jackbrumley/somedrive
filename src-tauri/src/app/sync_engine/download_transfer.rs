@@ -36,7 +36,9 @@ pub(crate) async fn download_remote_item_content(
         relative_path,
         None,
     );
-    let mut direct_url = direct_url.map(ToString::to_string);
+    // Big files take Graph's redirect link and download in ranges.
+    let segmented = version.size >= SEGMENTED_DOWNLOAD_MIN_BYTES;
+    let mut direct_url = direct_url.filter(|_| !segmented).map(ToString::to_string);
     loop {
         ensure_not_cancelled(cancel_flag)?;
         let request_started_at = graph.wait_for_throttle_window(cancel_flag).await?;
@@ -151,6 +153,94 @@ pub(crate) async fn download_remote_item_content(
                 status,
                 redirect_host
             );
+            if segmented {
+                let ranged = download_in_segments(
+                    graph,
+                    job_id,
+                    &transfer_id,
+                    relative_path,
+                    item_id,
+                    version,
+                    &redirect_url,
+                    local_path,
+                    cancel_flag,
+                )
+                .await;
+                let retry_reason = match ranged {
+                    Err(error) if error == SYNC_CANCELLED_ERROR => {
+                        runtime_finish_transfer_cancelled(
+                            &graph.sync_runtime,
+                            &graph.profile_id,
+                            &transfer_id,
+                        );
+                        return Err(error);
+                    }
+                    Err(error) => Some(error),
+                    Ok(SegmentedDownload::Complete { data_path, bytes }) => {
+                        match finish_downloaded_file(
+                            graph,
+                            job_id,
+                            &transfer_id,
+                            attempt,
+                            item_id,
+                            relative_path,
+                            &data_path,
+                            local_path,
+                            cloud_mtime,
+                            bytes,
+                            cancel_flag,
+                        )
+                        .await?
+                        {
+                            FinishStep::Done(outcome) => return Ok(outcome),
+                            FinishStep::Retry => continue,
+                        }
+                    }
+                    Ok(SegmentedDownload::Throttled { retry_after }) => {
+                        return Err(defer_download_after_throttle(
+                            graph,
+                            job_id,
+                            &transfer_id,
+                            relative_path,
+                            StatusCode::TOO_MANY_REQUESTS,
+                            retry_after,
+                            request_started_at,
+                        )?);
+                    }
+                    Ok(SegmentedDownload::LinkExpired) => {
+                        Some("The file server link expired; asking Graph for a new one".to_string())
+                    }
+                    Ok(SegmentedDownload::Failed(reason)) => Some(reason),
+                    Ok(SegmentedDownload::RangesUnsupported) => {
+                        log::warn!(
+                            "{} [cycle:{}] DOWNLOAD_RANGES_UNSUPPORTED path={} action=single_stream",
+                            graph.account_prefix,
+                            graph.cycle_id,
+                            relative_path
+                        );
+                        None
+                    }
+                };
+                if let Some(reason) = retry_reason {
+                    // Finished ranges stay on disk; the retry resumes them.
+                    if handle_download_retry(
+                        graph,
+                        job_id,
+                        cancel_flag,
+                        &transfer_id,
+                        attempt,
+                        relative_path,
+                        &reason,
+                        None,
+                        &reason,
+                    )
+                    .await?
+                    {
+                        continue;
+                    }
+                    return Err(reason);
+                }
+            }
             let redirected_response = tokio::select! {
                 _ = wait_for_cancellation(Arc::clone(cancel_flag)) => {
                     runtime_finish_transfer_cancelled(&graph.sync_runtime, &graph.profile_id, &transfer_id);
@@ -195,40 +285,20 @@ pub(crate) async fn download_remote_item_content(
             );
         }
         if status == StatusCode::TOO_MANY_REQUESTS {
-            let _ = record_throttle_event(&graph.profile_id, DOWNLOAD_JOB_DIRECTION);
             let response_headers = response.headers().clone();
             let response_text = response.text().await.unwrap_or_default();
             let delay = parse_retry_after_delay(&response_headers)
                 .or_else(|| parse_retry_after_seconds_from_json_body(&response_text))
                 .unwrap_or_else(|| exponential_backoff_delay(attempt));
-            graph.extend_throttle_window(delay, request_started_at)?;
-            if let Some(active_job_id) = job_id {
-                let retry_reason = format!("Download retry scheduled for HTTP status {status}");
-                if let Err(error) = mark_download_job_retry_wait(
-                    &graph.profile_id,
-                    active_job_id,
-                    &retry_reason,
-                    delay,
-                ) {
-                    log::warn!(
-                        "{} [cycle:{}] DOWNLOAD_RETRY_WAIT_PERSIST_FAILED path={} error={}",
-                        graph.account_prefix,
-                        graph.cycle_id,
-                        relative_path,
-                        error
-                    );
-                }
-            }
-            runtime_finish_transfer_cancelled(&graph.sync_runtime, &graph.profile_id, &transfer_id);
-            log::warn!(
-                "{} [cycle:{}] DOWNLOAD_RETRY_DEFERRED status={} path={} delay_ms={}",
-                graph.account_prefix,
-                graph.cycle_id,
-                status,
+            return Err(defer_download_after_throttle(
+                graph,
+                job_id,
+                &transfer_id,
                 relative_path,
-                delay.as_millis()
-            );
-            return Err(DOWNLOAD_RETRY_DEFERRED_ERROR.to_string());
+                status,
+                delay,
+                request_started_at,
+            )?);
         }
         if status.is_server_error() && attempt < MAX_DOWNLOAD_RETRIES {
             let delay = parse_retry_after_delay(response.headers())
@@ -477,72 +547,24 @@ pub(crate) async fn download_remote_item_content(
             }
             return Err(reason);
         }
-        // OneDrive's time, so both sides agree on when the file changed.
-        set_file_modified_seconds(&output_file, cloud_mtime);
         drop(output_file);
-
-        if cancel_flag.load(Ordering::Relaxed) {
-            runtime_finish_transfer_cancelled(&graph.sync_runtime, &graph.profile_id, &transfer_id);
-            let _ = std::fs::remove_file(&temp_path);
-            return Err(SYNC_CANCELLED_ERROR.to_string());
-        }
-
-        let placed_entry = match place_downloaded_file(graph, relative_path, &temp_path, local_path)
-        {
-            Ok(Some(entry)) => entry,
-            Ok(None) => {
-                runtime_finish_transfer_cancelled(
-                    &graph.sync_runtime,
-                    &graph.profile_id,
-                    &transfer_id,
-                );
-                return Ok(RemoteDownloadOutcome::HeldAsConflict);
-            }
-            Err(reason) => {
-                if handle_download_retry(
-                    graph,
-                    job_id,
-                    cancel_flag,
-                    &transfer_id,
-                    attempt,
-                    relative_path,
-                    &reason,
-                    Some(&temp_path),
-                    &reason,
-                )
-                .await?
-                {
-                    continue;
-                }
-                return Err(reason);
-            }
-        };
-
-        runtime_finish_transfer_download_success(
-            &graph.sync_runtime,
-            &graph.profile_id,
+        match finish_downloaded_file(
+            graph,
+            job_id,
             &transfer_id,
-            downloaded_bytes,
-        );
-
-        if attempt > 1 {
-            log::info!(
-                "{} [cycle:{}] DOWNLOAD_RETRY_RECOVERED attempts={} path={}",
-                graph.account_prefix,
-                graph.cycle_id,
-                attempt,
-                relative_path
-            );
-        }
-
-        log::info!(
-            "{} [cycle:{}] DOWNLOAD_OK item_id={} path={} bytes={}",
-            graph.account_prefix,
-            graph.cycle_id,
+            attempt,
             item_id,
             relative_path,
-            downloaded_bytes
-        );
-        return Ok(RemoteDownloadOutcome::Downloaded(placed_entry));
+            &temp_path,
+            local_path,
+            cloud_mtime,
+            downloaded_bytes,
+            cancel_flag,
+        )
+        .await?
+        {
+            FinishStep::Done(outcome) => return Ok(outcome),
+            FinishStep::Retry => continue,
+        }
     }
 }

@@ -46,6 +46,13 @@ pub(crate) fn is_download_temp_name(name: &str) -> bool {
     name.starts_with(".somedrive-part-") && name.ends_with(".tmp")
 }
 
+/// A large download's resumable partial file or its range record
+/// (`partial_download_paths`): never synced, and kept between cycles so the
+/// download can resume.
+pub(crate) fn is_resumable_partial_name(name: &str) -> bool {
+    name.starts_with(PARTIAL_DOWNLOAD_PREFIX)
+}
+
 /// Local files that are never synced: OneNote notebook files (OneNote keeps
 /// notebooks in the cloud) and Office's own lock files.
 pub(crate) fn is_excluded_local_name(name: &str) -> bool {
@@ -113,6 +120,24 @@ where
                 format!("Failed reading metadata '{}': {}", path.display(), error)
             })?;
             if !metadata.is_file() && !metadata.is_dir() {
+                continue;
+            }
+            if metadata.is_file() && is_resumable_partial_name(&name) {
+                // Kept for resuming; only one nobody resumed for a week goes.
+                let abandoned = metadata
+                    .modified()
+                    .ok()
+                    .and_then(|modified| modified.elapsed().ok())
+                    .is_some_and(|age| age >= PARTIAL_DOWNLOAD_MAX_AGE);
+                if abandoned {
+                    if let Err(error) = std::fs::remove_file(&path) {
+                        log::warn!(
+                            "LOCAL_PARTIAL_CLEANUP_FAILED path={} error={}",
+                            path.display(),
+                            error
+                        );
+                    }
+                }
                 continue;
             }
             if metadata.is_file() && is_download_temp_name(&name) {
