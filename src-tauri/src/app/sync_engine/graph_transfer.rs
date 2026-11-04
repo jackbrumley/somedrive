@@ -39,7 +39,7 @@ pub(crate) async fn create_remote_folder(
         parent
     );
 
-    let client = graph_http_client()?;
+    let client = graph.http.clone();
     let mut refreshed = false;
     loop {
         ensure_not_cancelled(cancel_flag)?;

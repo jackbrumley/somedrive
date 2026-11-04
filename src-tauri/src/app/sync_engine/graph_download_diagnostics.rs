@@ -98,20 +98,7 @@ pub(crate) async fn log_download_403_diagnostics(
         body_client_request_id
     );
 
-    let client = match graph_http_client() {
-        Ok(value) => value,
-        Err(error) => {
-            log::warn!(
-                "{} [cycle:{}] DOWNLOAD_403_DIAGNOSTIC_METADATA_FAILED item_id={} path={} error={}",
-                graph.account_prefix,
-                graph.cycle_id,
-                item_id,
-                relative_path,
-                error
-            );
-            return;
-        }
-    };
+    let client = graph.http.clone();
     let access_token = graph.current_access_token().await;
 
     let metadata_url = format!(

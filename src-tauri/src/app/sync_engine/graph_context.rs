@@ -18,6 +18,10 @@ pub(crate) struct GraphContext {
     pub(crate) throttled_until: Arc<std::sync::Mutex<Option<tokio::time::Instant>>>,
     /// The exclude rules for this cycle.
     pub(crate) exclusions: Arc<ExclusionRules>,
+    /// HTTP clients shared by every request of the cycle, so connections
+    /// (and TLS sessions) are reused instead of opened per file.
+    pub(crate) http: reqwest::Client,
+    pub(crate) http_no_redirect: reqwest::Client,
 }
 
 impl GraphContext {

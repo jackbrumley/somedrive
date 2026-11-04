@@ -209,7 +209,7 @@ pub(crate) async fn upload_small_file_simple(
         encoded_path,
         target.conflict_behavior()
     );
-    let client = graph_http_client()?;
+    let client = graph.http.clone();
     let mut refreshed = false;
     loop {
         ensure_not_cancelled(cancel_flag)?;
@@ -328,7 +328,7 @@ pub(crate) async fn upload_large_file_session(
 ) -> Result<GraphDriveItem, String> {
     let upload_url = create_upload_session(graph, relative_path, target, cancel_flag).await?;
     let chunk_size = resolve_upload_chunk_bytes();
-    let client = graph_http_client()?;
+    let client = graph.http.clone();
     let mut file = std::fs::File::open(local_path).map_err(|error| {
         format!(
             "Failed opening local upload file '{}': {}",
@@ -509,7 +509,7 @@ pub(crate) async fn create_upload_session(
         UploadTarget::Replace { base_etag } => base_etag.clone(),
         UploadTarget::New => None,
     };
-    let client = graph_http_client()?;
+    let client = graph.http.clone();
     let mut refreshed = false;
 
     loop {

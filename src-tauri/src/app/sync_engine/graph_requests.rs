@@ -40,7 +40,7 @@ pub(crate) async fn graph_get(
     cancel_flag: &Arc<AtomicBool>,
     handled_statuses: &[StatusCode],
 ) -> SyncResult<GraphGetOutcome> {
-    let client = graph_http_client()?;
+    let client = graph.http.clone();
     let mut refreshed = false;
     let mut attempt: u32 = 0;
     loop {
@@ -166,7 +166,7 @@ pub(crate) fn is_transient_reqwest_error(error: &reqwest::Error) -> bool {
 }
 
 pub(crate) async fn graph_delete(graph: &GraphContext, url: &str) -> Result<(), String> {
-    let client = graph_http_client()?;
+    let client = graph.http.clone();
     let mut refreshed = false;
     loop {
         let access_token = graph.current_access_token().await;
