@@ -22,9 +22,40 @@ pub(crate) struct GraphContext {
     /// (and TLS sessions) are reused instead of opened per file.
     pub(crate) http: reqwest::Client,
     pub(crate) http_no_redirect: reqwest::Client,
+    /// Folders that received a downloaded file since the last flush. They
+    /// are flushed to disk before those downloads are recorded as synced.
+    pub(crate) pending_dir_syncs: Arc<std::sync::Mutex<HashSet<PathBuf>>>,
 }
 
 impl GraphContext {
+    /// Notes that `folder` gained a downloaded file whose directory entry
+    /// still needs flushing.
+    pub(crate) fn note_dir_needs_sync(&self, folder: &Path) {
+        if let Ok(mut pending) = self.pending_dir_syncs.lock() {
+            pending.insert(folder.to_path_buf());
+        }
+    }
+
+    /// Flushes every noted folder once. Called before a batch of downloads
+    /// is recorded as synced, so a crash cannot lose a file the database
+    /// already counts as downloaded.
+    pub(crate) fn flush_pending_dir_syncs(&self) -> Result<usize, String> {
+        let folders: Vec<PathBuf> = self
+            .pending_dir_syncs
+            .lock()
+            .map_err(|_| "Folder sync lock is poisoned".to_string())?
+            .drain()
+            .collect();
+        for folder in &folders {
+            std::fs::File::open(folder)
+                .and_then(|handle| handle.sync_all())
+                .map_err(|error| {
+                    format!("Failed flushing folder '{}': {error}", folder.display())
+                })?;
+        }
+        Ok(folders.len())
+    }
+
     pub(crate) async fn current_access_token(&self) -> String {
         self.access_token.read().await.clone()
     }

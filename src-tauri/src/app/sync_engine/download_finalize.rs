@@ -83,15 +83,7 @@ pub(crate) fn place_downloaded_file(
         )
     })?;
     if let Some(parent) = local_path.parent() {
-        if let Err(error) = std::fs::File::open(parent).and_then(|folder| folder.sync_all()) {
-            log::warn!(
-                "{} [cycle:{}] DOWNLOAD_DIR_SYNC_FAILED path={} error={}",
-                graph.account_prefix,
-                graph.cycle_id,
-                relative_path,
-                error
-            );
-        }
+        graph.note_dir_needs_sync(parent);
     }
     read_local_entry(local_path)?
         .map(Some)

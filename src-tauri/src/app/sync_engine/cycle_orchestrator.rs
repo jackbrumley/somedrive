@@ -46,6 +46,7 @@ pub(crate) async fn tick_sync_cycle(
         exclusions: Arc::new(ExclusionRules::load()?),
         http: graph_http_client()?,
         http_no_redirect: graph_http_client_no_redirect()?,
+        pending_dir_syncs: Arc::new(std::sync::Mutex::new(HashSet::new())),
     };
     let mut stats = SyncCycleStats {
         account_prefix: account_prefix.clone(),

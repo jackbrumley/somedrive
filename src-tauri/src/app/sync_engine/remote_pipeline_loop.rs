@@ -92,6 +92,9 @@ pub(crate) async fn run_remote_pipeline_loop(
                         Err(_) => break,
                     }
                 }
+                // Directory entries reach the disk before any of these
+                // downloads is recorded as synced.
+                graph.flush_pending_dir_syncs()?;
                 for batched_result in result_batch {
                     apply_remote_download_result(graph, stats, batched_result)?;
                 }
