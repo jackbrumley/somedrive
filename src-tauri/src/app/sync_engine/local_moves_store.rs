@@ -109,7 +109,7 @@ pub(crate) fn undo_local_follow(
 ) -> Result<(), String> {
     let mut connection = open_sync_jobs_connection(profile_id)?;
     let transaction = connection
-        .transaction()
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(|error| format!("Failed starting move undo: {error}"))?;
     let now = current_unix_seconds();
     transaction

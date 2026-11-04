@@ -94,3 +94,32 @@ fn a_missing_lifecycle_row_is_recreated_from_the_saved_profile_only_once() {
         .expect("row");
     assert_eq!(row.agent_state, "syncing");
 }
+
+/// A deferred transaction that reads and then writes fails at once with
+/// "database is locked" when another connection wrote in between (SQLite
+/// cannot upgrade a stale read snapshot, and busy_timeout does not apply).
+/// Every engine write transaction must take the write lock up front.
+#[test]
+fn engine_write_transactions_take_the_write_lock_up_front() {
+    let engine_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/app/sync_engine");
+    let mut offenders = Vec::new();
+    for entry in std::fs::read_dir(&engine_dir).expect("engine dir") {
+        let path = entry.expect("entry").path();
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("")
+            .to_string();
+        if !name.ends_with(".rs") || name.ends_with("_tests.rs") {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).expect("read source");
+        if source.contains(concat!(".transaction", "()")) {
+            offenders.push(name);
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "use transaction_with_behavior(TransactionBehavior::Immediate) in: {offenders:?}"
+    );
+}
