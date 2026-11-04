@@ -2,6 +2,7 @@ import {
   IconAlertTriangle,
   IconArrowsDiff,
   IconCircleCheck,
+  IconClockCheck,
   IconClockPause,
   IconCloudDownload,
   IconHourglassHigh,
@@ -121,6 +122,10 @@ export function AccountSyncOverview({
     phase === "scanning_local" && localScanCount > 0
       ? `Checking this device · ${localScanCount.toLocaleString()} items`
       : runtimeStatus?.phaseMessage;
+  // The step line stays while the account is syncing, idle or busy, so the
+  // check every few seconds changes its text instead of pushing the page
+  // below down and back up.
+  const showStepLine = runtimeStatus?.engineState === "running" && phase !== "paused" && phase !== "error";
 
   return (
     <section class={`sync-overview sync-tone-${message.tone}`} aria-live="polite">
@@ -141,7 +146,7 @@ export function AccountSyncOverview({
         </div>
       )}
 
-      {(engineRunning || throttledRecently || retryWaiting > 0 || openConflictCount > 0) && (
+      {(showStepLine || throttledRecently || retryWaiting > 0 || openConflictCount > 0) && (
         <ul class="sync-overview-notes">
           {openConflictCount > 0 && (
             <li class="sync-overview-note-attention">
@@ -152,10 +157,10 @@ export function AccountSyncOverview({
               </span>
             </li>
           )}
-          {engineRunning && stepLabel && (
-            <li>
-              <IconHourglassHigh size={15} />
-              <span>{stepLabel}</span>
+          {showStepLine && (
+            <li class="sync-overview-step">
+              {engineRunning ? <IconHourglassHigh size={15} /> : <IconClockCheck size={15} />}
+              <span>{stepLabel || "Waiting for the next check"}</span>
             </li>
           )}
           {throttledRecently && (

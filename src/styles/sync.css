@@ -152,6 +152,15 @@
   gap: var(--space-2);
 }
 
+/* The step line stays one line high whatever it says, so the page below
+   never moves when it changes. */
+.sync-overview-step span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sync-overview-notes svg {
   flex: none;
   margin-top: 2px;
@@ -399,6 +408,14 @@
 
 .sync-activity-state.is-done {
   color: var(--success);
+}
+
+.sync-activity-state.is-deleted {
+  color: var(--text-muted);
+}
+
+.sync-activity-state.is-failed {
+  color: var(--danger);
 }
 
 .sync-activity-empty {
