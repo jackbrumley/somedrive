@@ -113,12 +113,17 @@
   border-color: var(--control-selected-border);
 }
 
+/* Wide enough for "Resuming…" so the header never shifts on click. */
 .header-sync-btn {
-  min-width: 92px;
+  min-width: 112px;
+}
+
+.header-sync-btn:disabled {
+  cursor: progress;
 }
 
 .header-sync-state {
-  min-width: 92px;
+  min-width: 112px;
   height: 30px;
   display: inline-flex;
   align-items: center;

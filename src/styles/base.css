@@ -70,3 +70,20 @@ a {
 .error {
   color: var(--danger);
 }
+
+/* A spinning icon for a request in flight. */
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}

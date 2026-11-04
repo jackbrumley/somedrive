@@ -1,84 +1,105 @@
 use super::*;
 
-/// Queues a download for `item_id`. A job that already finished (done,
-/// failed or skipped) is queued again: the planner only asks for a download
-/// when the file needs one now.
-pub(crate) fn upsert_download_job(
-    profile_id: &str,
-    item_id: &str,
-    path: &str,
-    remote_size: u64,
-    remote_modified_ts: i64,
-) -> Result<bool, String> {
-    let connection = open_sync_jobs_connection(profile_id)?;
+/// The plan's downloads as SQL: files the planner wants downloaded.
+const PLANNED_DOWNLOADS_WHERE: &str = "profile_id = ?1
+    AND desired_action = ?2
+    AND is_dir = 0
+    AND is_shared_reference = 0
+    AND cloud_present = 1
+    AND remote_item_id IS NOT NULL";
+
+/// Makes the download queue match the plan in one short transaction: queues
+/// new downloads, re-queues finished jobs the plan wants again, refreshes
+/// changed metadata, and drops queued or retry-waiting jobs the plan no
+/// longer wants. Running jobs are left alone. Only rows that differ are
+/// written, so calling it after every change-feed page stays cheap however
+/// long the queue is. Returns the number of planned downloads.
+pub(crate) fn queue_planned_downloads(profile_id: &str) -> Result<usize, String> {
+    let mut connection = open_sync_jobs_connection(profile_id)?;
+    let transaction = connection
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|error| format!("Failed starting download queue transaction: {error}"))?;
     let now = current_unix_seconds();
 
-    let existing_id: Option<i64> = connection
-        .query_row(
-            "SELECT id FROM sync_jobs WHERE profile_id = ?1 AND direction = ?2 AND item_id = ?3",
-            params![profile_id, DOWNLOAD_JOB_DIRECTION, item_id],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|error| format!("Failed querying existing download job: {error}"))?;
-
-    if existing_id.is_none() {
-        connection
-            .execute(
+    transaction
+        .execute(
+            &format!(
                 "INSERT INTO sync_jobs (
                     profile_id, direction, item_id, path, remote_size, remote_modified_ts,
                     state, run_state, attempt_count, last_error, next_retry_at, lease_owner, lease_until,
                     bytes_done, bytes_total, progress_updated_at,
                     created_at, updated_at, started_at, finished_at
-                ) VALUES (
-                    ?1, ?2, ?3, ?4, ?5, ?6,
-                    ?7, ?8, 0, NULL, NULL, NULL, NULL,
-                    0, NULL, ?9,
-                    ?9, ?9, NULL, NULL
-                )",
-                params![
-                    profile_id,
-                    DOWNLOAD_JOB_DIRECTION,
-                    item_id,
-                    path,
-                    remote_size as i64,
-                    remote_modified_ts,
-                    DOWNLOAD_JOB_STATE_QUEUED,
-                    JOB_RUN_STATE_IDLE,
-                    now,
-                ],
-            )
-            .map_err(|error| format!("Failed inserting download job: {error}"))?;
-        return Ok(true);
-    }
-
-    connection
-        .execute(
-            "UPDATE sync_jobs
-             SET path = ?1,
-                 remote_size = ?2,
-                 remote_modified_ts = ?3,
-                 state = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN 'queued' ELSE state END,
-                 run_state = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN 'idle' ELSE run_state END,
-                 attempt_count = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN 0 ELSE attempt_count END,
-                 last_error = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN NULL ELSE last_error END,
-                 finished_at = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN NULL ELSE finished_at END,
-                 bytes_total = CASE WHEN ?2 > 0 THEN ?2 ELSE bytes_total END,
-                 progress_updated_at = COALESCE(progress_updated_at, ?4),
-                 updated_at = ?4
-             WHERE profile_id = ?5 AND direction = ?6 AND item_id = ?7",
+                )
+                SELECT profile_id, ?3, remote_item_id, path, cloud_size, cloud_mtime,
+                       ?4, ?5, 0, NULL, NULL, NULL, NULL,
+                       0, NULL, ?6,
+                       ?6, ?6, NULL, NULL
+                FROM sync_files
+                WHERE {PLANNED_DOWNLOADS_WHERE}
+                ON CONFLICT(profile_id, direction, item_id) DO UPDATE SET
+                    path = excluded.path,
+                    remote_size = excluded.remote_size,
+                    remote_modified_ts = excluded.remote_modified_ts,
+                    state = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN 'queued' ELSE state END,
+                    run_state = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN 'idle' ELSE run_state END,
+                    attempt_count = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN 0 ELSE attempt_count END,
+                    last_error = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN NULL ELSE last_error END,
+                    finished_at = CASE WHEN state IN ('done', 'failed_terminal', 'skipped') THEN NULL ELSE finished_at END,
+                    bytes_total = CASE WHEN excluded.remote_size > 0 THEN excluded.remote_size ELSE bytes_total END,
+                    progress_updated_at = COALESCE(progress_updated_at, excluded.updated_at),
+                    updated_at = excluded.updated_at
+                WHERE sync_jobs.path != excluded.path
+                   OR sync_jobs.remote_size != excluded.remote_size
+                   OR sync_jobs.remote_modified_ts != excluded.remote_modified_ts
+                   OR sync_jobs.state IN ('done', 'failed_terminal', 'skipped')"
+            ),
             params![
-                path,
-                remote_size as i64,
-                remote_modified_ts,
-                now,
                 profile_id,
+                PLANNER_ACTION_DOWNLOAD,
                 DOWNLOAD_JOB_DIRECTION,
-                item_id,
+                DOWNLOAD_JOB_STATE_QUEUED,
+                JOB_RUN_STATE_IDLE,
+                now,
             ],
         )
-        .map_err(|error| format!("Failed updating download job metadata: {error}"))?;
-    Ok(false)
+        .map_err(|error| format!("Failed queueing planned downloads: {error}"))?;
+
+    transaction
+        .execute(
+            "DELETE FROM sync_jobs
+             WHERE profile_id = ?1
+               AND direction = ?3
+               AND state IN (?4, ?5)
+               AND NOT EXISTS (
+                   SELECT 1 FROM sync_files AS planned
+                   WHERE planned.profile_id = sync_jobs.profile_id
+                     AND planned.remote_item_id = sync_jobs.item_id
+                     AND planned.desired_action = ?2
+                     AND planned.is_dir = 0
+                     AND planned.is_shared_reference = 0
+                     AND planned.cloud_present = 1
+               )",
+            params![
+                profile_id,
+                PLANNER_ACTION_DOWNLOAD,
+                DOWNLOAD_JOB_DIRECTION,
+                DOWNLOAD_JOB_STATE_QUEUED,
+                DOWNLOAD_JOB_STATE_RETRY_WAIT,
+            ],
+        )
+        .map_err(|error| format!("Failed dropping unplanned downloads: {error}"))?;
+
+    let planned: i64 = transaction
+        .query_row(
+            &format!("SELECT COUNT(1) FROM sync_files WHERE {PLANNED_DOWNLOADS_WHERE}"),
+            params![profile_id, PLANNER_ACTION_DOWNLOAD],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("Failed counting planned downloads: {error}"))?;
+    transaction
+        .commit()
+        .map_err(|error| format!("Failed committing download queue: {error}"))?;
+    Ok(usize::try_from(planned).unwrap_or(0))
 }
 
 /// Claims up to `max_jobs` queued downloads, oldest first, in two lanes:

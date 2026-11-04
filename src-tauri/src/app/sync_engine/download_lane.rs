@@ -42,10 +42,15 @@ pub(crate) async fn dispatch_claimed_download_jobs(
     for claimed_job in claimed {
         // The version to download is captured now, so the baseline records
         // exactly what was fetched even if the cloud changes meanwhile.
+        // A job queued earlier (before a restart, say) only runs while the
+        // plan still says to download this item: a file that has since
+        // appeared locally is verified by hash instead.
         let Some(row) = read_sync_file_row(&graph.profile_id, &claimed_job.path)?.filter(|row| {
-            row.cloud_present && row.remote_item_id.as_deref() == Some(claimed_job.item_id.as_str())
+            row.cloud_present
+                && row.remote_item_id.as_deref() == Some(claimed_job.item_id.as_str())
+                && row.desired_action == PLANNER_ACTION_DOWNLOAD
         }) else {
-            // The plan moved on (the item was deleted or moved): drop the job.
+            // The plan moved on (deleted, moved, or now verified): drop it.
             mark_download_job_done(&graph.profile_id, claimed_job.job_id, true)?;
             continue;
         };

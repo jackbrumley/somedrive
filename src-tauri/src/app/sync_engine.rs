@@ -46,6 +46,8 @@ mod job_queue_db;
 #[cfg(test)]
 mod job_queue_db_tests;
 mod job_queue_download_store;
+#[cfg(test)]
+mod job_queue_download_tests;
 mod job_queue_issue_throttle_store;
 mod job_queue_lifecycle_store;
 #[cfg(test)]

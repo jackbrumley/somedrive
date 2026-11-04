@@ -2,11 +2,13 @@ import {
   IconAlertTriangleFilled,
   IconBuildingBank,
   IconFolder,
+  IconLoader2,
   IconPlayerPauseFilled,
   IconPlayerPlayFilled,
   IconUser,
 } from "@tabler/icons-preact";
 import { AccountHomeCardButton } from "./AccountHomeCardButton";
+import { agentStateRequestLabel, useAgentStateRequest } from "../../hooks/useAgentStateRequest";
 import type { AccountProfile, SyncRuntimeAccountStatus } from "../../types/somedrive";
 import { syncModeMessage } from "./syncModeMessaging";
 import { computeEffectiveSyncState, computeHasCompletedInitialSync } from "./syncStateSelectors";
@@ -46,9 +48,12 @@ export function AccountCard({ account, runtimeStatus, onOpenDetails, onSetAgentS
     ? "account-sync-nav-btn account-sync-nav-btn-stopped"
     : "account-sync-nav-btn";
   const nextSyncState: "syncing" | "paused" = syncActive ? "paused" : "syncing";
+  const { pendingState, requestAgentState } = useAgentStateRequest(account.id, onSetAgentState);
   const syncButtonTitle = showBlockingMarker
     ? "Open synchronization details"
-    : syncState === "syncing"
+    : pendingState !== null
+      ? agentStateRequestLabel(pendingState)
+      : syncState === "syncing"
       ? "Pause synchronization"
       : "Resume synchronization";
   const syncStateLabel = syncState === "stopped" ? "Stopped" : syncState === "syncing" ? "Syncing" : "Paused";
@@ -90,17 +95,21 @@ export function AccountCard({ account, runtimeStatus, onOpenDetails, onSetAgentS
                 type="button"
                 aria-label={syncButtonTitle}
                 title={syncButtonTitle}
+                disabled={pendingState !== null}
+                aria-busy={pendingState !== null}
                 onClick={(event) => {
                   event.stopPropagation();
                   if (showBlockingMarker) {
                     onOpenDetails(account.id);
                     return;
                   }
-                  void onSetAgentState(account.id, nextSyncState);
+                  void requestAgentState(nextSyncState);
                 }}
               >
                 {showBlockingMarker ? (
                   <IconAlertTriangleFilled size={24} class="sync-stopped-icon" />
+                ) : pendingState !== null ? (
+                  <IconLoader2 size={24} class="spin" />
                 ) : syncState === "syncing" ? (
                   <IconPlayerPauseFilled size={24} />
                 ) : (

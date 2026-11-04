@@ -249,8 +249,8 @@ pub(crate) fn claim_upload_job_path(
     Ok(claimed_by_owner.is_some())
 }
 
-/// Queues an upload for `relative_path`, queuing a finished job again (see
-/// `upsert_download_job`).
+/// Queues an upload for `relative_path`, queuing a finished job again (as
+/// `queue_planned_downloads` does for downloads).
 pub(crate) fn upsert_upload_job_queued(
     profile_id: &str,
     relative_path: &str,
