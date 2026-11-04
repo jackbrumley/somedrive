@@ -223,6 +223,30 @@ Removing the rule brings it back under normal sync.
 - **404 on download** re-checks the item through delta instead of marking it
   skipped forever (B7).
 
+## 7a. Throughput
+
+Downloads are the bulk of a first sync, so the download path avoids repeated
+setup work:
+
+- **Shared HTTP clients:** one client per cycle (HTTP/2, keep-alive), so
+  connections and TLS sessions are reused instead of opened per file.
+- **Direct download links:** the change feed's
+  `@microsoft.graph.downloadUrl` is stored with the item and used while it is
+  under 50 minutes old, skipping one Graph request per file. A link refused
+  with 401/403/404/410 falls back to the normal Graph download.
+- **Connection pool:** each account reuses its SQLite connections; a
+  connection returned inside an open transaction is dropped, never reused.
+- **Folder flush per batch:** a downloaded file's folder is flushed once per
+  batch of results, before that batch is recorded as synced, instead of
+  after every file.
+- **Adaptive concurrency:** a cycle starts at 8 parallel downloads, adds one
+  after every 20 successful downloads up to the "Parallel downloads"
+  setting, and halves on a 429 (once per 5-second throttle episode, never
+  below 2). Logged as `DOWNLOAD_LIMIT_RAISED` / `DOWNLOAD_LIMIT_LOWERED`.
+- **Size lanes:** files of 8 MB or more may hold a quarter of the slots (at
+  least one) while smaller files are waiting; slots no small file needs go
+  to large files.
+
 ## 8. Data model
 
 One table holds the per-item state; the JSON `PersistedSyncState` caches are

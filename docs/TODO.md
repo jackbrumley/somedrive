@@ -35,6 +35,9 @@ review, 2026-11-04). Design: `docs/sync-engine.md`. Built on branch
     `app/auth.rs` with real Rust modules.
 11. [x] Split the files over the 600-line soft budget
     (`npm run check:structure` lists them).
+12. [x] Download throughput (`docs/sync-engine.md` section 7a): shared HTTP
+    clients, direct download links, SQLite connection reuse, one folder
+    flush per batch, adaptive concurrency and a large-file lane.
 
 ### Project-owned Microsoft Entra app registration
 SomeDrive must not ship with a third-party client ID.
@@ -84,6 +87,9 @@ SomeDrive must not ship with a third-party client ID.
   commented `#[allow(clippy::too_many_arguments)]` markers.
 
 ## Ideas
+
+- Selective sync: choose which OneDrive folders this device syncs.
+- Files On-Demand: a virtual drive (FUSE) that downloads files when opened.
 
 - Show only the relevant tray item (Pause all or Resume all syncing) by
   rebuilding the tray menu when sync state changes.
