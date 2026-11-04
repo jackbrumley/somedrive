@@ -7,7 +7,7 @@
 <p align="center">Simple GUI-first Microsoft OneDrive sync for Linux.</p>
 
 <p align="center">
-  <a href="https://www.gnu.org/licenses/gpl-3.0"><img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="GNU GPLv3 License" /></a>
+  <a href="https://www.gnu.org/licenses/agpl-3.0.html"><img src="https://img.shields.io/badge/License-AGPLv3-blue.svg" alt="AGPL v3 License" /></a>
   <a href="https://github.com/jackbrumley/somedrive"><img src="https://img.shields.io/badge/Platform-Linux-16a34a" alt="Platform" /></a>
   <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Built%20With-Tauri-14b8a6" alt="Built with Tauri" /></a>
 </p>
@@ -113,7 +113,7 @@ _Work in progress._
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 (GPLv3) - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU Affero General Public License v3.0 (AGPLv3). See the [LICENSE](LICENSE) file for details.
 
 ---
 
