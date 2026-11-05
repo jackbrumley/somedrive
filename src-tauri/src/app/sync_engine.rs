@@ -95,6 +95,7 @@ mod sync_files_store;
 mod sync_history_store;
 mod sync_problems_store;
 mod sync_shutdown;
+mod transfer_pool;
 mod upload_lane;
 mod worker_lifecycle;
 
@@ -154,5 +155,6 @@ pub(crate) use sync_files_store::*;
 pub(crate) use sync_history_store::*;
 pub use sync_problems_store::*;
 pub use sync_shutdown::*;
+pub(crate) use transfer_pool::*;
 pub(crate) use upload_lane::*;
 pub(crate) use worker_lifecycle::*;

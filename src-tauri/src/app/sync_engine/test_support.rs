@@ -161,3 +161,26 @@ pub(crate) fn seed_synced_folder(profile_id: &str) {
     )
     .expect("baseline");
 }
+
+/// An engine context for tests that never reach Microsoft.
+pub(crate) fn test_graph_context(label: &str) -> GraphContext {
+    let profile_id = test_profile_id(label);
+    GraphContext {
+        account_prefix: format!("[acct:{profile_id}]"),
+        profile_id,
+        cycle_id: "test-cycle".to_string(),
+        access_token: Arc::new(tokio::sync::RwLock::new(String::new())),
+        token_refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
+        profiles_lock: Arc::new(std::sync::Mutex::new(())),
+        sync_runtime: Arc::new(std::sync::Mutex::new(SyncRuntimeMap::new())),
+        throttled_until: Arc::new(std::sync::Mutex::new(None)),
+        exclusions: Arc::new(ExclusionRules::compile(&[]).expect("no rules")),
+        http: reqwest::Client::new(),
+        http_no_redirect: reqwest::Client::new(),
+        content_http: reqwest::Client::new(),
+        pending_dir_syncs: Arc::new(std::sync::Mutex::new(HashSet::new())),
+        download_limit: Arc::new(AdaptiveDownloadLimit::new(32)),
+        throttle_releases: Arc::new(AtomicUsize::new(0)),
+        throttle_probe_until: Arc::new(std::sync::Mutex::new(None)),
+    }
+}

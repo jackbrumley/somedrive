@@ -199,7 +199,7 @@ pub(crate) fn apply_remote_download_result(
         RemoteDownloadResultStatus::Success(RemoteDownloadOutcome::Downloaded(entry)) => {
             commit_baseline(&graph.profile_id, &result.path, &result.version, &entry)?;
             mark_download_job_done(&graph.profile_id, result.job_id, false)?;
-            graph.record_download_success();
+            graph.record_transfer_success();
             runtime_record_remote_download_completed(
                 &graph.sync_runtime,
                 &graph.profile_id,

@@ -27,7 +27,9 @@ pub(crate) struct GraphContext {
     /// Folders that received a downloaded file since the last flush. They
     /// are flushed to disk before those downloads are recorded as synced.
     pub(crate) pending_dir_syncs: Arc<std::sync::Mutex<HashSet<PathBuf>>>,
-    /// How many downloads may run at once right now (adapts to throttling).
+    /// How many transfers may run at once right now, and how fast they may
+    /// start (adapts to throttling). Downloads, uploads and deletes share it:
+    /// Microsoft limits the account as a whole.
     pub(crate) download_limit: Arc<AdaptiveDownloadLimit>,
     /// Requests released by the end of a throttle window, counted so the
     /// first goes alone as a probe and the rest are spread out.
@@ -186,8 +188,9 @@ impl GraphContext {
         Ok(())
     }
 
-    /// Records a finished download, letting the download limit grow.
-    pub(crate) fn record_download_success(&self) {
+    /// Records a finished transfer (download, upload or delete), letting the
+    /// account's shared limit grow.
+    pub(crate) fn record_transfer_success(&self) {
         if let Some(change) = self.download_limit.record_success() {
             log::info!(
                 "{} [cycle:{}] DOWNLOAD_LIMIT_RAISED from={} to={} maximum={} starts_per_second={:.1}",

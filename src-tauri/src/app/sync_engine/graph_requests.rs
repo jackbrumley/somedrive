@@ -169,32 +169,87 @@ pub(crate) fn is_transient_reqwest_error(error: &reqwest::Error) -> bool {
 /// What a Graph DELETE did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GraphDeleteOutcome {
-    /// Deleted (or already gone).
+    /// Deleted.
     Deleted,
+    /// Already gone: nothing to delete.
+    NotFound,
     /// The item no longer matched the `If-Match` eTag, so nothing was deleted.
     ChangedSinceRead,
 }
 
 /// Deletes `url`. With `if_match`, OneDrive deletes only while the item's
-/// eTag is still that value.
+/// eTag is still that value. Waits out the account's throttle window like
+/// every other request, and retries throttling, server errors and dropped
+/// connections, so many deletes can run at once.
 pub(crate) async fn graph_delete(
     graph: &GraphContext,
     url: &str,
     if_match: Option<&str>,
-) -> Result<GraphDeleteOutcome, String> {
+    cancel_flag: &Arc<AtomicBool>,
+) -> SyncResult<GraphDeleteOutcome> {
     let client = graph.http.clone();
     let mut refreshed = false;
+    let mut attempt: u32 = 0;
     loop {
+        ensure_not_cancelled(cancel_flag)?;
+        let request_started_at = graph.wait_for_throttle_window(cancel_flag).await?;
+        attempt += 1;
         let access_token = graph.current_access_token().await;
         let mut request = client.delete(url).bearer_auth(&access_token);
         if let Some(etag) = if_match {
             request = request.header(reqwest::header::IF_MATCH, etag);
         }
-        let response = request
-            .send()
-            .await
-            .map_err(|error| format!("Graph DELETE failed: {error}"))?;
+        let response = tokio::select! {
+            _ = wait_for_cancellation(Arc::clone(cancel_flag)) => {
+                return Err(SyncError::Cancelled);
+            }
+            value = request.send() => value
+        };
+        let response = match response {
+            Ok(value) => value,
+            Err(error) => {
+                if attempt < MAX_DOWNLOAD_RETRIES && is_transient_reqwest_error(&error) {
+                    let delay = exponential_backoff_delay(attempt);
+                    log::warn!(
+                        "{} [cycle:{}] GRAPH_DELETE_RETRY attempt={} url={} reason={} delay_ms={}",
+                        graph.account_prefix,
+                        graph.cycle_id,
+                        attempt,
+                        url,
+                        error,
+                        delay.as_millis()
+                    );
+                    sleep_with_cancellation(cancel_flag, delay).await?;
+                    continue;
+                }
+                return Err(SyncError::from_request(
+                    &error,
+                    format!("Graph DELETE failed: {error}"),
+                ));
+            }
+        };
         let status = response.status();
+        if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
+            let delay = parse_retry_after_delay(response.headers())
+                .unwrap_or_else(|| exponential_backoff_delay(attempt));
+            if status == StatusCode::TOO_MANY_REQUESTS {
+                let _ = record_throttle_event(&graph.profile_id, DELETE_EVENT_DIRECTION);
+                graph.extend_throttle_window(delay, request_started_at)?;
+            }
+            if attempt < MAX_DOWNLOAD_RETRIES {
+                log::warn!(
+                    "{} [cycle:{}] GRAPH_DELETE_RETRY_HTTP attempt={} status={} url={} delay_ms={}",
+                    graph.account_prefix,
+                    graph.cycle_id,
+                    attempt,
+                    status,
+                    url,
+                    delay.as_millis()
+                );
+                sleep_with_cancellation(cancel_flag, delay).await?;
+                continue;
+            }
+        }
         if status.as_u16() == 401 && !refreshed {
             log::warn!(
                 "{} [cycle:{}] GRAPH_DELETE_401_REFRESH",
@@ -206,8 +261,11 @@ pub(crate) async fn graph_delete(
             continue;
         }
 
-        if status.is_success() || status.as_u16() == 404 {
+        if status.is_success() {
             return Ok(GraphDeleteOutcome::Deleted);
+        }
+        if status == StatusCode::NOT_FOUND {
+            return Ok(GraphDeleteOutcome::NotFound);
         }
         if status.as_u16() == 412 && if_match.is_some() {
             return Ok(GraphDeleteOutcome::ChangedSinceRead);
@@ -215,9 +273,9 @@ pub(crate) async fn graph_delete(
 
         let text = response.text().await.unwrap_or_default();
         let snippet: String = text.chars().take(400).collect();
-        return Err(format!(
-            "Graph DELETE {} failed with status {}: {}",
-            url, status, snippet
+        return Err(SyncError::from_status(
+            status,
+            format!("Graph DELETE {url} failed with status {status}: {snippet}"),
         ));
     }
 }

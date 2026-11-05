@@ -37,11 +37,9 @@ pub(crate) async fn apply_remote_deletes(
             per_item.extend(folder_delete.rows);
         }
     }
-    // Deepest first, so a folder is only reached after its contents.
-    per_item.sort_by_key(|row| std::cmp::Reverse(row.path.matches('/').count()));
     delete_remote_items(
         graph,
-        &per_item,
+        per_item,
         user_approved,
         stats,
         &mut progress,
@@ -230,62 +228,147 @@ async fn delete_whole_folder(
     Ok(true)
 }
 
+/// What deleting one cloud item came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ItemDeleteOutcome {
+    Deleted,
+    /// Gone from OneDrive already (deleted elsewhere).
+    AlreadyGone,
+    /// Changed since the plan (or a folder that is not empty): left alone.
+    ChangedSincePlan,
+    /// Never uploaded, so there is nothing in OneDrive to delete.
+    NotInCloud,
+}
+
 /// Deletes cloud items the plan deletes (OneDrive keeps them in its recycle
-/// bin). Each item is read again first: a file whose content changed since
-/// the baseline, or a folder that is not empty, is left alone. Deletes the
-/// user approved in SomeDrive do not count towards the delete guard.
+/// bin), only if each still holds what the plan saw. Files go many at a
+/// time under the account's transfer limit; then folders, deepest first,
+/// one at a time, as each must be empty by then. Deletes the user approved
+/// in SomeDrive do not count towards the delete guard.
 pub(crate) async fn delete_remote_items(
-    graph: &mut GraphContext,
-    rows: &[SyncFileRow],
+    graph: &GraphContext,
+    rows: Vec<SyncFileRow>,
     user_approved: &HashSet<String>,
     stats: &mut SyncCycleStats,
     progress: &mut DeleteProgress,
     cancel_flag: &Arc<AtomicBool>,
 ) -> SyncResult<()> {
-    for row in rows {
+    let (mut folders, files): (Vec<SyncFileRow>, Vec<SyncFileRow>) =
+        rows.into_iter().partition(|row| row.is_dir);
+    let task_graph = graph.clone();
+    let task_cancel = Arc::clone(cancel_flag);
+    run_in_transfer_pool(
+        graph,
+        files,
+        |_| false,
+        cancel_flag,
+        move |row| {
+            let graph = task_graph.clone();
+            let cancel_flag = Arc::clone(&task_cancel);
+            async move {
+                let outcome = delete_one_remote_item(&graph, &row, &cancel_flag).await;
+                (row, outcome)
+            }
+        },
+        |(row, outcome)| {
+            progress.advance(1);
+            record_remote_delete(graph, &row, outcome?, user_approved, stats)
+        },
+    )
+    .await?;
+
+    folders.sort_by_key(|row| std::cmp::Reverse(row.path.matches('/').count()));
+    for row in folders {
         ensure_not_cancelled(cancel_flag)?;
-        progress.advance(usize::from(!row.is_dir));
-        let Some(item_id) = row.remote_item_id.clone() else {
-            continue;
-        };
-        let Some(current) = fetch_remote_item(graph, &item_id, cancel_flag).await? else {
+        let outcome = delete_one_remote_item(graph, &row, cancel_flag).await?;
+        record_remote_delete(graph, &row, outcome, user_approved, stats)?;
+    }
+    Ok(())
+}
+
+/// Deletes one item if it still holds what the plan saw. A file with a
+/// known eTag goes in one request that OneDrive only carries out while the
+/// eTag still matches; the planner only deletes a file whose last-seen
+/// version is the synced one, so this is the same check without a read.
+/// Anything else is read first: a folder must be empty, and a file without
+/// an eTag must still hold the synced content.
+pub(crate) async fn delete_one_remote_item(
+    graph: &GraphContext,
+    row: &SyncFileRow,
+    cancel_flag: &Arc<AtomicBool>,
+) -> SyncResult<ItemDeleteOutcome> {
+    let Some(item_id) = row.remote_item_id.as_deref() else {
+        return Ok(ItemDeleteOutcome::NotInCloud);
+    };
+    if let (false, Some(etag)) = (row.is_dir, row.cloud_etag.as_deref()) {
+        return Ok(
+            match delete_remote_item(graph, item_id, Some(etag), cancel_flag).await? {
+                GraphDeleteOutcome::Deleted => ItemDeleteOutcome::Deleted,
+                GraphDeleteOutcome::NotFound => ItemDeleteOutcome::AlreadyGone,
+                GraphDeleteOutcome::ChangedSinceRead => ItemDeleteOutcome::ChangedSincePlan,
+            },
+        );
+    }
+    let Some(current) = fetch_remote_item(graph, item_id, cancel_flag).await? else {
+        return Ok(ItemDeleteOutcome::AlreadyGone);
+    };
+    let unchanged = if row.is_dir {
+        !remote_folder_has_children(graph, item_id, cancel_flag).await?
+    } else {
+        current.size.unwrap_or(0) == row.base_cloud_size
+            && match (current.quick_xor_hash(), row.base_hash.as_deref()) {
+                (Some(current_hash), Some(base_hash)) => current_hash == base_hash,
+                _ => current.c_tag.is_some() && current.c_tag == row.cloud_ctag,
+            }
+    };
+    if !unchanged {
+        return Ok(ItemDeleteOutcome::ChangedSincePlan);
+    }
+    Ok(
+        match delete_remote_item(graph, item_id, None, cancel_flag).await? {
+            GraphDeleteOutcome::NotFound => ItemDeleteOutcome::AlreadyGone,
+            _ => ItemDeleteOutcome::Deleted,
+        },
+    )
+}
+
+/// Records what deleting one item did.
+fn record_remote_delete(
+    graph: &GraphContext,
+    row: &SyncFileRow,
+    outcome: ItemDeleteOutcome,
+    user_approved: &HashSet<String>,
+    stats: &mut SyncCycleStats,
+) -> SyncResult<()> {
+    match outcome {
+        ItemDeleteOutcome::NotInCloud => {}
+        ItemDeleteOutcome::ChangedSincePlan => log::info!(
+            "{} [cycle:{}] REMOTE_DELETE_SKIPPED path={} reason=changed_since_plan",
+            graph.account_prefix,
+            graph.cycle_id,
+            row.path
+        ),
+        ItemDeleteOutcome::AlreadyGone => {
             record_cloud_absent(&graph.profile_id, &row.path)?;
             forget_sync_file(&graph.profile_id, &row.path)?;
-            continue;
-        };
-        let unchanged = if row.is_dir {
-            !remote_folder_has_children(graph, &item_id, cancel_flag).await?
-        } else {
-            current.size.unwrap_or(0) == row.base_cloud_size
-                && match (current.quick_xor_hash(), row.base_hash.as_deref()) {
-                    (Some(current_hash), Some(base_hash)) => current_hash == base_hash,
-                    _ => current.c_tag.is_some() && current.c_tag == row.cloud_ctag,
-                }
-        };
-        if !unchanged {
-            log::info!(
-                "{} [cycle:{}] REMOTE_DELETE_SKIPPED path={} reason=changed_since_plan",
-                graph.account_prefix,
-                graph.cycle_id,
-                row.path
-            );
-            continue;
         }
-        delete_remote_item(graph, &item_id, cancel_flag).await?;
-        record_cloud_absent(&graph.profile_id, &row.path)?;
-        forget_sync_file(&graph.profile_id, &row.path)?;
-        if !user_approved.contains(&row.path) {
-            record_throttle_event(&graph.profile_id, DELETE_EVENT_DIRECTION)?;
+        ItemDeleteOutcome::Deleted => {
+            record_cloud_absent(&graph.profile_id, &row.path)?;
+            forget_sync_file(&graph.profile_id, &row.path)?;
+            if !user_approved.contains(&row.path) {
+                record_throttle_event(&graph.profile_id, DELETE_EVENT_DIRECTION)?;
+            }
+            if !row.is_dir {
+                record_finished_delete(
+                    &graph.profile_id,
+                    HISTORY_DELETED_REMOTELY,
+                    &row.path,
+                    row.base_cloud_size,
+                )?;
+            }
+            stats.deleted_remote += 1;
+            graph.record_transfer_success();
         }
-        if !row.is_dir {
-            record_finished_delete(
-                &graph.profile_id,
-                HISTORY_DELETED_REMOTELY,
-                &row.path,
-                row.base_cloud_size,
-            )?;
-        }
-        stats.deleted_remote += 1;
     }
     Ok(())
 }

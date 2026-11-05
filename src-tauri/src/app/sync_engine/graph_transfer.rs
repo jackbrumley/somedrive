@@ -109,27 +109,32 @@ pub(crate) async fn create_remote_folder(
     }
 }
 
+/// Deletes one cloud item. With `if_match` (its eTag when last seen),
+/// OneDrive deletes it only if it has not changed since.
 pub(crate) async fn delete_remote_item(
-    graph: &mut GraphContext,
+    graph: &GraphContext,
     item_id: &str,
+    if_match: Option<&str>,
     cancel_flag: &Arc<AtomicBool>,
-) -> SyncResult<()> {
+) -> SyncResult<GraphDeleteOutcome> {
     ensure_not_cancelled(cancel_flag)?;
     let url = format!("{GRAPH_ROOT}/me/drive/items/{}", item_id);
     log::info!(
-        "{} [cycle:{}] REMOTE_DELETE_REQUEST item_id={}",
+        "{} [cycle:{}] REMOTE_DELETE_REQUEST item_id={} conditional={}",
         graph.account_prefix,
         graph.cycle_id,
-        item_id
+        item_id,
+        if_match.is_some()
     );
-    graph_delete(graph, &url, None).await?;
+    let outcome = graph_delete(graph, &url, if_match, cancel_flag).await?;
     log::info!(
-        "{} [cycle:{}] REMOTE_DELETE_RESULT item_id={} status=ok",
+        "{} [cycle:{}] REMOTE_DELETE_RESULT item_id={} outcome={:?}",
         graph.account_prefix,
         graph.cycle_id,
-        item_id
+        item_id,
+        outcome
     );
-    Ok(())
+    Ok(outcome)
 }
 
 /// Deletes a whole cloud folder with one request, only while its eTag is
@@ -143,7 +148,7 @@ pub(crate) async fn delete_remote_folder_if_unchanged(
 ) -> SyncResult<GraphDeleteOutcome> {
     ensure_not_cancelled(cancel_flag)?;
     let url = format!("{GRAPH_ROOT}/me/drive/items/{item_id}");
-    let outcome = graph_delete(graph, &url, Some(etag)).await?;
+    let outcome = graph_delete(graph, &url, Some(etag), cancel_flag).await?;
     log::info!(
         "{} [cycle:{}] REMOTE_FOLDER_DELETE_RESULT item_id={} outcome={:?}",
         graph.account_prefix,
