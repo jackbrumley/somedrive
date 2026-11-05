@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # SomeDrive one-line installer for Linux.
-#   curl --proto '=https' --tlsv1.2 -sSf https://brumley.info/somedrive/install.sh | bash
+#   curl --proto '=https' --tlsv1.2 -sSf https://somedrive.org/install.sh | bash
 # The in-app updater re-runs this same script, so keep its options stable.
 
 REPO="jackbrumley/somedrive"
@@ -16,7 +16,7 @@ LEGACY_LAUNCHER_NAMES=("somedrive" "SomeDrive")
 # productName was "SomeDrive" wrote SomeDrive.desktop.
 AUTOSTART_DIR="${HOME}/.config/autostart"
 LEGACY_AUTOSTART_NAMES=("SomeDrive")
-INSTALL_BASE_URL="https://brumley.info/somedrive"
+INSTALL_BASE_URL="https://somedrive.org"
 
 # GitHub API request headers. SOMEDRIVE_GITHUB_TOKEN is optional: anonymous
 # requests are limited to 60 an hour per IP address.

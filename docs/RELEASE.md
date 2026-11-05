@@ -30,7 +30,7 @@ named by `scripts/release-assets.mjs`:
 
 Development happens on `dev`; releases are tagged on `dev`. Promotion
 fast-forwards `main` to the release tag, so `main` always equals the latest
-release. GitHub Pages serves `brumley.info/somedrive/` (install page and
+release. GitHub Pages serves `somedrive.org` (install page and
 installer scripts) from `main:/docs`, so promotion also deploys installer
 changes. Never commit to `main` directly.
 
@@ -82,7 +82,7 @@ the in-app updater and the one-line installers serve the new version.
 
 - An older installed version offers the update and **Update Now** finishes
   in-flight transfers, installs and relaunches it, and syncing accounts resume.
-- `curl --proto '=https' --tlsv1.2 -sSf https://brumley.info/somedrive/install.sh | bash` installs the new
+- `curl --proto '=https' --tlsv1.2 -sSf https://somedrive.org/install.sh | bash` installs the new
   version.
 
 ## When Something Fails
