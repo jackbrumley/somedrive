@@ -351,7 +351,9 @@ pub(crate) fn delete_local_items(
     rows: &[SyncFileRow],
     stats: &mut SyncCycleStats,
 ) -> SyncResult<()> {
+    let mut progress = DeleteProgress::start(graph, "Moving to the Trash", count_files(rows));
     for row in rows {
+        progress.advance(usize::from(!row.is_dir));
         let local_path = local_path_for(sync_root, &row.path);
         let Some(entry) = read_local_entry(&local_path)? else {
             forget_sync_file(&graph.profile_id, &row.path)?;
@@ -398,6 +400,7 @@ pub(crate) fn delete_local_items(
             row.path
         );
     }
+    progress.finish();
     Ok(())
 }
 

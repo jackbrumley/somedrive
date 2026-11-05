@@ -24,7 +24,9 @@ interface TransferProgress {
   label: string;
   done: number;
   total: number;
-  bytesLeft: number;
+  unit: string;
+  /** Null for counted work that moves no data (deletes, file checks). */
+  bytesLeft: number | null;
   bytesPerSecond: number;
 }
 
@@ -48,17 +50,37 @@ function transferProgress(
   if (total <= 0 || (done >= total && inFlight === 0)) {
     return null;
   }
-  return { label, done, total, bytesLeft, bytesPerSecond };
+  return { label, done, total, unit: "files", bytesLeft, bytesPerSecond };
+}
+
+/** The engine's own counted step, e.g. "Deleting from OneDrive", as a bar. */
+function countedProgress(runtimeStatus: SyncRuntimeAccountStatus): TransferProgress | null {
+  const activity = runtimeStatus.currentActivity;
+  if (runtimeStatus.phase === "paused" || activity?.progressMode !== "determinate" || !activity.detail) {
+    return null;
+  }
+  const total = activity.total ?? 0;
+  if (total <= 0) {
+    return null;
+  }
+  return {
+    label: activity.detail,
+    done: activity.current ?? 0,
+    total,
+    unit: activity.unit ?? "items",
+    bytesLeft: null,
+    bytesPerSecond: 0,
+  };
 }
 
 function ProgressBlock({ progress, showSpeed }: { progress: TransferProgress; showSpeed: boolean }) {
   const percent = percentOf(progress.done, progress.total) ?? 0;
-  const parts = [
-    `${progress.done.toLocaleString()} of ${progress.total.toLocaleString()} files`,
-    `${formatBytes(progress.bytesLeft)} left`,
-  ];
-  if (showSpeed) {
-    parts.push(formatTransferRate(progress.bytesPerSecond));
+  const parts = [`${progress.done.toLocaleString()} of ${progress.total.toLocaleString()} ${progress.unit}`];
+  if (progress.bytesLeft !== null) {
+    parts.push(`${formatBytes(progress.bytesLeft)} left`);
+    if (showSpeed) {
+      parts.push(formatTransferRate(progress.bytesPerSecond));
+    }
   }
   return (
     <div class="sync-progress">
@@ -114,6 +136,10 @@ export function AccountSyncOverview({
       )
     : null;
 
+  const counted = runtimeStatus ? countedProgress(runtimeStatus) : null;
+  // With a counted bar below, the headline need not repeat its numbers.
+  const headlineDetail = counted ? "Changes on this device and in OneDrive are being synced." : message.detail;
+
   const throttledRecently =
     (runtimeStatus?.remoteDownloadThrottleLastMinute ?? 0) + (runtimeStatus?.uploadThrottleLastMinute ?? 0) > 0;
   const retryWaiting = (runtimeStatus?.remoteDownloadRetryWaiting ?? 0) + (runtimeStatus?.uploadRetryWaiting ?? 0);
@@ -135,12 +161,13 @@ export function AccountSyncOverview({
         </span>
         <div>
           <h3 class="sync-overview-title">{message.title}</h3>
-          <p class="sync-overview-detail">{message.detail}</p>
+          <p class="sync-overview-detail">{headlineDetail}</p>
         </div>
       </div>
 
-      {(downloads || uploads) && (
+      {(counted || downloads || uploads) && (
         <div class="sync-overview-progress">
+          {counted && <ProgressBlock progress={counted} showSpeed={false} />}
           {downloads && <ProgressBlock progress={downloads} showSpeed={engineRunning} />}
           {uploads && <ProgressBlock progress={uploads} showSpeed={engineRunning} />}
         </div>

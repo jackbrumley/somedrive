@@ -27,16 +27,29 @@ pub(crate) async fn apply_remote_deletes(
     cancel_flag: &Arc<AtomicBool>,
 ) -> SyncResult<()> {
     let (folders, mut per_item) = plan_folder_deletes(&graph.profile_id, rows)?;
+    let mut progress = DeleteProgress::start(graph, "Deleting from OneDrive", count_files(rows));
     for folder_delete in folders {
         let deleted =
             delete_whole_folder(graph, &folder_delete, user_approved, stats, cancel_flag).await?;
-        if !deleted {
+        if deleted {
+            progress.advance(folder_delete.file_count);
+        } else {
             per_item.extend(folder_delete.rows);
         }
     }
     // Deepest first, so a folder is only reached after its contents.
     per_item.sort_by_key(|row| std::cmp::Reverse(row.path.matches('/').count()));
-    delete_remote_items(graph, &per_item, user_approved, stats, cancel_flag).await
+    delete_remote_items(
+        graph,
+        &per_item,
+        user_approved,
+        stats,
+        &mut progress,
+        cancel_flag,
+    )
+    .await?;
+    progress.finish();
+    Ok(())
 }
 
 /// Splits the planned cloud deletes into whole folders (the top-most
@@ -226,10 +239,12 @@ pub(crate) async fn delete_remote_items(
     rows: &[SyncFileRow],
     user_approved: &HashSet<String>,
     stats: &mut SyncCycleStats,
+    progress: &mut DeleteProgress,
     cancel_flag: &Arc<AtomicBool>,
 ) -> SyncResult<()> {
     for row in rows {
         ensure_not_cancelled(cancel_flag)?;
+        progress.advance(usize::from(!row.is_dir));
         let Some(item_id) = row.remote_item_id.clone() else {
             continue;
         };
