@@ -44,6 +44,9 @@ pub(crate) fn record_finished_delete(
             ],
         )
         .map_err(|error| format!("Failed recording the delete of '{path}': {error}"))?;
+    // The Activity feed reads this history from the status the UI is sent;
+    // a long run of deletes sends no transfer updates, so ask for one here.
+    sync_runtime::request_status_event(profile_id, sync_runtime::StatusEventEmitMode::Throttled);
     Ok(())
 }
 
