@@ -202,11 +202,19 @@ stays. Suggestions go as high up the folder tree as possible (a whole
 folder; else the identical part of a folder that is at least 90% copies;
 else the copies in one folder), and a greedy pass guarantees one copy of
 every file stays even if every suggestion is deleted. Folders named "old",
-"copy" or "duplicates", and the older of two snapshots, are suggested
-first. Hidden paths are left out of matching altogether. A delete works the
+"copy" or "duplicates" are suggested first, copies filed by date (a year
+folder or a folder directly inside one, such as `Archive/2019/02`) last, so
+the dated copy is the one kept; then the older of two snapshots goes first.
+Hidden paths are left out of matching altogether. A delete works the
 suggestion out again, compares every file byte for byte with the copy that
 stays, refuses if a folder holds anything else on disk, then moves it to
 the Trash and approves the deletes for the guard (`cleanup_delete.rs`).
+
+Identical copies and Large files are separate lists, one on screen at a
+time. Copies are confirmed by typing "delete". A large file can be deleted
+there only when it is the only copy, confirmed by typing its file name; a
+large file with a copy points to Identical copies, and the backend refuses
+to delete it from Large files.
 
 ### 6.5 Names
 - Two local names that differ only by case (`a.txt`, `A.txt`) cannot both

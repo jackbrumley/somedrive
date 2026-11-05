@@ -165,6 +165,27 @@ fn a_folder_named_old_or_copy_is_the_one_suggested() {
 }
 
 #[test]
+fn the_copy_filed_by_date_is_the_one_kept() {
+    // The single-file Archive folders would be suggested whole before the
+    // album's loose files if dates were not preferred.
+    let files = vec![
+        file("Pictures/Albums/Red/a.jpg", 5, "a"),
+        file("Pictures/Albums/Red/b.jpg", 6, "b"),
+        file("Pictures/Albums/Red/c.jpg", 7, "c"),
+        file("Pictures/Albums/Red/unique.jpg", 8, "u"),
+        file("Pictures/Archive/2019/02/a.jpg", 5, "a"),
+        file("Pictures/Archive/2022/unknown/b.jpg", 6, "b"),
+        file("Pictures/Archive/2010/c.jpg", 7, "c"),
+    ];
+    let view = analyse(files.clone(), &[]);
+    assert_eq!(
+        summary(&view),
+        vec![("files".to_string(), "Pictures/Albums/Red".to_string(), 3)]
+    );
+    assert_one_copy_stays(&files, &view);
+}
+
+#[test]
 fn identical_content_under_another_name_is_not_a_copy() {
     let files = vec![
         file("Cheats/2200/game-a.cht", 5, "same"),

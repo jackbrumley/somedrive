@@ -77,6 +77,13 @@ pub fn delete_large_file(
         .ok_or_else(|| {
             format!("'{path}' is no longer in the Large files list, so it was not deleted.")
         })?;
+    // Copies are deleted only from Identical copies, where each one is
+    // compared with the copy that stays first.
+    if let Some(copy) = file.copies.first() {
+        return Err(format!(
+            "'{path}' has an identical copy at '{copy}', so it was not deleted here. Delete copies from Identical copies instead."
+        ));
+    }
     let local_path = local_path_for(sync_root, &file.path);
     let on_disk = std::fs::metadata(&local_path)
         .map_err(|error| format!("Could not read '{}': {error}", local_path.display()))?;
@@ -87,11 +94,10 @@ pub fn delete_large_file(
     }
     trash_approved(profile_id, sync_root, std::slice::from_ref(&file.path))?;
     log::info!(
-        "{} CLEANUP_LARGE_FILE_DELETED path={} bytes={} copies={}",
+        "{} CLEANUP_LARGE_FILE_DELETED path={} bytes={}",
         log_context::account_prefix(profile_id),
         file.path,
-        file.size,
-        file.copies.len()
+        file.size
     );
     Ok(CleanupDeleteResult {
         file_count: 1,

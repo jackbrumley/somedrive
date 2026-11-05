@@ -250,6 +250,7 @@
   border: none;
   border-radius: 10px;
   background: transparent;
+  justify-content: start;
   text-align: left;
   cursor: pointer;
 }

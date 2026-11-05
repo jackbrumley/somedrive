@@ -3,13 +3,12 @@ import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import { Modal } from "../ui/Modal";
 
-/** The word the user types to confirm a delete. */
-const CONFIRM_WORD = "delete";
-
 interface CleanupDeleteDialogProps {
   title: string;
   /** What is deleted and why it is safe (or that it is the only copy). */
   summary: ComponentChildren;
+  /** What the user types to confirm: "delete" for copies, the file's name for an only copy. */
+  confirmWord: string;
   /** The confirm button, e.g. "Delete 201 files". */
   confirmLabel: string;
   /** What runs while the delete happens. */
@@ -21,12 +20,13 @@ interface CleanupDeleteDialogProps {
 
 /**
  * Confirms a Clean up delete: the button only enables once the user types
- * "delete". A refusal from the backend (a copy differs, a file is new) is
+ * the confirm word (ignoring case and surrounding spaces). A refusal from the backend (a copy differs, a file is new) is
  * shown here and nothing is deleted.
  */
 export function CleanupDeleteDialog({
   title,
   summary,
+  confirmWord,
   confirmLabel,
   busyText,
   onConfirm,
@@ -35,7 +35,7 @@ export function CleanupDeleteDialog({
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const ready = typed.trim().toLowerCase() === CONFIRM_WORD;
+  const ready = typed.trim().toLowerCase() === confirmWord.toLowerCase();
 
   const confirm = async () => {
     if (!ready || busy) {
@@ -64,7 +64,7 @@ export function CleanupDeleteDialog({
         <div class="cleanup-confirm-summary">{summary}</div>
         <label class="cleanup-confirm-label">
           <span>
-            Type <strong>{CONFIRM_WORD}</strong> to confirm
+            Type <strong class="cleanup-confirm-word">{confirmWord}</strong> to confirm
           </span>
           <input
             class="cleanup-confirm-input"

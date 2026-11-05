@@ -191,3 +191,88 @@
 .cleanup-confirm-actions {
   justify-content: flex-end;
 }
+
+/* Identical copies | Large files: one list on screen at a time. */
+.cleanup-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+}
+
+.cleanup-switch-option {
+  gap: 8px;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.cleanup-switch-option:hover:not(.is-active) {
+  background: var(--control-muted-bg-hover);
+  color: var(--text-main);
+}
+
+.cleanup-switch-option.is-active {
+  background: var(--control-muted-bg);
+  color: var(--text-main);
+  box-shadow: inset 0 0 0 1px var(--control-muted-border);
+}
+
+.cleanup-switch-count {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.cleanup-large-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--sync-tone-caution-border);
+  border-radius: 8px;
+  background: var(--sync-tone-caution-bg);
+  font-size: 0.8rem;
+  color: var(--sync-tone-caution-detail);
+}
+
+.cleanup-large-warning svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--sync-tone-caution-text);
+}
+
+.cleanup-only-copy {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--sync-tone-caution-border);
+  border-radius: 999px;
+  background: var(--sync-tone-caution-bg);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--sync-tone-caution-text);
+}
+
+/* Quieter than the copies' Delete: red text on the neutral button. */
+.cleanup-delete-file {
+  color: var(--danger);
+}
+
+.cleanup-delete-file:hover:not(:disabled) {
+  color: var(--danger-strong);
+  border-color: var(--danger-border);
+}
+
+.cleanup-confirm-word {
+  overflow-wrap: anywhere;
+  color: var(--text-main);
+}

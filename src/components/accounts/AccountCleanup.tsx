@@ -1,12 +1,18 @@
-import { IconEye, IconRefresh } from "@tabler/icons-preact";
+import { IconAlertTriangle, IconEye, IconRefresh } from "@tabler/icons-preact";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { CleanupActions, CleanupView, DuplicateSuggestion, LargeFile } from "../../types/somedrive";
 import { CleanupDeleteDialog } from "./CleanupDeleteDialog";
 import { DuplicateDeleteSummary, DuplicateSuggestionItem, LargeFileDeleteSummary, LargeFileItem } from "./CleanupItems";
-import { formatBytes } from "./syncFormatting";
+import { formatBytes, splitSyncPath } from "./syncFormatting";
 
 /** Suggestions smaller than this are tucked behind a "smaller" toggle. */
 const SMALL_SUGGESTION_BYTES = 1024 * 1024;
+
+/** The word typed to confirm deleting identical copies. */
+const COPIES_CONFIRM_WORD = "delete";
+
+/** The two lists, shown one at a time so a large file is never deleted from a list of copies. */
+type CleanupList = "copies" | "large";
 
 type PendingDelete = { kind: "duplicates"; suggestion: DuplicateSuggestion } | { kind: "large"; file: LargeFile };
 
@@ -20,15 +26,21 @@ function plural(count: number, noun: string): string {
   return `${count.toLocaleString()} ${noun}${count === 1 ? "" : "s"}`;
 }
 
+/** "Delete 1 copy" / "Delete 201 copies". */
+function copiesLabel(count: number): string {
+  return `Delete ${count.toLocaleString()} ${count === 1 ? "copy" : "copies"}`;
+}
+
 /**
  * The Clean up tab: identical copies (as whole folders where possible) and
- * the largest files, each deletable after a typed confirmation. Read when
- * the tab opens and after every change.
+ * the largest files, as two separate lists. Each delete needs a typed
+ * confirmation. Read when the tab opens and after every change.
  */
 export function AccountCleanup({ accountId, actions, onOpenItemFolder }: AccountCleanupProps) {
   const [view, setView] = useState<CleanupView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [list, setList] = useState<CleanupList>("copies");
   const [showSmall, setShowSmall] = useState(false);
   const [pending, setPending] = useState<PendingDelete | null>(null);
   const actionsRef = useRef(actions);
@@ -67,68 +79,49 @@ export function AccountCleanup({ accountId, actions, onOpenItemFolder }: Account
     );
   }
 
-  const bigSuggestions = view.duplicates.filter((suggestion) => suggestion.bytes >= SMALL_SUGGESTION_BYTES);
-  const smallSuggestions = view.duplicates.filter((suggestion) => suggestion.bytes < SMALL_SUGGESTION_BYTES);
-  const smallBytes = smallSuggestions.reduce((total, suggestion) => total + suggestion.bytes, 0);
-  const shownSuggestions = showSmall ? view.duplicates : bigSuggestions;
-
   return (
     <div class="sync-problems cleanup">
       <div class="sync-problems-bulk">
-        <span class="sync-problems-note">
-          {view.duplicates.length === 0
-            ? "No identical copies found."
-            : `${formatBytes(view.duplicateBytes)} of identical copies could be freed.`}
-        </span>
+        <div class="cleanup-switch" role="group" aria-label="Which list to show">
+          <button
+            type="button"
+            class={list === "copies" ? "cleanup-switch-option is-active" : "cleanup-switch-option"}
+            aria-pressed={list === "copies"}
+            onClick={() => setList("copies")}
+          >
+            Identical copies <span class="cleanup-switch-count">{formatBytes(view.duplicateBytes)}</span>
+          </button>
+          <button
+            type="button"
+            class={list === "large" ? "cleanup-switch-option is-active" : "cleanup-switch-option"}
+            aria-pressed={list === "large"}
+            onClick={() => setList("large")}
+          >
+            Large files <span class="cleanup-switch-count">{view.largeFiles.length}</span>
+          </button>
+        </div>
         <button type="button" class="ghost" disabled={loading} onClick={() => void refresh()}>
           <IconRefresh size={15} /> Refresh
         </button>
       </div>
-      <p class="sync-problems-note">
-        A copy has the same name and exactly the same content as a file that stays. Each one is compared byte for
-        byte before anything is deleted. Deleted files go to the Trash here, and OneDrive keeps them in its recycle
-        bin.
-      </p>
 
-      {shownSuggestions.length > 0 && (
-        <section class="cleanup-section" aria-label="Identical copies">
-          <h4 class="cleanup-heading">Identical copies</h4>
-          <ul class="sync-problem-list">
-            {shownSuggestions.map((suggestion) => (
-              <DuplicateSuggestionItem
-                key={suggestion.id}
-                suggestion={suggestion}
-                onDelete={() => setPending({ kind: "duplicates", suggestion })}
-                onHide={() => void hide(suggestion.path)}
-                onOpenItemFolder={onOpenItemFolder}
-              />
-            ))}
-          </ul>
-        </section>
-      )}
-      {smallSuggestions.length > 0 && (
-        <button type="button" class="ghost cleanup-toggle" onClick={() => setShowSmall(!showSmall)}>
-          {showSmall
-            ? "Hide the smaller suggestions"
-            : `Show ${plural(smallSuggestions.length, "smaller suggestion")} (${formatBytes(smallBytes)} in all)`}
-        </button>
-      )}
-
-      {view.largeFiles.length > 0 && (
-        <section class="cleanup-section" aria-label="Large files">
-          <h4 class="cleanup-heading">Large files</h4>
-          <ul class="sync-problem-list">
-            {view.largeFiles.map((file) => (
-              <LargeFileItem
-                key={file.path}
-                file={file}
-                onDelete={() => setPending({ kind: "large", file })}
-                onHide={() => void hide(file.path)}
-                onOpenItemFolder={onOpenItemFolder}
-              />
-            ))}
-          </ul>
-        </section>
+      {list === "copies" ? (
+        <CopiesList
+          view={view}
+          showSmall={showSmall}
+          onToggleSmall={() => setShowSmall(!showSmall)}
+          onDelete={(suggestion) => setPending({ kind: "duplicates", suggestion })}
+          onHide={(path) => void hide(path)}
+          onOpenItemFolder={onOpenItemFolder}
+        />
+      ) : (
+        <LargeFilesList
+          files={view.largeFiles}
+          onDelete={(file) => setPending({ kind: "large", file })}
+          onHide={(path) => void hide(path)}
+          onShowCopies={() => setList("copies")}
+          onOpenItemFolder={onOpenItemFolder}
+        />
       )}
 
       {view.hidden.length > 0 && (
@@ -151,7 +144,8 @@ export function AccountCleanup({ accountId, actions, onOpenItemFolder }: Account
         <CleanupDeleteDialog
           title="Delete identical copies?"
           summary={<DuplicateDeleteSummary suggestion={pending.suggestion} />}
-          confirmLabel={`Delete ${plural(pending.suggestion.fileCount, "file")}`}
+          confirmWord={COPIES_CONFIRM_WORD}
+          confirmLabel={copiesLabel(pending.suggestion.fileCount)}
           busyText="Comparing every file with its copy, then moving them to the Trash…"
           onConfirm={async () => {
             await actionsRef.current.deleteDuplicates(accountId, pending.suggestion.id);
@@ -162,8 +156,9 @@ export function AccountCleanup({ accountId, actions, onOpenItemFolder }: Account
       )}
       {pending?.kind === "large" && (
         <CleanupDeleteDialog
-          title="Delete this file?"
+          title="Delete the only copy of this file?"
           summary={<LargeFileDeleteSummary file={pending.file} />}
+          confirmWord={splitSyncPath(pending.file.path).name}
           confirmLabel="Delete file"
           busyText="Moving the file to the Trash…"
           onConfirm={async () => {
@@ -174,5 +169,92 @@ export function AccountCleanup({ accountId, actions, onOpenItemFolder }: Account
         />
       )}
     </div>
+  );
+}
+
+interface CopiesListProps {
+  view: CleanupView;
+  showSmall: boolean;
+  onToggleSmall: () => void;
+  onDelete: (suggestion: DuplicateSuggestion) => void;
+  onHide: (path: string) => void;
+  onOpenItemFolder: (relativePath: string) => Promise<void>;
+}
+
+/** Identical copies: every file listed has a copy that stays. */
+function CopiesList({ view, showSmall, onToggleSmall, onDelete, onHide, onOpenItemFolder }: CopiesListProps) {
+  const bigSuggestions = view.duplicates.filter((suggestion) => suggestion.bytes >= SMALL_SUGGESTION_BYTES);
+  const smallSuggestions = view.duplicates.filter((suggestion) => suggestion.bytes < SMALL_SUGGESTION_BYTES);
+  const smallBytes = smallSuggestions.reduce((total, suggestion) => total + suggestion.bytes, 0);
+  const shownSuggestions = showSmall ? view.duplicates : bigSuggestions;
+  return (
+    <>
+      <p class="sync-problems-note">
+        {view.duplicates.length === 0
+          ? "No identical copies found."
+          : `${formatBytes(view.duplicateBytes)} of identical copies could be freed. `}
+        A copy has the same name and exactly the same content as a file that stays. Each one is compared byte for byte
+        before anything is deleted. Deleted files go to the Trash here, and OneDrive keeps them in its recycle bin.
+      </p>
+      {shownSuggestions.length > 0 && (
+        <ul class="sync-problem-list" aria-label="Identical copies">
+          {shownSuggestions.map((suggestion) => (
+            <DuplicateSuggestionItem
+              key={suggestion.id}
+              suggestion={suggestion}
+              onDelete={() => onDelete(suggestion)}
+              onHide={() => onHide(suggestion.path)}
+              onOpenItemFolder={onOpenItemFolder}
+            />
+          ))}
+        </ul>
+      )}
+      {smallSuggestions.length > 0 && (
+        <button type="button" class="ghost cleanup-toggle" onClick={onToggleSmall}>
+          {showSmall
+            ? "Hide the smaller suggestions"
+            : `Show ${plural(smallSuggestions.length, "smaller suggestion")} (${formatBytes(smallBytes)} in all)`}
+        </button>
+      )}
+    </>
+  );
+}
+
+interface LargeFilesListProps {
+  files: LargeFile[];
+  onDelete: (file: LargeFile) => void;
+  onHide: (path: string) => void;
+  onShowCopies: () => void;
+  onOpenItemFolder: (relativePath: string) => Promise<void>;
+}
+
+/** The largest files. Most are the only copy, so this list is not about duplicates. */
+function LargeFilesList({ files, onDelete, onHide, onShowCopies, onOpenItemFolder }: LargeFilesListProps) {
+  return (
+    <>
+      <p class="cleanup-large-warning">
+        <IconAlertTriangle size={16} />
+        <span>
+          These are not copies. Most are the only copy of the file in your OneDrive: deleting one removes it for good
+          once OneDrive's recycle bin is emptied.
+        </span>
+      </p>
+      {files.length === 0 ? (
+        <p class="sync-activity-empty">No files over 100 MB.</p>
+      ) : (
+        <ul class="sync-problem-list" aria-label="Large files">
+          {files.map((file) => (
+            <LargeFileItem
+              key={file.path}
+              file={file}
+              onDelete={() => onDelete(file)}
+              onHide={() => onHide(file.path)}
+              onShowCopies={onShowCopies}
+              onOpenItemFolder={onOpenItemFolder}
+            />
+          ))}
+        </ul>
+      )}
+    </>
   );
 }

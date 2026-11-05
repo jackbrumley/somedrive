@@ -2,6 +2,7 @@ import {
   IconAlertTriangle,
   IconChevronDown,
   IconChevronRight,
+  IconCopy,
   IconEyeOff,
   IconFiles,
   IconFolder,
@@ -38,14 +39,14 @@ function describe(suggestion: DuplicateSuggestion): string {
     case "partial":
       return `${fileCount.toLocaleString()} of its ${plural(folderFileCount, "file")} are identical copies. The other ${plural(folderFileCount - fileCount, "file")} differ and stay.`;
     default:
-      return `${fileCount.toLocaleString()} of the ${plural(folderFileCount, "file")} directly in this folder are identical copies.`;
+      return `${fileCount.toLocaleString()} of the ${plural(folderFileCount, "file")} directly in this folder ${fileCount === 1 ? "is an identical copy" : "are identical copies"}. The folder and its other files stay.`;
   }
 }
 
-/** The name line and the folder line of a suggestion. */
+/** The name line (the folder's own name) and the line of the folder it is in. */
 function headline(suggestion: DuplicateSuggestion): { name: string; folder: string } {
-  if (suggestion.kind === "files") {
-    return { name: plural(suggestion.fileCount, "identical file"), folder: placeName(suggestion.path) };
+  if (suggestion.path === "") {
+    return { name: placeName(""), folder: "" };
   }
   const { name, folder } = splitSyncPath(suggestion.path);
   return { name, folder: placeName(folder) };
@@ -102,7 +103,7 @@ export function DuplicateSuggestionItem({ suggestion, onDelete, onHide, onOpenIt
       )}
       <div class="sync-problem-actions">
         <button type="button" class="danger" onClick={onDelete}>
-          <IconTrash size={15} /> Delete…
+          <IconTrash size={15} /> Delete copies…
         </button>
         <button type="button" class="ghost" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
           {expanded ? <IconChevronDown size={15} /> : <IconChevronRight size={15} />}
@@ -122,12 +123,19 @@ interface LargeFileItemProps {
   file: LargeFile;
   onDelete: () => void;
   onHide: () => void;
+  /** Switches to Identical copies, where a file with a copy is deleted. */
+  onShowCopies: () => void;
   onOpenItemFolder: (relativePath: string) => Promise<void>;
 }
 
-/** One large file, with whether an identical copy exists. */
-export function LargeFileItem({ file, onDelete, onHide, onOpenItemFolder }: LargeFileItemProps) {
+/**
+ * One large file. The only copy can be deleted here; a file with an
+ * identical copy points to Identical copies instead, the one place copies
+ * are deleted (after the byte-for-byte check).
+ */
+export function LargeFileItem({ file, onDelete, onHide, onShowCopies, onOpenItemFolder }: LargeFileItemProps) {
   const { name, folder } = splitSyncPath(file.path);
+  const onlyCopy = file.copies.length === 0;
   return (
     <li class="sync-problem cleanup-item">
       <div class="sync-problem-head">
@@ -138,17 +146,28 @@ export function LargeFileItem({ file, onDelete, onHide, onOpenItemFolder }: Larg
           <span class="sync-file-name">{name}</span>
           <span class="sync-file-folder">{placeName(folder)}</span>
         </button>
+        {onlyCopy && (
+          <span class="cleanup-only-copy">
+            <IconAlertTriangle size={13} /> Only copy
+          </span>
+        )}
         <span class="cleanup-size">{formatBytes(file.size)}</span>
       </div>
       <p class="sync-problem-detail">
-        {file.copies.length > 0
-          ? `An identical copy is also at ${file.copies[0]}${file.copies.length > 1 ? ` (and ${plural(file.copies.length - 1, "other")})` : ""}.`
-          : "The only copy of this file in your OneDrive."}
+        {onlyCopy
+          ? "The only copy of this file in your OneDrive."
+          : `An identical copy is at ${file.copies[0]}${file.copies.length > 1 ? ` (and ${plural(file.copies.length - 1, "other")})` : ""}. Copies are deleted from Identical copies, after they are compared byte for byte.`}
       </p>
       <div class="sync-problem-actions">
-        <button type="button" class="danger" onClick={onDelete}>
-          <IconTrash size={15} /> Delete…
-        </button>
+        {onlyCopy ? (
+          <button type="button" class="ghost cleanup-delete-file" onClick={onDelete}>
+            <IconTrash size={15} /> Delete file…
+          </button>
+        ) : (
+          <button type="button" class="ghost" onClick={onShowCopies}>
+            <IconCopy size={15} /> Go to Identical copies
+          </button>
+        )}
         <button type="button" class="ghost" title="Stop listing this file" onClick={onHide}>
           <IconEyeOff size={15} /> Hide
         </button>
@@ -187,24 +206,17 @@ export function DuplicateDeleteSummary({ suggestion }: { suggestion: DuplicateSu
   );
 }
 
-/** The confirmation text for a large file. */
+/** The confirmation text for a large file, which is always the only copy. */
 export function LargeFileDeleteSummary({ file }: { file: LargeFile }) {
   return (
     <>
       <p>
         This deletes <strong>{file.path}</strong> ({formatBytes(file.size)}).
       </p>
-      {file.copies.length > 0 ? (
-        <p class="cleanup-confirm-safe">
-          <IconShieldCheck size={16} />
-          <span>An identical copy stays at {file.copies[0]}.</span>
-        </p>
-      ) : (
-        <p class="cleanup-confirm-warning">
-          <IconAlertTriangle size={16} />
-          <span>This is the only copy of this file in your OneDrive.</span>
-        </p>
-      )}
+      <p class="cleanup-confirm-warning">
+        <IconAlertTriangle size={16} />
+        <span>This is the only copy of this file in your OneDrive. There is no other copy to fall back on.</span>
+      </p>
       <p class="sync-problem-detail">It goes to the Trash on this device, and OneDrive keeps it in its recycle bin.</p>
     </>
   );

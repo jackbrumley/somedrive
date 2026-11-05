@@ -172,6 +172,23 @@ fn delete_first_rank(path: &str) -> u8 {
     }
 }
 
+/// Whether `folder` is filed by date: a year folder ("Archive/2019") or a
+/// folder directly inside one ("Archive/2019/02", "Archive/2019/unknown").
+/// Such copies are kept first.
+fn filed_by_date(folder: &str) -> bool {
+    let is_year = |segment: &str| {
+        segment.len() == 4
+            && segment
+                .parse::<u16>()
+                .is_ok_and(|year| (1900..=2099).contains(&year))
+    };
+    folder.rsplit('/').take(2).any(is_year)
+}
+
+/// Sort key for a deletion candidate: delete-first name, filed by date
+/// (every file in it), folder or file, newest change, path.
+type UnitKey = (u8, u8, u8, i64, String);
+
 impl<'a> Analysis<'a> {
     fn new(files: &'a [CleanupFile], hidden: &[String]) -> Self {
         let locked: Vec<bool> = files
@@ -255,21 +272,32 @@ impl<'a> Analysis<'a> {
     }
 
     /// The order pieces are offered in; the first of two copies is the one
-    /// suggested. Folders named "old", "copy" or "duplicates" go first, then
-    /// whole folders (the older of two snapshots first), then single files
-    /// by folder, so copies shared by two folders are always taken from the
-    /// same one of them.
-    fn unit_key(&self, unit: &Unit) -> (u8, u8, i64, String) {
+    /// suggested. Folders named "old", "copy" or "duplicates" go first and
+    /// copies filed by date (a year or year/month folder) go last, so the
+    /// dated copy is the one kept. Then whole folders (the older of two
+    /// snapshots first), then single files by folder, so copies shared by
+    /// two folders are always taken from the same one of them.
+    fn unit_key(&self, unit: &Unit) -> UnitKey {
         match unit {
             Unit::Folder(path) => (
                 delete_first_rank(path),
+                u8::from(
+                    self.files_in(path)
+                        .all(|index| filed_by_date(parent_folder(&self.files[index].path))),
+                ),
                 0,
                 self.newest_mtime.get(path).copied().unwrap_or(0),
                 path.clone(),
             ),
             Unit::File(index) => {
-                let file = &self.files[*index];
-                (delete_first_rank(&file.path), 1, 0, file.path.clone())
+                let path = &self.files[*index].path;
+                (
+                    delete_first_rank(path),
+                    u8::from(filed_by_date(parent_folder(path))),
+                    1,
+                    0,
+                    path.clone(),
+                )
             }
         }
     }
