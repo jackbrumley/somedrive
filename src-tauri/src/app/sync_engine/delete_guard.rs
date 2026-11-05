@@ -92,6 +92,11 @@ pub(crate) async fn apply_deletes_through_guard(
     }
     allowed.extend(approved_paths);
 
+    let confirmed_by_review =
+        !held && guard_state.approved && !(guarded_paths.is_empty() || within_limit);
+    let user_confirmed =
+        user_confirmed_deletes(user_approved, &guarded_paths, &allowed, confirmed_by_review);
+
     let mut delete_local: Vec<SyncFileRow> = planned
         .delete_local
         .iter()
@@ -106,8 +111,8 @@ pub(crate) async fn apply_deletes_through_guard(
         .collect();
     // Deepest first, so a folder is only reached after its contents.
     delete_local.sort_by_key(|row| std::cmp::Reverse(row.path.matches('/').count()));
-    delete_local_items(graph, sync_root, &delete_local, stats)?;
-    apply_remote_deletes(graph, &delete_remote, &user_approved, stats, cancel_flag).await?;
+    delete_local_items(graph, sync_root, &delete_local, &user_confirmed, stats)?;
+    apply_remote_deletes(graph, &delete_remote, &user_confirmed, stats, cancel_flag).await?;
 
     if !held && (guard_state.approved || !guard_state.pending_paths.is_empty()) {
         persist_large_delete_guard_state(&graph.profile_id, &LargeDeleteGuardState::default())?;
@@ -119,4 +124,56 @@ pub(crate) fn large_delete_guard_issue_message(pending_count: usize) -> String {
     format!(
         "{pending_count} files would be deleted. Review them, then confirm the deletion or keep the files."
     )
+}
+
+/// The deletes this cycle that do not count towards the guard's 24-hour
+/// total: those the user confirmed in Clean up, and, when the user approved
+/// the review, the reviewed deletes now going ahead. Confirming one large
+/// deletion must not hold every delete for the next day; deletes nobody
+/// confirmed still count.
+fn user_confirmed_deletes(
+    clean_up_approved: HashSet<String>,
+    guarded_paths: &[String],
+    allowed: &HashSet<String>,
+    confirmed_by_review: bool,
+) -> HashSet<String> {
+    let mut confirmed = clean_up_approved;
+    if confirmed_by_review {
+        confirmed.extend(
+            guarded_paths
+                .iter()
+                .filter(|path| allowed.contains(*path))
+                .cloned(),
+        );
+    }
+    confirmed
+}
+
+#[cfg(test)]
+mod delete_guard_tests {
+    use super::*;
+
+    fn paths(items: &[&str]) -> Vec<String> {
+        items.iter().map(|item| item.to_string()).collect()
+    }
+
+    #[test]
+    fn reviewed_and_confirmed_deletes_do_not_count_towards_the_next_day() {
+        let guarded = paths(&["Games/a.gba", "Games/b.gba", "Games/new.gba"]);
+        // The review covered a and b; new.gba appeared after it.
+        let allowed: HashSet<String> = paths(&["Games/a.gba", "Games/b.gba"]).into_iter().collect();
+        let clean_up: HashSet<String> = paths(&["Pictures/x.jpg"]).into_iter().collect();
+
+        let confirmed = user_confirmed_deletes(clean_up.clone(), &guarded, &allowed, true);
+        assert!(confirmed.contains("Games/a.gba"));
+        assert!(confirmed.contains("Pictures/x.jpg"));
+        assert!(
+            !confirmed.contains("Games/new.gba"),
+            "not on the reviewed list: it was not confirmed"
+        );
+
+        // Within the limit (no review): only Clean up approvals are exempt.
+        let unreviewed = user_confirmed_deletes(clean_up, &guarded, &allowed, false);
+        assert_eq!(unreviewed, paths(&["Pictures/x.jpg"]).into_iter().collect());
+    }
 }

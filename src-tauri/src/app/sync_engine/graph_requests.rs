@@ -233,7 +233,7 @@ pub(crate) async fn graph_delete(
             let delay = parse_retry_after_delay(response.headers())
                 .unwrap_or_else(|| exponential_backoff_delay(attempt));
             if status == StatusCode::TOO_MANY_REQUESTS {
-                let _ = record_throttle_event(&graph.profile_id, DELETE_EVENT_DIRECTION);
+                let _ = record_throttle_event(&graph.profile_id, DOWNLOAD_JOB_DIRECTION);
                 graph.extend_throttle_window(delay, request_started_at)?;
             }
             if attempt < MAX_DOWNLOAD_RETRIES {

@@ -424,6 +424,7 @@ pub(crate) fn delete_local_items(
     graph: &GraphContext,
     sync_root: &Path,
     rows: &[SyncFileRow],
+    user_confirmed: &HashSet<String>,
     stats: &mut SyncCycleStats,
 ) -> SyncResult<()> {
     let mut progress = DeleteProgress::start(graph, "Moving to the Trash", count_files(rows));
@@ -458,7 +459,9 @@ pub(crate) fn delete_local_items(
         })?;
         record_local_absent(&graph.profile_id, &row.path)?;
         forget_sync_file(&graph.profile_id, &row.path)?;
-        record_throttle_event(&graph.profile_id, DELETE_EVENT_DIRECTION)?;
+        if !user_confirmed.contains(&row.path) {
+            record_throttle_event(&graph.profile_id, DELETE_EVENT_DIRECTION)?;
+        }
         if !entry.is_dir {
             record_finished_delete(
                 &graph.profile_id,
