@@ -82,12 +82,13 @@ export function CleanupDeleteDialog({
             {onCopyConfirmWord && (
               <button
                 type="button"
-                class="ghost cleanup-confirm-copy"
+                class="cleanup-confirm-copy"
                 disabled={busy}
-                title="Copy it, then paste it into the box"
+                title={copied ? "Copied: paste it into the box" : "Copy the name, then paste it into the box"}
+                aria-label="Copy the name"
                 onClick={() => void copyWord()}
               >
-                {copied ? <IconCheck size={14} /> : <IconCopy size={14} />} {copied ? "Copied" : "Copy"}
+                {copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
               </button>
             )}
           </span>

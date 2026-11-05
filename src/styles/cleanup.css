@@ -307,10 +307,21 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
 }
 
+/* A bare icon, as in Voquill: no button chrome until hovered. */
 .cleanup-confirm-copy {
-  padding: 3px 8px;
-  font-size: 0.75rem;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.cleanup-confirm-copy:hover:not(:disabled) {
+  background: var(--control-muted-bg-hover);
+  color: var(--text-main);
 }
