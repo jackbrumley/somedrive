@@ -101,9 +101,10 @@ fn run_status_emitter(sync_runtime: &Arc<Mutex<SyncRuntimeMap>>) {
     let mut last_change_check = Instant::now();
     loop {
         std::thread::sleep(STATUS_EMITTER_TICK);
+        change_watcher.check_app_data();
         if last_change_check.elapsed() >= CHANGE_CHECK_INTERVAL {
             last_change_check = Instant::now();
-            change_watcher.check(sync_runtime);
+            change_watcher.check_accounts(sync_runtime);
         }
         for profile_id in take_due_status_events() {
             emit_authoritative_status(sync_runtime, &profile_id);

@@ -61,7 +61,7 @@ pub struct SyncRuntimeConsistency {
 pub struct DataRevisions {
     /// Transfers and deletes (shown from this status itself).
     pub activity: u64,
-    /// Sync problems and Not synced.
+    /// Sync problems, Not synced and the deletes held for review.
     pub problems: u64,
     /// The Clean up tab.
     pub cleanup: u64,

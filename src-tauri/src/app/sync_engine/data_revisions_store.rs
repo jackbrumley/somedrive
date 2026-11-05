@@ -81,6 +81,20 @@ pub(crate) const DATA_REVISIONS_SQL: &str = "
     BEGIN
         UPDATE ui_data_revisions SET revision = revision + 1 WHERE area = 'problems';
     END;
+    -- The deletes held for review by the large-delete guard.
+    DROP TRIGGER IF EXISTS ui_problems_delete_review_insert;
+    CREATE TRIGGER ui_problems_delete_review_insert AFTER INSERT ON sync_lifecycle_state
+    WHEN NEW.large_delete_pending_paths_json IS NOT '[]'
+    BEGIN
+        UPDATE ui_data_revisions SET revision = revision + 1 WHERE area = 'problems';
+    END;
+    DROP TRIGGER IF EXISTS ui_problems_delete_review;
+    CREATE TRIGGER ui_problems_delete_review
+    AFTER UPDATE OF large_delete_pending_paths_json ON sync_lifecycle_state
+    WHEN OLD.large_delete_pending_paths_json IS NOT NEW.large_delete_pending_paths_json
+    BEGIN
+        UPDATE ui_data_revisions SET revision = revision + 1 WHERE area = 'problems';
+    END;
 
     -- cleanup: the files the Clean up tab compares, and what was hidden.
     DROP TRIGGER IF EXISTS ui_cleanup_file_insert;
@@ -237,6 +251,21 @@ mod data_revisions_tests {
             ),
         );
         assert_eq!(revisions(&profile_id).cleanup, before.cleanup + 1);
+    }
+
+    #[test]
+    fn deletes_held_for_review_move_problems() {
+        let profile_id = test_profile_id("revisions-guard");
+        let before = revisions(&profile_id);
+        persist_large_delete_guard_state(
+            &profile_id,
+            &LargeDeleteGuardState {
+                pending_paths: vec!["a.txt".to_string()],
+                ..LargeDeleteGuardState::default()
+            },
+        )
+        .expect("hold");
+        assert!(revisions(&profile_id).problems > before.problems);
     }
 
     #[test]

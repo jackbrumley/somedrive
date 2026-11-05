@@ -1,7 +1,6 @@
 use crate::app::json_store;
 use chrono::Local;
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -19,19 +18,6 @@ pub struct ActivityEvent {
 #[derive(Debug, Serialize, Deserialize)]
 struct ActivityStore {
     events: Vec<ActivityEvent>,
-}
-
-pub fn list_events(limit: usize) -> Result<Vec<ActivityEvent>, String> {
-    let path = events_file_path()?;
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-
-    let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    let store: ActivityStore = serde_json::from_str(&text).map_err(|error| error.to_string())?;
-    let mut events = store.events;
-    events.reverse();
-    Ok(events.into_iter().take(limit).collect())
 }
 
 pub fn append_event(

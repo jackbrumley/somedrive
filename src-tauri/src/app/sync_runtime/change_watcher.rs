@@ -8,7 +8,8 @@ use super::*;
 // - the app data revision moving (accounts, settings, sign-in) sends
 //   `app-data-changed`.
 
-/// How often the counters are read.
+/// How often the account databases' counters are read. The app data
+/// revision is an in-memory number, checked on every emitter tick.
 pub(crate) const CHANGE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 
 pub(crate) const APP_DATA_EVENT_NAME: &str = "app-data-changed";
@@ -29,9 +30,9 @@ pub(crate) struct ChangeWatcher {
 }
 
 impl ChangeWatcher {
-    /// Reads every account's counters and the app data revision, and sends
-    /// what moved.
-    pub(crate) fn check(&mut self, sync_runtime: &Mutex<SyncRuntimeMap>) {
+    /// Reads every account's counters and asks for the status of each
+    /// account whose counters moved.
+    pub(crate) fn check_accounts(&mut self, sync_runtime: &Mutex<SyncRuntimeMap>) {
         let profile_ids: Vec<String> = match sync_runtime.lock() {
             Ok(runtime_map) => runtime_map.keys().cloned().collect(),
             Err(_) => return,
@@ -39,7 +40,10 @@ impl ChangeWatcher {
         for profile_id in self.accounts_with_moved_counters(&profile_ids) {
             request_status_event(&profile_id, StatusEventEmitMode::Immediate);
         }
+    }
 
+    /// Sends `app-data-changed` when the app data revision moved.
+    pub(crate) fn check_app_data(&mut self) {
         let app_data_revision = crate::app::json_store::app_data_revision();
         if app_data_revision != self.app_data_revision {
             self.app_data_revision = app_data_revision;

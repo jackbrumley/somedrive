@@ -68,7 +68,6 @@ pub fn run(launch: LaunchOptions) {
             open_account_item_folder,
             open_account_item,
             open_account_sync_root_folder,
-            list_activity_events,
             start_device_auth,
             start_interactive_auth,
             poll_device_auth,
