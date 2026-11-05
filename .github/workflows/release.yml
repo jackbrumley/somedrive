@@ -120,7 +120,7 @@ jobs:
       - run: node scripts/verify-release.mjs
 
   # Installs the published pre-release with the installer scripts from this
-  # tag (the ones promotion deploys to brumley.info/somedrive), exactly as
+  # tag (the ones promotion deploys to somedrive.org), exactly as
   # users will.
   install-test:
     name: Install test ${{ matrix.name }}

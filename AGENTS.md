@@ -222,7 +222,7 @@ The step-by-step procedure is `docs/RELEASE.md`. Never run
 - **Platforms:** Linux only. Three assets (`somedrive-X.Y.Z-linux-x64.deb`,
   `.rpm`, `.AppImage`), named only by `scripts/release-assets.mjs`. No
   Windows installer scripts and no Windows build or install-test job.
-- **Install site:** `https://brumley.info/somedrive` (GitHub Pages from
+- **Install site:** `https://somedrive.org` (GitHub Pages from
   `main:/docs`).
 - **Identity:** app ID `info.brumley.somedrive` (standard section 10): Tauri
   `identifier`, `APP_ID` / GTK prgname (`src-tauri/src/platform/linux/wayland/env.rs`),

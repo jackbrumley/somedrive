@@ -16,7 +16,7 @@ use crate::app::sync_engine::{self, SyncShutdownReason};
 
 const GITHUB_LATEST_RELEASE_API_URL: &str =
     "https://api.github.com/repos/jackbrumley/somedrive/releases/latest";
-const INSTALL_SITE: &str = "https://brumley.info/somedrive";
+const INSTALL_SITE: &str = "https://somedrive.org";
 const PRODUCT_NAME: &str = "SomeDrive";
 
 #[derive(Debug, Serialize)]
@@ -338,7 +338,7 @@ mod tests {
     fn unix_update_script_fails_on_a_failed_download_and_relaunches() {
         let script = super::unix_update_script();
         assert!(script.starts_with("set -o pipefail\n"));
-        assert!(script.contains("https://brumley.info/somedrive/install.sh"));
+        assert!(script.contains("https://somedrive.org/install.sh"));
         assert!(script.contains("--update-failed"));
     }
 }

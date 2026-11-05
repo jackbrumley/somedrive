@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://brumley.info/somedrive"><img src="https://img.shields.io/badge/Install-SomeDrive-1d4ed8?style=for-the-badge" alt="Install SomeDrive" /></a>
+  <a href="https://somedrive.org"><img src="https://img.shields.io/badge/Install-SomeDrive-1d4ed8?style=for-the-badge" alt="Install SomeDrive" /></a>
 </p>
 
 SomeDrive is a Linux-first Microsoft OneDrive desktop client with account-first controls, in-app sign-in, per-account pause/resume, and detailed sync diagnostics.
@@ -25,10 +25,10 @@ It exists because most Linux OneDrive tools are still command-line-heavy or awkw
 Open a terminal and run:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://brumley.info/somedrive/install.sh | bash
+curl --proto '=https' --tlsv1.2 -sSf https://somedrive.org/install.sh | bash
 ```
 
-This installs the `.deb` (Debian, Ubuntu, Mint) or `.rpm` (Fedora) and asks for your password. For a user-only AppImage install on any distro, use `curl --proto '=https' --tlsv1.2 -sSf https://brumley.info/somedrive/install.sh | bash -s -- --appimage`. To remove SomeDrive: `curl --proto '=https' --tlsv1.2 -sSf https://brumley.info/somedrive/uninstall.sh | bash`.
+This installs the `.deb` (Debian, Ubuntu, Mint) or `.rpm` (Fedora) and asks for your password. For a user-only AppImage install on any distro, use `curl --proto '=https' --tlsv1.2 -sSf https://somedrive.org/install.sh | bash -s -- --appimage`. To remove SomeDrive: `curl --proto '=https' --tlsv1.2 -sSf https://somedrive.org/uninstall.sh | bash`.
 
 SomeDrive updates itself from **Settings → Check for Updates**. Packages are also on the [releases page](https://github.com/jackbrumley/somedrive/releases/latest).
 
