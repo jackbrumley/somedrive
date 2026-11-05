@@ -70,7 +70,7 @@ fn save_all_events(events: &[ActivityEvent]) -> Result<(), String> {
     let store = ActivityStore {
         events: events.to_vec(),
     };
-    json_store::write_json(&events_file_path()?, &store)
+    json_store::write_json(&events_file_path()?, &store, json_store::ShownInWindow::No)
 }
 
 fn events_dir_path() -> Result<PathBuf, String> {

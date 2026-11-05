@@ -11,10 +11,7 @@ mod status_notifier;
 use crate::app::app_settings::load_close_to_tray;
 use crate::app::commands::{pause_all_accounts, resume_all_accounts};
 use serde::Serialize;
-use tauri::{Emitter, Manager};
-
-/// Emitted after the tray changes account sync state, so the UI refreshes.
-pub const ACCOUNTS_UPDATED_EVENT: &str = "accounts-updated";
+use tauri::Manager;
 
 /// Where the main window went when it was taken off screen without quitting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -66,24 +63,16 @@ fn handle_menu_item(app_handle: &tauri::AppHandle, item: TrayMenuItem) {
     log::info!("Tray menu item selected id={}", item.id());
     match item {
         TrayMenuItem::Open => show_main_window(app_handle),
-        TrayMenuItem::PauseAll => {
-            report_sync_change(app_handle, pause_all_accounts(app_handle.state()))
-        }
-        TrayMenuItem::ResumeAll => {
-            report_sync_change(app_handle, resume_all_accounts(app_handle.state()))
-        }
+        TrayMenuItem::PauseAll => report_sync_change(pause_all_accounts(app_handle.state())),
+        TrayMenuItem::ResumeAll => report_sync_change(resume_all_accounts(app_handle.state())),
         TrayMenuItem::Quit => quit(app_handle),
     }
 }
 
-fn report_sync_change(app_handle: &tauri::AppHandle, result: Result<u32, String>) {
+fn report_sync_change(result: Result<u32, String>) {
     match result {
-        Ok(changed_accounts) => {
-            log::info!("Tray sync change applied accounts={changed_accounts}");
-            if let Err(error) = app_handle.emit(ACCOUNTS_UPDATED_EVENT, ()) {
-                log::warn!("Failed to notify the UI of the tray sync change: {error}");
-            }
-        }
+        // The window hears about it from the saved account list.
+        Ok(changed_accounts) => log::info!("Tray sync change applied accounts={changed_accounts}"),
         Err(error) => log::warn!("Tray sync change failed: {error}"),
     }
 }

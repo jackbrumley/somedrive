@@ -54,6 +54,19 @@ pub struct SyncRuntimeConsistency {
     pub violations: Vec<String>,
 }
 
+/// The account's change counters (`sync_engine::data_revisions_store`):
+/// the window reloads an area's list when its counter moves.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DataRevisions {
+    /// Transfers and deletes (shown from this status itself).
+    pub activity: u64,
+    /// Sync problems and Not synced.
+    pub problems: u64,
+    /// The Clean up tab.
+    pub cleanup: u64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncRuntimeAccountStatus {
@@ -113,6 +126,7 @@ pub struct SyncRuntimeAccountStatus {
     pub local_scan_current_path: Option<String>,
     pub current_activity: SyncRuntimeCurrentActivity,
     pub consistency: SyncRuntimeConsistency,
+    pub data_revisions: DataRevisions,
     pub updated_at: String,
 }
 
@@ -186,6 +200,7 @@ impl SyncRuntimeAccountStatus {
                 ok: true,
                 violations: Vec::new(),
             },
+            data_revisions: DataRevisions::default(),
             updated_at: now,
         }
     }
@@ -470,9 +485,11 @@ fn current_runtime_revision() -> u64 {
 }
 
 mod authority;
+mod change_watcher;
 mod status_events;
 mod transfers;
 pub use authority::*;
+pub use change_watcher::*;
 pub use status_events::*;
 pub use transfers::*;
 

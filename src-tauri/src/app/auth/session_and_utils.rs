@@ -120,7 +120,11 @@ pub(crate) fn write_auth_session(
     session: StoredAuthSession,
 ) -> Result<(), String> {
     // Atomic and owner-only: this file holds the account's refresh token.
-    crate::app::json_store::write_json(&auth_session_file_path(profile_id)?, &session)
+    crate::app::json_store::write_json(
+        &auth_session_file_path(profile_id)?,
+        &session,
+        crate::app::json_store::ShownInWindow::Yes,
+    )
 }
 
 pub fn load_auth_session(profile_id: &str) -> Result<AuthSessionSnapshot, String> {

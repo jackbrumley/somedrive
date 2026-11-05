@@ -156,7 +156,8 @@ pub(crate) const SYNC_SCHEMA_SQL: &str = "
 ";
 
 /// Tables of the pre-baseline engine, dropped when an old database is found.
-pub(crate) const LEGACY_SYNC_TABLES: [&str; 9] = [
+pub(crate) const LEGACY_SYNC_TABLES: [&str; 10] = [
+    "ui_data_revisions",
     "sync_approved_deletes",
     "cleanup_hidden",
     "sync_local_moves",
@@ -308,6 +309,9 @@ pub(crate) fn ensure_sync_schema(profile_id: &str, connection: &Connection) -> R
     transaction
         .execute_batch(SYNC_SCHEMA_SQL)
         .map_err(|error| format!("Failed initializing sync schema: {error}"))?;
+    transaction
+        .execute_batch(DATA_REVISIONS_SQL)
+        .map_err(|error| format!("Failed initializing change counters: {error}"))?;
     transaction
         .execute_batch(&format!("PRAGMA user_version = {SYNC_SCHEMA_VERSION};"))
         .map_err(|error| format!("Failed writing sync schema version: {error}"))?;

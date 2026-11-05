@@ -6,7 +6,7 @@ pub(crate) use crate::app::sync_engine;
 pub(crate) use serde::{Deserialize, Serialize};
 pub(crate) use std::fs;
 pub(crate) use std::path::PathBuf;
-pub(crate) use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+pub(crate) use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 mod device_flow;
 mod interactive_flow;

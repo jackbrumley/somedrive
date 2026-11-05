@@ -101,7 +101,11 @@ pub fn save_profiles(profiles: &[AccountProfile]) -> Result<(), String> {
     let payload = AccountProfileStore {
         profiles: profiles.to_vec(),
     };
-    json_store::write_json(&storage_file_path()?, &payload)
+    json_store::write_json(
+        &storage_file_path()?,
+        &payload,
+        json_store::ShownInWindow::Yes,
+    )
 }
 
 pub fn create_profile(input: CreateAccountProfileInput) -> Result<AccountProfile, String> {

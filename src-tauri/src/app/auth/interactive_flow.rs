@@ -337,26 +337,9 @@ pub(crate) async fn complete_interactive_auth_from_callback(
         log_context::account_prefix_from_parts(profile_id, &updated_profile.email)
     );
 
+    // The window hears about the new sign-in from the profile and auth.json
+    // writes above (docs/ui-data-flow.md).
     clear_pending_interactive_auth(app, profile_id)?;
-
-    let event_payload = InteractiveAuthUpdatedEvent {
-        profile_id: profile_id.to_string(),
-        email: updated_profile.email.clone(),
-        auth_configured: updated_profile.auth_configured,
-        agent_state: updated_profile.agent_state.clone(),
-    };
-    if let Err(error) = app.emit("account-auth-updated", event_payload) {
-        log::error!(
-            "{} AUTH_INTERACTIVE_UI_NOTIFY emitted=false error={}",
-            log_context::account_prefix_from_parts(profile_id, &updated_profile.email),
-            error
-        );
-    } else {
-        log::info!(
-            "{} AUTH_INTERACTIVE_UI_NOTIFY emitted=true",
-            log_context::account_prefix_from_parts(profile_id, &updated_profile.email)
-        );
-    }
 
     let _ = activity_log::append_event(
         profile_id,

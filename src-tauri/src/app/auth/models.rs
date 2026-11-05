@@ -85,12 +85,3 @@ pub struct AuthSessionSnapshot {
     pub scope: Option<String>,
     pub updated_at: String,
 }
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct InteractiveAuthUpdatedEvent {
-    pub(crate) profile_id: String,
-    pub(crate) email: String,
-    pub(crate) auth_configured: bool,
-    pub(crate) agent_state: String,
-}

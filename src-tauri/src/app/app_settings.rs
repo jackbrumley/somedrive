@@ -210,7 +210,11 @@ fn load_or_create_app_settings() -> Result<AppSettingsFile, String> {
 }
 
 fn save_app_settings(settings: &AppSettingsFile) -> Result<(), String> {
-    json_store::write_json(&app_settings_path()?, settings)
+    json_store::write_json(
+        &app_settings_path()?,
+        settings,
+        json_store::ShownInWindow::Yes,
+    )
 }
 
 pub fn app_settings_path() -> Result<PathBuf, String> {

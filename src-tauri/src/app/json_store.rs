@@ -22,6 +22,25 @@ use std::sync::{Mutex, OnceLock};
 
 static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Raised by every write of a file the window shows; the status emitter
+/// sends `app-data-changed` when it moves (docs/ui-data-flow.md).
+static APP_DATA_REVISION: AtomicU64 = AtomicU64::new(0);
+
+/// Whether the window shows what a file holds. Every write must say, so a
+/// new file the window shows cannot be saved without the window hearing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShownInWindow {
+    /// Accounts, settings and sign-in state: the window reloads them.
+    Yes,
+    /// Internal records, e.g. the activity log written every sync cycle.
+    No,
+}
+
+/// The current app data revision (the status emitter).
+pub fn app_data_revision() -> u64 {
+    APP_DATA_REVISION.load(Ordering::SeqCst)
+}
+
 /// Quarantine notices waiting for the UI, and the handle that shows them.
 static PENDING_RECOVERY_NOTICES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static RECOVERY_NOTICE_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
@@ -54,12 +73,21 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, String> 
     }
 }
 
-/// Serializes `value` and writes it atomically, owner-only.
-pub fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
+/// Serializes `value` and writes it atomically, owner-only. A file the
+/// window shows raises the app data revision once it is saved.
+pub fn write_json<T: Serialize>(
+    path: &Path,
+    value: &T,
+    shown_in_window: ShownInWindow,
+) -> Result<(), String> {
     let text = serde_json::to_string_pretty(value)
         .map_err(|error| format!("Failed encoding {}: {error}", path.display()))?;
     write_atomically(path, text.as_bytes())
-        .map_err(|error| format!("Failed writing {}: {error}", path.display()))
+        .map_err(|error| format!("Failed writing {}: {error}", path.display()))?;
+    if shown_in_window == ShownInWindow::Yes {
+        APP_DATA_REVISION.fetch_add(1, Ordering::SeqCst);
+    }
+    Ok(())
 }
 
 /// Fails if `path` exists but cannot be read (permissions, I/O), so start-up
@@ -192,7 +220,12 @@ mod tests {
         let target = directory.join("app_settings.json");
         fs::write(&target, b"old").unwrap();
 
-        write_json(&target, &serde_json::json!({ "value": 1 })).unwrap();
+        write_json(
+            &target,
+            &serde_json::json!({ "value": 1 }),
+            ShownInWindow::No,
+        )
+        .unwrap();
 
         let reread: serde_json::Value = read_json(&target).unwrap().unwrap();
         assert_eq!(reread["value"], 1);
