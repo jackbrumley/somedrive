@@ -3,6 +3,7 @@ pub mod activity_log;
 pub mod app_settings;
 pub mod auth;
 pub mod bootstrap;
+pub mod clipboard;
 pub mod commands;
 pub mod json_store;
 pub mod log_context;

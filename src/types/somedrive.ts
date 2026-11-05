@@ -313,6 +313,8 @@ export interface CleanupActions {
   deleteLargeFile: (accountId: string, path: string) => Promise<CleanupDeleteResult>;
   hide: (accountId: string, path: string) => Promise<void>;
   unhide: (accountId: string, path: string) => Promise<void>;
+  /** Copies text (the file name to type before deleting) to the clipboard; resolves true when it worked. */
+  copyText: (text: string) => Promise<boolean>;
 }
 
 /** Mirrors `app_settings::ConflictPolicy`. */

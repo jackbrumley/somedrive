@@ -159,6 +159,7 @@ export function AccountCleanup({ accountId, actions, onOpenItemFolder }: Account
           title="Delete the only copy of this file?"
           summary={<LargeFileDeleteSummary file={pending.file} />}
           confirmWord={splitSyncPath(pending.file.path).name}
+          onCopyConfirmWord={(word) => actionsRef.current.copyText(word)}
           confirmLabel="Delete file"
           busyText="Moving the file to the Trash…"
           onConfirm={async () => {

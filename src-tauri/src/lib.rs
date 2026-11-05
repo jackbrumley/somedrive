@@ -80,6 +80,7 @@ pub fn run(launch: LaunchOptions) {
             app::session_log::set_log_level,
             app::system_info::get_system_info,
             app::system_info::copy_system_info,
+            app::clipboard::copy_text_to_clipboard,
             app::session_log::open_session_log,
             app::session_log::open_profile_log,
             app::session_log::get_raw_logger_mode,

@@ -1,6 +1,6 @@
-import { IconLoader2, IconTrash } from "@tabler/icons-preact";
+import { IconCheck, IconCopy, IconLoader2, IconTrash } from "@tabler/icons-preact";
 import type { ComponentChildren } from "preact";
-import { useState } from "preact/hooks";
+import { useRef, useState } from "preact/hooks";
 import { Modal } from "../ui/Modal";
 
 interface CleanupDeleteDialogProps {
@@ -9,6 +9,8 @@ interface CleanupDeleteDialogProps {
   summary: ComponentChildren;
   /** What the user types to confirm: "delete" for copies, the file's name for an only copy. */
   confirmWord: string;
+  /** When given, a Copy button puts the confirm word on the clipboard (a long file name). */
+  onCopyConfirmWord?: (word: string) => Promise<boolean>;
   /** The confirm button, e.g. "Delete 201 files". */
   confirmLabel: string;
   /** What runs while the delete happens. */
@@ -27,6 +29,7 @@ export function CleanupDeleteDialog({
   title,
   summary,
   confirmWord,
+  onCopyConfirmWord,
   confirmLabel,
   busyText,
   onConfirm,
@@ -35,6 +38,8 @@ export function CleanupDeleteDialog({
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const ready = typed.trim().toLowerCase() === confirmWord.toLowerCase();
 
   const confirm = async () => {
@@ -52,6 +57,13 @@ export function CleanupDeleteDialog({
     }
   };
 
+  const copyWord = async () => {
+    if (onCopyConfirmWord && (await onCopyConfirmWord(confirmWord))) {
+      setCopied(true);
+      inputRef.current?.focus();
+    }
+  };
+
   return (
     <Modal title={title} onClose={busy ? () => undefined : onClose}>
       <form
@@ -63,10 +75,24 @@ export function CleanupDeleteDialog({
       >
         <div class="cleanup-confirm-summary">{summary}</div>
         <label class="cleanup-confirm-label">
-          <span>
-            Type <strong class="cleanup-confirm-word">{confirmWord}</strong> to confirm
+          <span class="cleanup-confirm-prompt">
+            <span>
+              Type <strong class="cleanup-confirm-word">{confirmWord}</strong> to confirm
+            </span>
+            {onCopyConfirmWord && (
+              <button
+                type="button"
+                class="ghost cleanup-confirm-copy"
+                disabled={busy}
+                title="Copy it, then paste it into the box"
+                onClick={() => void copyWord()}
+              >
+                {copied ? <IconCheck size={14} /> : <IconCopy size={14} />} {copied ? "Copied" : "Copy"}
+              </button>
+            )}
           </span>
           <input
+            ref={inputRef}
             class="cleanup-confirm-input"
             type="text"
             value={typed}

@@ -48,5 +48,14 @@ export function createCleanupActions({ showToast, refreshActivity }: CleanupActi
         showToast(`Failed to show '${path}' again: ${error}`, "error");
       }
     },
+    copyText: async (text: string) => {
+      try {
+        await invoke("copy_text_to_clipboard", { text });
+        return true;
+      } catch (error) {
+        showToast(`Failed to copy to the clipboard: ${error}`, "error");
+        return false;
+      }
+    },
   };
 }

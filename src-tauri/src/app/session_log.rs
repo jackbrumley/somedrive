@@ -202,9 +202,7 @@ pub fn get_session_log_text() -> Result<String, String> {
 
 #[tauri::command]
 pub fn copy_session_log() -> Result<(), String> {
-    let logs = get_session_log_text()?;
-    let mut clipboard = arboard::Clipboard::new().map_err(|error| error.to_string())?;
-    clipboard.set_text(logs).map_err(|error| error.to_string())
+    crate::app::clipboard::copy_text(get_session_log_text()?)
 }
 
 #[tauri::command]

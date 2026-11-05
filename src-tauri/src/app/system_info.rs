@@ -96,10 +96,7 @@ pub fn get_system_info() -> SystemInfo {
 /// The System info block's copy button, for bug reports.
 #[tauri::command]
 pub fn copy_system_info() -> Result<(), String> {
-    let mut clipboard = arboard::Clipboard::new().map_err(|error| error.to_string())?;
-    clipboard
-        .set_text(SystemInfo::collect().summary())
-        .map_err(|error| error.to_string())
+    crate::app::clipboard::copy_text(SystemInfo::collect().summary())
 }
 
 #[cfg(test)]

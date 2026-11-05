@@ -95,4 +95,5 @@ export const previewCleanupActions: CleanupActions = {
   deleteLargeFile: async () => Promise.reject("UI Lab preview: nothing was deleted."),
   hide: async () => undefined,
   unhide: async () => undefined,
+  copyText: async () => true,
 };
