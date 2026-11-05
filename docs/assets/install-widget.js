@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var BASE = 'https://brumley.info/somedrive';
+  var BASE = 'https://somedrive.org';
 
   var COMMANDS = {
     linux: {
