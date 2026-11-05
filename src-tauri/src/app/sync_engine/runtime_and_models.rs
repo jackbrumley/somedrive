@@ -104,15 +104,20 @@ pub(crate) fn resolve_simple_upload_max_bytes() -> u64 {
         .unwrap_or(4 * 1024 * 1024)
 }
 
+/// The size of each piece of a big upload. OneDrive asks for a multiple of
+/// 320 KiB; the default, 100 of them (31.25 MiB), needs a quarter of the
+/// round trips 8 MiB pieces did, and big uploads are capped to the
+/// large-file share of the transfer limit, which bounds the memory used.
 pub(crate) fn resolve_upload_chunk_bytes() -> usize {
     const CHUNK_GRANULARITY: usize = 320 * 1024;
+    const DEFAULT_CHUNK: usize = 100 * CHUNK_GRANULARITY;
     std::env::var("SOMEDRIVE_SYNC_UPLOAD_CHUNK_BYTES")
         .ok()
         .and_then(|value| value.trim().parse::<usize>().ok())
         .map(|value| value.clamp(CHUNK_GRANULARITY, 60 * 1024 * 1024))
         .map(|value| value - (value % CHUNK_GRANULARITY))
         .filter(|value| *value >= CHUNK_GRANULARITY)
-        .unwrap_or(8 * 1024 * 1024)
+        .unwrap_or(DEFAULT_CHUNK)
 }
 
 pub(crate) fn resolve_request_timeout() -> Duration {
@@ -537,4 +542,6 @@ impl GraphDriveItem {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct UploadSessionResponse {
     pub(crate) upload_url: String,
+    /// When OneDrive drops the session (RFC 3339).
+    pub(crate) expiration_date_time: Option<String>,
 }

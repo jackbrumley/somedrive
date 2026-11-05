@@ -153,10 +153,22 @@ pub(crate) const SYNC_SCHEMA_SQL: &str = "
         hidden_at INTEGER NOT NULL,
         PRIMARY KEY(profile_id, path)
     );
+    -- Big uploads' sessions, so a cut-off upload continues where it stopped
+    -- (sync_engine/upload_session.rs).
+    CREATE TABLE IF NOT EXISTS sync_upload_sessions (
+        profile_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        upload_url TEXT NOT NULL,
+        local_size INTEGER NOT NULL,
+        local_mtime_ns INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        PRIMARY KEY(profile_id, path)
+    );
 ";
 
 /// Tables of the pre-baseline engine, dropped when an old database is found.
-pub(crate) const LEGACY_SYNC_TABLES: [&str; 10] = [
+pub(crate) const LEGACY_SYNC_TABLES: [&str; 11] = [
+    "sync_upload_sessions",
     "ui_data_revisions",
     "sync_approved_deletes",
     "cleanup_hidden",

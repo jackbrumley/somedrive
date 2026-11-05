@@ -97,6 +97,7 @@ mod sync_problems_store;
 mod sync_shutdown;
 mod transfer_pool;
 mod upload_lane;
+mod upload_session;
 mod worker_lifecycle;
 
 pub(crate) use approved_deletes_store::*;
@@ -157,4 +158,5 @@ pub use sync_problems_store::*;
 pub use sync_shutdown::*;
 pub(crate) use transfer_pool::*;
 pub(crate) use upload_lane::*;
+pub(crate) use upload_session::*;
 pub(crate) use worker_lifecycle::*;

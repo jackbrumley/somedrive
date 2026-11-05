@@ -188,7 +188,7 @@ pub(crate) async fn tick_sync_cycle(
     )
     .await?;
     materialize_planner_upload_jobs(profile_id)?;
-    upload_planned_files(&mut graph, &sync_root, &mut stats, cancel_flag).await?;
+    upload_planned_files(&graph, &sync_root, &mut stats, cancel_flag).await?;
     apply_deletes_through_guard(&mut graph, &sync_root, &planned, &mut stats, cancel_flag).await?;
 
     let mut lifecycle_state = read_sync_lifecycle_operational_state(profile_id)?;

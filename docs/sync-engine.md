@@ -193,6 +193,9 @@ its id" (fixes A6, A9).
   conditional on that eTag (`If-Match`). Anything that does not line up,
   or any untracked, skipped or excluded item inside, falls back to per-item
   deletes (`remote_deletes.rs`).
+- Per-item file deletes run many at a time in the transfer pool
+  (`transfer_pool.rs`) under the same adaptive limit as downloads; folders
+  follow one at a time, deepest first, as each must be empty by then.
 
 ### 6.4a Clean up
 The account page's Clean up tab suggests identical copies and lists large
@@ -303,6 +306,18 @@ setup work:
     the level Microsoft refused, then probe above it one small step a
     minute, so the rate settles instead of repeatedly paying a 30-second
     stop.
+  - **One limit for the account.** Microsoft limits the account as a
+    whole, so uploads and cloud deletes run in the transfer pool
+    (`transfer_pool.rs`) under the same limits, feed it their successes
+    and 429s, and wait out the same throttle window. Big uploads (8 MB or
+    more) keep to the large-file share of the slots.
+- **Uploads:** many files at once in the transfer pool. A big file goes
+  through an upload session in 31.25 MiB pieces (100 × 320 KiB, the
+  multiple OneDrive asks for), which must be sent in order. The session is
+  saved (`sync_upload_sessions`), so an upload cut off by a pause, restart
+  or dropped connection continues from the offset OneDrive reports, as
+  long as the file's size and time are unchanged and the session has not
+  expired (`upload_session.rs`).
 - **Content check on every core:** rows present on both sides are hashed
   on one worker thread per CPU core (`content_check.rs`), and the window
   shows "Checking files against OneDrive · N of M files". Each file is read
@@ -370,10 +385,14 @@ sections above and win where they differ:
   never counts as a change on its own. SharePoint rewrites Office/PDF files
   after upload, so the baseline after an upload records the hash OneDrive
   returns.
-- **`If-Match`** only on creating an upload session; never on chunk uploads
-  or deletes (both fail spuriously). Before a cloud delete, the item is read
-  again and its hash compared with the baseline; a change cancels the delete
-  (the planner then downloads it).
+- **`If-Match`** on creating an upload session; never on chunk uploads
+  (they fail spuriously). A cloud file delete is first sent with `If-Match`
+  on the eTag last seen, which the planner only deletes when it is the
+  synced version. OneDrive sometimes refuses that without a content change,
+  so a refusal is never taken as a change: the item is then read and its
+  hash compared with the baseline, and a real change cancels the delete
+  (the planner then downloads it). A file without an eTag goes straight to
+  that read.
 - **Content before action:** before an upload, a local file whose hash still
   equals the baseline hash only refreshes the baseline (a `touch` is not an
   edit). Before a conflict copy, matching local and cloud hashes adopt the

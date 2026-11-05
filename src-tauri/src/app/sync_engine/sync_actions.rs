@@ -254,91 +254,166 @@ pub(crate) async fn reconcile_both_sides(
     Ok(())
 }
 
-/// Uploads planned files. A file whose content still equals the baseline
-/// (a touch, a time change) only refreshes the baseline. The baseline is
-/// recorded only if the file did not change while it was uploading.
+/// What one planned upload came to.
+pub(crate) enum UploadOutcome {
+    /// Gone from disk, now a folder, or claimed by another worker.
+    Skipped,
+    /// Same content as the baseline (a touch, a time change): only the
+    /// baseline is refreshed.
+    BaselineRefresh(LocalEntry),
+    Failed(String),
+    /// The file changed while it was uploading; the next cycle plans again.
+    SourceChanged,
+    Uploaded {
+        item: Box<GraphDriveItem>,
+        entry: LocalEntry,
+        local_hash: String,
+    },
+}
+
+/// Uploads planned files, many at a time under the account's transfer
+/// limit (big files within its large-file share). The baseline is recorded
+/// only if the file did not change while it was uploading.
 pub(crate) async fn upload_planned_files(
-    graph: &mut GraphContext,
+    graph: &GraphContext,
     sync_root: &Path,
     stats: &mut SyncCycleStats,
     cancel_flag: &Arc<AtomicBool>,
 ) -> SyncResult<()> {
-    for row in list_sync_file_rows_by_action(&graph.profile_id, PLANNER_ACTION_UPLOAD)? {
-        ensure_not_cancelled(cancel_flag)?;
-        if row.is_dir {
-            continue;
+    let planned: Vec<(SyncFileRow, u64)> =
+        list_sync_file_rows_by_action(&graph.profile_id, PLANNER_ACTION_UPLOAD)?
+            .into_iter()
+            .filter(|row| !row.is_dir)
+            .map(|row| {
+                let size = std::fs::metadata(local_path_for(sync_root, &row.path))
+                    .map(|metadata| metadata.len())
+                    .unwrap_or(0);
+                (row, size)
+            })
+            .collect();
+    let task_graph = graph.clone();
+    let task_root = sync_root.to_path_buf();
+    let task_cancel = Arc::clone(cancel_flag);
+    run_in_transfer_pool(
+        graph,
+        planned,
+        |(_, size)| *size >= LARGE_DOWNLOAD_BYTES,
+        cancel_flag,
+        move |(row, _)| {
+            let mut graph = task_graph.clone();
+            let sync_root = task_root.clone();
+            let cancel_flag = Arc::clone(&task_cancel);
+            async move {
+                let outcome = upload_planned_file(&mut graph, &sync_root, &row, &cancel_flag).await;
+                (row, outcome)
+            }
+        },
+        |(row, outcome)| record_upload_outcome(graph, &row, outcome?, stats),
+    )
+    .await
+}
+
+/// Hashes, claims and uploads one planned file.
+async fn upload_planned_file(
+    graph: &mut GraphContext,
+    sync_root: &Path,
+    row: &SyncFileRow,
+    cancel_flag: &Arc<AtomicBool>,
+) -> SyncResult<UploadOutcome> {
+    ensure_not_cancelled(cancel_flag)?;
+    let local_path = local_path_for(sync_root, &row.path);
+    let Some(entry) = read_local_entry(&local_path)?.filter(|entry| !entry.is_dir) else {
+        return Ok(UploadOutcome::Skipped);
+    };
+    let local_hash = hash_local_file(&local_path).await?;
+    if row.base_present && row.base_hash.as_deref() == Some(local_hash.as_str()) {
+        return Ok(UploadOutcome::BaselineRefresh(entry));
+    }
+
+    ensure_accepting_new_transfers()?;
+    if !claim_upload_job_path(&graph.profile_id, &row.path, &graph.cycle_id)? {
+        return Ok(UploadOutcome::Skipped);
+    }
+    let target = if row.base_present && row.cloud_present {
+        UploadTarget::Replace {
+            base_etag: row.base_etag.clone(),
         }
-        let local_path = local_path_for(sync_root, &row.path);
-        let Some(entry) = read_local_entry(&local_path)?.filter(|entry| !entry.is_dir) else {
-            continue;
-        };
-        let local_hash = hash_local_file(&local_path).await?;
-        if row.base_present && row.base_hash.as_deref() == Some(local_hash.as_str()) {
+    } else {
+        UploadTarget::New
+    };
+    let item = match upload_file_by_path(graph, sync_root, &row.path, &target, cancel_flag).await {
+        Ok(item) => item,
+        Err(error) if is_sync_cancelled_error(&error) => return Err(SyncError::from(error)),
+        Err(error) => return Ok(UploadOutcome::Failed(error)),
+    };
+    if read_local_entry(&local_path)?.as_ref() != Some(&entry) {
+        return Ok(UploadOutcome::SourceChanged);
+    }
+    Ok(UploadOutcome::Uploaded {
+        item: Box::new(item),
+        entry,
+        local_hash,
+    })
+}
+
+/// Records what one upload did.
+fn record_upload_outcome(
+    graph: &GraphContext,
+    row: &SyncFileRow,
+    outcome: UploadOutcome,
+    stats: &mut SyncCycleStats,
+) -> SyncResult<()> {
+    match outcome {
+        UploadOutcome::Skipped => {}
+        UploadOutcome::BaselineRefresh(entry) => {
             refresh_baseline_local(&graph.profile_id, &row.path, &entry)?;
             stats.baseline_refreshes += 1;
-            continue;
         }
-
-        ensure_accepting_new_transfers()?;
-        if !claim_upload_job_path(&graph.profile_id, &row.path, &graph.cycle_id)? {
-            continue;
-        }
-        let target = if row.base_present && row.cloud_present {
-            UploadTarget::Replace {
-                base_etag: row.base_etag.clone(),
-            }
-        } else {
-            UploadTarget::New
-        };
-        let uploaded =
-            match upload_file_by_path(graph, sync_root, &row.path, &target, cancel_flag).await {
-                Ok(uploaded) => uploaded,
-                Err(error) => {
-                    if is_sync_cancelled_error(&error) {
-                        return Err(SyncError::from(error));
-                    }
-                    stats.upload_failures += 1;
-                    log::warn!(
-                        "{} [cycle:{}] UPLOAD_FAILED path={} error={}",
-                        graph.account_prefix,
-                        graph.cycle_id,
-                        row.path,
-                        error
-                    );
-                    continue;
-                }
-            };
-        if read_local_entry(&local_path)?.as_ref() != Some(&entry) {
-            log::info!(
-                "{} [cycle:{}] UPLOAD_SOURCE_CHANGED path={} action=replan",
-                graph.account_prefix,
-                graph.cycle_id,
-                row.path
-            );
-            continue;
-        }
-        if uploaded
-            .quick_xor_hash()
-            .as_deref()
-            .is_some_and(|cloud_hash| cloud_hash != local_hash)
-        {
-            // SharePoint libraries rewrite some file types after upload; the
-            // baseline records what OneDrive now holds.
+        UploadOutcome::Failed(error) => {
+            stats.upload_failures += 1;
             log::warn!(
-                "{} [cycle:{}] UPLOAD_HASH_DIFFERS path={} local={} cloud={:?}",
+                "{} [cycle:{}] UPLOAD_FAILED path={} error={}",
                 graph.account_prefix,
                 graph.cycle_id,
                 row.path,
-                local_hash,
-                uploaded.quick_xor_hash()
+                error
             );
         }
-        commit_baseline_from_upload(
-            &graph.profile_id,
-            &uploaded.to_cloud_item(row.path.clone()),
-            &entry,
-        )?;
-        stats.uploaded_files += 1;
+        UploadOutcome::SourceChanged => log::info!(
+            "{} [cycle:{}] UPLOAD_SOURCE_CHANGED path={} action=replan",
+            graph.account_prefix,
+            graph.cycle_id,
+            row.path
+        ),
+        UploadOutcome::Uploaded {
+            item,
+            entry,
+            local_hash,
+        } => {
+            if item
+                .quick_xor_hash()
+                .as_deref()
+                .is_some_and(|cloud_hash| cloud_hash != local_hash)
+            {
+                // SharePoint libraries rewrite some file types after upload;
+                // the baseline records what OneDrive now holds.
+                log::warn!(
+                    "{} [cycle:{}] UPLOAD_HASH_DIFFERS path={} local={} cloud={:?}",
+                    graph.account_prefix,
+                    graph.cycle_id,
+                    row.path,
+                    local_hash,
+                    item.quick_xor_hash()
+                );
+            }
+            commit_baseline_from_upload(
+                &graph.profile_id,
+                &item.to_cloud_item(row.path.clone()),
+                &entry,
+            )?;
+            stats.uploaded_files += 1;
+            graph.record_transfer_success();
+        }
     }
     Ok(())
 }
