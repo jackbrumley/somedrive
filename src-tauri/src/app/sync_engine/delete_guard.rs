@@ -30,10 +30,16 @@ pub(crate) async fn apply_deletes_through_guard(
         .chain(planned.delete_remote.iter())
         .map(|row| row.path.clone())
         .partition(|path| user_approved.contains(path));
-    if guarded_paths.is_empty() && !guard_state.pending_paths.is_empty() {
-        persist_large_delete_guard_state(&graph.profile_id, &LargeDeleteGuardState::default())?;
-        runtime_clear_issue(&graph.sync_runtime, &graph.profile_id);
-        guard_state = LargeDeleteGuardState::default();
+    if guarded_paths.is_empty() {
+        // Nothing is held, so no large-deletion warning may remain, however
+        // the earlier review ended.
+        let warning_shown = read_persisted_sync_issue(&graph.profile_id)?
+            .is_some_and(|issue| issue.issue_code == "large_delete_guard");
+        if !guard_state.pending_paths.is_empty() || warning_shown {
+            persist_large_delete_guard_state(&graph.profile_id, &LargeDeleteGuardState::default())?;
+            runtime_clear_issue(&graph.sync_runtime, &graph.profile_id);
+            guard_state = LargeDeleteGuardState::default();
+        }
     }
     if guarded_paths.is_empty() && approved_paths.is_empty() {
         return Ok(());
@@ -115,7 +121,10 @@ pub(crate) async fn apply_deletes_through_guard(
     apply_remote_deletes(graph, &delete_remote, &user_confirmed, stats, cancel_flag).await?;
 
     if !held && (guard_state.approved || !guard_state.pending_paths.is_empty()) {
+        // The held deletes went ahead (confirmed, or now within the limit):
+        // the review and its warning end together.
         persist_large_delete_guard_state(&graph.profile_id, &LargeDeleteGuardState::default())?;
+        runtime_clear_issue(&graph.sync_runtime, &graph.profile_id);
     }
     Ok(())
 }
