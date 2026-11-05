@@ -545,9 +545,21 @@
   accent-color: var(--brand-primary);
 }
 
+/* A conflict's checkbox takes the icon tile's place: same width. */
+.sync-problem-head input[type="checkbox"] {
+  flex: none;
+  margin: 0 10px;
+}
+
+/* A tile as tall as the name and folder lines beside it. */
 .sync-problem-icon {
+  flex: none;
   display: inline-grid;
   place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: var(--control-muted-bg);
   color: var(--sync-tone-caution-text);
 }
 

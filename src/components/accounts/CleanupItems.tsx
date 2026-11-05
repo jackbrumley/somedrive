@@ -72,7 +72,7 @@ export function DuplicateSuggestionItem({ suggestion, onDelete, onHide, onOpenIt
     <li class="sync-problem cleanup-item">
       <div class="sync-problem-head">
         <span class="sync-problem-icon cleanup-icon">
-          {suggestion.kind === "files" ? <IconFiles size={18} /> : <IconFolder size={18} />}
+          {suggestion.kind === "files" ? <IconFiles size={22} /> : <IconFolder size={22} />}
         </span>
         <button type="button" class="sync-problem-name" onClick={() => void onOpenItemFolder(suggestion.path)}>
           <span class="sync-file-name">{name}</span>
@@ -140,7 +140,7 @@ export function LargeFileItem({ file, onDelete, onHide, onShowCopies, onOpenItem
     <li class="sync-problem cleanup-item">
       <div class="sync-problem-head">
         <span class="sync-problem-icon cleanup-icon">
-          <FileTypeIcon path={file.path} size={18} />
+          <FileTypeIcon path={file.path} size={22} />
         </span>
         <button type="button" class="sync-problem-name" onClick={() => void onOpenItemFolder(file.path)}>
           <span class="sync-file-name">{name}</span>

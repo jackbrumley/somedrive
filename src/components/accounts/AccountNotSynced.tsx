@@ -10,15 +10,15 @@ interface AccountNotSyncedProps {
 function ReasonIcon({ item }: { item: NotSyncedItem }) {
   switch (item.reasonCode) {
     case "onenote_notebook":
-      return <IconNotebook size={18} />;
+      return <IconNotebook size={22} />;
     case "shared_with_you":
-      return <IconUsers size={18} />;
+      return <IconUsers size={22} />;
     case "malware_detected":
-      return <IconShieldX size={18} />;
+      return <IconShieldX size={22} />;
     case "excluded_by_rule":
-      return item.isFolder ? <IconFolder size={18} /> : <IconBan size={18} />;
+      return item.isFolder ? <IconFolder size={22} /> : <IconBan size={22} />;
     default:
-      return <IconBan size={18} />;
+      return <IconBan size={22} />;
   }
 }
 

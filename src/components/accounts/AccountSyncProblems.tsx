@@ -135,7 +135,7 @@ export function AccountSyncProblems({
                   />
                 ) : (
                   <span class="sync-problem-icon">
-                    {problem.isConflict ? <IconArrowsDiff size={17} /> : <IconAlertTriangle size={17} />}
+                    {problem.isConflict ? <IconArrowsDiff size={22} /> : <IconAlertTriangle size={22} />}
                   </span>
                 )}
                 <button type="button" class="sync-problem-name" onClick={() => void onOpenItemFolder(problem.path)}>
