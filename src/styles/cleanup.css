@@ -87,11 +87,28 @@
   column-gap: var(--space-2);
 }
 
+/* File names in Show files: links that show the file in its folder. */
 .cleanup-pair-path,
 .cleanup-pair-kept {
+  display: block;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font-size: inherit;
+  font-weight: inherit;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.cleanup-pair-path:hover,
+.cleanup-pair-kept:hover {
+  background: transparent;
+  text-decoration: underline;
 }
 
 .cleanup-pair-path {

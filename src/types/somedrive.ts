@@ -315,6 +315,8 @@ export interface CleanupActions {
   unhide: (accountId: string, path: string) => Promise<void>;
   /** Copies text (the file name to type before deleting) to the clipboard; resolves true when it worked. */
   copyText: (text: string) => Promise<boolean>;
+  /** Opens a file in its default app, e.g. a video to watch before deleting it. */
+  openFile: (accountId: string, path: string) => Promise<void>;
 }
 
 /** Mirrors `app_settings::ConflictPolicy`. */

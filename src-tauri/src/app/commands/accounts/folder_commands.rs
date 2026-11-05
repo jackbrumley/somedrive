@@ -83,28 +83,20 @@ pub fn set_account_sync_root(
     Ok(updated)
 }
 
+/// Shows a synced item selected in its folder; when it is not on this
+/// device yet, opens the folder it belongs in.
 #[tauri::command]
-pub fn open_account_item_folder(
+pub async fn open_account_item_folder(
     state: tauri::State<'_, AppState>,
     input: OpenAccountItemFolderInput,
 ) -> Result<(), String> {
-    let profile = {
-        let _guard = state
-            .profiles_lock
-            .lock()
-            .map_err(|_| "Account profile lock is poisoned".to_string())?;
-        let profiles = load_profiles()?;
-        profiles
-            .into_iter()
-            .find(|profile| profile.id == input.profile_id)
-            .ok_or_else(|| "Account profile not found".to_string())?
-    };
-
-    let relative_path = normalize_relative_sync_item_path(&input.relative_path)?;
-    let sync_root = PathBuf::from(profile.sync_root);
-    let absolute_path = sync_root.join(relative_path);
+    let (sync_root, absolute_path) =
+        account_item_path(&state, &input.profile_id, &input.relative_path)?;
     let folder_path = absolute_path.parent().unwrap_or(&sync_root).to_path_buf();
-
+    if absolute_path.exists() {
+        return crate::platform::linux::desktop_open::show_in_folder(&absolute_path, &folder_path)
+            .await;
+    }
     fs::create_dir_all(&folder_path).map_err(|error| {
         format!(
             "Failed to create folder '{}': {}",
@@ -112,8 +104,45 @@ pub fn open_account_item_folder(
             error
         )
     })?;
-
     open_folder_in_file_manager(&folder_path)
+}
+
+/// Opens a synced file in its default app (a video in the video player).
+#[tauri::command]
+pub fn open_account_item(
+    state: tauri::State<'_, AppState>,
+    input: OpenAccountItemFolderInput,
+) -> Result<(), String> {
+    let (_, absolute_path) = account_item_path(&state, &input.profile_id, &input.relative_path)?;
+    if !absolute_path.is_file() {
+        return Err(format!(
+            "'{}' is not on this device, so it can't be opened.",
+            input.relative_path
+        ));
+    }
+    crate::platform::linux::desktop_open::open_with_default_app(&absolute_path)
+}
+
+/// The account's sync folder and the item's full path in it.
+fn account_item_path(
+    state: &AppState,
+    profile_id: &str,
+    relative_path: &str,
+) -> Result<(PathBuf, PathBuf), String> {
+    let profile = {
+        let _guard = state
+            .profiles_lock
+            .lock()
+            .map_err(|_| "Account profile lock is poisoned".to_string())?;
+        load_profiles()?
+            .into_iter()
+            .find(|profile| profile.id == profile_id)
+            .ok_or_else(|| "Account profile not found".to_string())?
+    };
+    let relative_path = normalize_relative_sync_item_path(relative_path)?;
+    let sync_root = PathBuf::from(profile.sync_root);
+    let absolute_path = sync_root.join(relative_path);
+    Ok((sync_root, absolute_path))
 }
 
 pub(crate) fn normalize_relative_sync_item_path(value: &str) -> Result<PathBuf, String> {

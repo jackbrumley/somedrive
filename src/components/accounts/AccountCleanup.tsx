@@ -117,6 +117,7 @@ export function AccountCleanup({ accountId, actions, onOpenItemFolder }: Account
       ) : (
         <LargeFilesList
           files={view.largeFiles}
+          onOpenFile={(path) => void actionsRef.current.openFile(accountId, path)}
           onDelete={(file) => setPending({ kind: "large", file })}
           onHide={(path) => void hide(path)}
           onShowCopies={() => setList("copies")}
@@ -223,6 +224,7 @@ function CopiesList({ view, showSmall, onToggleSmall, onDelete, onHide, onOpenIt
 
 interface LargeFilesListProps {
   files: LargeFile[];
+  onOpenFile: (path: string) => void;
   onDelete: (file: LargeFile) => void;
   onHide: (path: string) => void;
   onShowCopies: () => void;
@@ -230,7 +232,7 @@ interface LargeFilesListProps {
 }
 
 /** The largest files. Most are the only copy, so this list is not about duplicates. */
-function LargeFilesList({ files, onDelete, onHide, onShowCopies, onOpenItemFolder }: LargeFilesListProps) {
+function LargeFilesList({ files, onOpenFile, onDelete, onHide, onShowCopies, onOpenItemFolder }: LargeFilesListProps) {
   return (
     <>
       <p class="cleanup-large-warning">
@@ -248,6 +250,7 @@ function LargeFilesList({ files, onDelete, onHide, onShowCopies, onOpenItemFolde
             <LargeFileItem
               key={file.path}
               file={file}
+              onOpen={() => onOpenFile(file.path)}
               onDelete={() => onDelete(file)}
               onHide={() => onHide(file.path)}
               onShowCopies={onShowCopies}

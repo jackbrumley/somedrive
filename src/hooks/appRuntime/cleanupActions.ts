@@ -57,5 +57,12 @@ export function createCleanupActions({ showToast, refreshActivity }: CleanupActi
         return false;
       }
     },
+    openFile: async (accountId: string, path: string) => {
+      try {
+        await invoke("open_account_item", { input: { profileId: accountId, relativePath: path } });
+      } catch (error) {
+        showToast(`Failed to open '${path}': ${error}`, "error");
+      }
+    },
   };
 }

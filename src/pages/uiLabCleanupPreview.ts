@@ -96,4 +96,5 @@ export const previewCleanupActions: CleanupActions = {
   hide: async () => undefined,
   unhide: async () => undefined,
   copyText: async () => true,
+  openFile: async () => undefined,
 };

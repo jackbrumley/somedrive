@@ -3,6 +3,7 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconCopy,
+  IconExternalLink,
   IconEyeOff,
   IconFiles,
   IconFolder,
@@ -89,12 +90,22 @@ export function DuplicateSuggestionItem({ suggestion, onDelete, onHide, onOpenIt
         <ul class="cleanup-pairs">
           {suggestion.pairs.map((pair) => (
             <li key={pair.path}>
-              <span class="cleanup-pair-path" title={pair.path}>
+              <button
+                type="button"
+                class="cleanup-pair-path"
+                title={`Show ${pair.path} in its folder`}
+                onClick={() => void onOpenItemFolder(pair.path)}
+              >
                 {relativeTo(pair.path, suggestion.path)}
-              </span>
-              <span class="cleanup-pair-kept" title={pair.keptPath}>
+              </button>
+              <button
+                type="button"
+                class="cleanup-pair-kept"
+                title={`Show ${pair.keptPath} in its folder`}
+                onClick={() => void onOpenItemFolder(pair.keptPath)}
+              >
                 same as {pair.keptPath}
-              </span>
+              </button>
               <span class="cleanup-pair-size">{formatBytes(pair.size)}</span>
             </li>
           ))}
@@ -121,6 +132,8 @@ export function DuplicateSuggestionItem({ suggestion, onDelete, onHide, onOpenIt
 
 interface LargeFileItemProps {
   file: LargeFile;
+  /** Opens the file in its default app (a video in the video player). */
+  onOpen: () => void;
   onDelete: () => void;
   onHide: () => void;
   /** Switches to Identical copies, where a file with a copy is deleted. */
@@ -133,7 +146,7 @@ interface LargeFileItemProps {
  * identical copy points to Identical copies instead, the one place copies
  * are deleted (after the byte-for-byte check).
  */
-export function LargeFileItem({ file, onDelete, onHide, onShowCopies, onOpenItemFolder }: LargeFileItemProps) {
+export function LargeFileItem({ file, onOpen, onDelete, onHide, onShowCopies, onOpenItemFolder }: LargeFileItemProps) {
   const { name, folder } = splitSyncPath(file.path);
   const onlyCopy = file.copies.length === 0;
   return (
@@ -142,7 +155,12 @@ export function LargeFileItem({ file, onDelete, onHide, onShowCopies, onOpenItem
         <span class="sync-problem-icon cleanup-icon">
           <FileTypeIcon path={file.path} size={22} />
         </span>
-        <button type="button" class="sync-problem-name" onClick={() => void onOpenItemFolder(file.path)}>
+        <button
+          type="button"
+          class="sync-problem-name"
+          title="Show it in its folder"
+          onClick={() => void onOpenItemFolder(file.path)}
+        >
           <span class="sync-file-name">{name}</span>
           <span class="sync-file-folder">{placeName(folder)}</span>
         </button>
@@ -159,6 +177,9 @@ export function LargeFileItem({ file, onDelete, onHide, onShowCopies, onOpenItem
           : `An identical copy is at ${file.copies[0]}${file.copies.length > 1 ? ` (and ${plural(file.copies.length - 1, "other")})` : ""}. Copies are deleted from Identical copies, after they are compared byte for byte.`}
       </p>
       <div class="sync-problem-actions">
+        <button type="button" class="ghost" title="Open it in its default app" onClick={onOpen}>
+          <IconExternalLink size={15} /> Open
+        </button>
         {onlyCopy ? (
           <button type="button" class="ghost cleanup-delete-file" onClick={onDelete}>
             <IconTrash size={15} /> Delete file…
