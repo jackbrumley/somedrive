@@ -81,7 +81,7 @@ export function AccountCleanup({ accountId, actions, onOpenItemFolder }: Account
 
   return (
     <div class="sync-problems cleanup">
-      <div class="sync-problems-bulk">
+      <div class="sync-problems-bulk cleanup-bar">
         <div class="cleanup-switch" role="group" aria-label="Which list to show">
           <button
             type="button"

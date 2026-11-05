@@ -250,7 +250,6 @@
   border: none;
   border-radius: 10px;
   background: transparent;
-  justify-content: start;
   text-align: left;
   cursor: pointer;
 }
@@ -555,6 +554,8 @@
 .sync-problem-name {
   min-width: 0;
   display: grid;
+  /* One full-width column: the shared button style centres its content. */
+  grid-template-columns: minmax(0, 1fr);
   padding: 0;
   border: none;
   background: transparent;
