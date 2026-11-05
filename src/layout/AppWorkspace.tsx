@@ -60,9 +60,7 @@ export function AppWorkspace({ runtime, updates }: AppWorkspaceProps) {
           onRetryAllFailedDownloads={runtime.retryAllFailedDownloads}
           onConfirmLargeDelete={runtime.confirmAccountLargeDelete}
           onKeepCloudFiles={runtime.keepCloudFilesAfterLargeDelete}
-          onFetchLargeDeletePreview={runtime.fetchAccountLargeDeletePreview}
           onExportLargeDeletePreview={runtime.exportAccountLargeDeletePreview}
-          onFetchSyncProblems={runtime.fetchSyncProblems}
           cleanupActions={runtime.cleanupActions}
           onResolveSyncConflicts={runtime.resolveSyncConflicts}
         />
@@ -102,7 +100,6 @@ export function AppWorkspace({ runtime, updates }: AppWorkspaceProps) {
           status={runtime.status}
           onBack={runtime.goSettings}
           onNavigateUiLab={runtime.goUiLab}
-          onRefreshStatus={runtime.refreshStatus}
           onFetchSessionLogText={runtime.fetchSessionLogText}
           onOpenProfileLog={runtime.openProfileLog}
         />

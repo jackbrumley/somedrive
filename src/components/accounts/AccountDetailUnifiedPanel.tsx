@@ -1,10 +1,9 @@
-import { useEffect, useState } from "preact/hooks";
+import { useAccountAreas } from "../../state/accountAreas";
 import { AccountSettingsPanel } from "./AccountSettingsPanel";
 import { AccountSyncActivityPanel } from "./AccountSyncActivityPanel";
 import type {
   AccountProfile,
   ConflictResolution,
-  SyncProblemsView,
   CleanupActions,
   SyncRuntimeAccountStatus,
 } from "../../types/somedrive";
@@ -27,9 +26,7 @@ interface AccountDetailUnifiedPanelProps {
   onRetryAllFailedDownloads: (accountId: string) => Promise<void>;
   onConfirmLargeDelete: (accountId: string) => Promise<void>;
   onKeepCloudFiles: (accountId: string) => Promise<void>;
-  onFetchLargeDeletePreview: (accountId: string) => Promise<string[]>;
   onExportLargeDeletePreview: (accountId: string) => Promise<void>;
-  onFetchSyncProblems: (accountId: string) => Promise<SyncProblemsView>;
   cleanupActions: CleanupActions;
   onResolveSyncConflicts: (accountId: string, paths: string[], resolution: ConflictResolution) => Promise<void>;
 }
@@ -51,31 +48,16 @@ export function AccountDetailUnifiedPanel({
   onRetryAllFailedDownloads,
   onConfirmLargeDelete,
   onKeepCloudFiles,
-  onFetchLargeDeletePreview,
   onExportLargeDeletePreview,
-  onFetchSyncProblems,
   cleanupActions,
   onResolveSyncConflicts,
 }: AccountDetailUnifiedPanelProps) {
-  const [largeDeletePreviewPaths, setLargeDeletePreviewPaths] = useState<string[]>([]);
-
   const hasLargeDeleteGuardIssue = runtimeStatus?.issueCode === "large_delete_guard";
-
-  useEffect(() => {
-    if (mode !== "sync" || !hasLargeDeleteGuardIssue) {
-      setLargeDeletePreviewPaths([]);
-      return;
-    }
-    let active = true;
-    void onFetchLargeDeletePreview(account.id).then((paths) => {
-      if (active) {
-        setLargeDeletePreviewPaths(paths);
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, [account.id, hasLargeDeleteGuardIssue, mode, onFetchLargeDeletePreview]);
+  const largeDeletePreview = useAccountAreas().useLargeDeletePreview(
+    account.id,
+    runtimeStatus?.dataRevisions.problems,
+    mode === "sync" && hasLargeDeleteGuardIssue
+  );
 
   const { runtimeIssueCode, hasBlockingIssue } = computeEffectiveSyncState(account, runtimeStatus);
   const runtimeAuthReady = runtimeStatus?.authReady ?? false;
@@ -111,9 +93,8 @@ export function AccountDetailUnifiedPanel({
         onRetryAllFailedDownloads={() => onRetryAllFailedDownloads(account.id)}
         onConfirmLargeDelete={() => onConfirmLargeDelete(account.id)}
         onKeepCloudFiles={() => onKeepCloudFiles(account.id)}
-        largeDeletePreviewPaths={largeDeletePreviewPaths}
+        largeDeletePreviewPaths={largeDeletePreview.data ?? []}
         onExportLargeDeletePreview={() => onExportLargeDeletePreview(account.id)}
-        onFetchSyncProblems={onFetchSyncProblems}
         cleanupActions={cleanupActions}
         onResolveSyncConflicts={onResolveSyncConflicts}
       />

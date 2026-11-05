@@ -15,7 +15,6 @@ import type {
   AccountProfile,
   CleanupActions,
   ConflictResolution,
-  SyncProblemsView,
   SyncRuntimeAccountStatus,
 } from "../types/somedrive";
 import { computeEffectiveSyncState } from "../components/accounts/syncStateSelectors";
@@ -41,9 +40,7 @@ interface AccountDetailPageProps {
   onRetryAllFailedDownloads: (accountId: string) => Promise<void>;
   onConfirmLargeDelete: (accountId: string) => Promise<void>;
   onKeepCloudFiles: (accountId: string) => Promise<void>;
-  onFetchLargeDeletePreview: (accountId: string) => Promise<string[]>;
   onExportLargeDeletePreview: (accountId: string) => Promise<void>;
-  onFetchSyncProblems: (accountId: string) => Promise<SyncProblemsView>;
   cleanupActions: CleanupActions;
   onResolveSyncConflicts: (accountId: string, paths: string[], resolution: ConflictResolution) => Promise<void>;
 }
@@ -156,9 +153,7 @@ export function AccountDetailPage({
   onRetryAllFailedDownloads,
   onConfirmLargeDelete,
   onKeepCloudFiles,
-  onFetchLargeDeletePreview,
   onExportLargeDeletePreview,
-  onFetchSyncProblems,
   cleanupActions,
   onResolveSyncConflicts,
 }: AccountDetailPageProps) {
@@ -205,9 +200,7 @@ export function AccountDetailPage({
           onRetryAllFailedDownloads={onRetryAllFailedDownloads}
           onConfirmLargeDelete={onConfirmLargeDelete}
           onKeepCloudFiles={onKeepCloudFiles}
-          onFetchLargeDeletePreview={onFetchLargeDeletePreview}
           onExportLargeDeletePreview={onExportLargeDeletePreview}
-          onFetchSyncProblems={onFetchSyncProblems}
           cleanupActions={cleanupActions}
           onResolveSyncConflicts={onResolveSyncConflicts}
         />

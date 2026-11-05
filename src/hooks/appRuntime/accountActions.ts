@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import type {
   ConflictResolution,
-  SyncProblemsView,
   AccountKind,
   AccountProfile,
   CreateAccountProfileInput,
@@ -15,18 +14,13 @@ import type {
 
 interface AccountActionsFactoryParams {
   showToast: (message: string, type?: ToastType) => void;
-  refreshStatus: () => Promise<void>;
-  refreshActivity: () => Promise<void>;
-  openAccount: (accountId: string) => void;
+  /** Opens the account page once the store lists the account. */
+  openAccountWhenListed: (accountId: string) => void;
 }
 
-export function createAccountActions({
-  showToast,
-  refreshStatus,
-  refreshActivity,
-  openAccount,
-}: AccountActionsFactoryParams) {
-  const refreshAll = () => Promise.all([refreshStatus(), refreshActivity()]);
+/** Account actions. Their effect reaches the window through the store
+ *  (the backend's change counters), so none of them reloads anything. */
+export function createAccountActions({ showToast, openAccountWhenListed }: AccountActionsFactoryParams) {
 
   const startInteractiveAuth = async (profileId: string) => {
     try {
@@ -44,9 +38,8 @@ export function createAccountActions({
     try {
       const profile = await invoke<AccountProfile>("create_account_profile", { input });
       showToast(`Account '${displayName}' added.`, "success");
-      await refreshAll();
       const authStarted = await startInteractiveAuth(profile.id);
-      openAccount(profile.id);
+      openAccountWhenListed(profile.id);
       return authStarted;
     } catch (error) {
       showToast(`Failed to add account: ${error}`, "error");
@@ -59,7 +52,6 @@ export function createAccountActions({
     try {
       await invoke("rename_account_profile", { input });
       showToast("Account name updated.", "success");
-      await refreshAll();
     } catch (error) {
       showToast(`Failed to rename account: ${error}`, "error");
     }
@@ -69,7 +61,6 @@ export function createAccountActions({
     try {
       await invoke("remove_account_profile", { input: { id } });
       showToast("Account removed. Synced files were not deleted.", "info");
-      await refreshAll();
     } catch (error) {
       showToast(`Failed to remove account: ${error}`, "error");
     }
@@ -80,7 +71,6 @@ export function createAccountActions({
     try {
       await invoke("set_account_agent_state", { input });
       showToast(`Agent state set to '${agentState}'.`, "success");
-      await refreshAll();
     } catch (error) {
       showToast(`Failed to update agent state: ${error}`, "error");
     }
@@ -91,7 +81,6 @@ export function createAccountActions({
     try {
       await invoke("set_account_sync_root", { input });
       showToast("Sync folder updated.", "success");
-      await refreshAll();
     } catch (error) {
       showToast(`Failed to update sync folder: ${error}`, "error");
     }
@@ -101,7 +90,6 @@ export function createAccountActions({
     try {
       await invoke("clear_account_auth", { profileId });
       showToast("Account auth session cleared.", "info");
-      await refreshAll();
     } catch (error) {
       showToast(`Failed to clear auth: ${error}`, "error");
     }
@@ -115,7 +103,6 @@ export function createAccountActions({
       } else {
         showToast("No syncing accounts to pause.", "info");
       }
-      await refreshAll();
     } catch (error) {
       showToast(`Failed to pause all accounts: ${error}`, "error");
     }
@@ -129,7 +116,6 @@ export function createAccountActions({
       } else {
         showToast("No paused accounts to resume.", "info");
       }
-      await refreshAll();
     } catch (error) {
       showToast(`Failed to resume all accounts: ${error}`, "error");
     }
@@ -139,7 +125,6 @@ export function createAccountActions({
     const input: SetAccountAgentStateInput = { id: profileId, agentState: "syncing" };
     try {
       await invoke("set_account_agent_state", { input });
-      await refreshAll();
     } catch (error) {
       showToast(`Failed to retry sync: ${error}`, "error");
     }
@@ -156,18 +141,8 @@ export function createAccountActions({
       } else {
         showToast(`'${path}' is already queued or no longer failed.`, "info");
       }
-      await refreshAll();
     } catch (error) {
       showToast(`Failed to retry download: ${error}`, "error");
-    }
-  };
-
-  const fetchSyncProblems = async (profileId: string): Promise<SyncProblemsView> => {
-    try {
-      return await invoke<SyncProblemsView>("list_sync_problems", { profileId });
-    } catch (error) {
-      showToast(`Failed to read sync problems: ${error}`, "error");
-      return { problems: [], notSynced: [] };
     }
   };
 
@@ -200,7 +175,6 @@ export function createAccountActions({
       } else {
         showToast("No failed downloads found.", "info");
       }
-      await refreshAll();
     } catch (error) {
       showToast(`Failed to retry downloads: ${error}`, "error");
     }
@@ -210,7 +184,6 @@ export function createAccountActions({
     try {
       await invoke("confirm_account_large_delete", { profileId });
       showToast("Large deletion confirmed. Cloud changes will apply on the next sync cycle.", "info");
-      await refreshAll();
     } catch (error) {
       showToast(`Failed to confirm deletion: ${error}`, "error");
     }
@@ -220,18 +193,8 @@ export function createAccountActions({
     try {
       await invoke("keep_cloud_files_after_large_delete", { profileId });
       showToast("Keeping cloud files. Initial sync will restore missing items locally.", "info");
-      await refreshAll();
     } catch (error) {
       showToast(`Failed to keep cloud files: ${error}`, "error");
-    }
-  };
-
-  const fetchAccountLargeDeletePreview = async (profileId: string) => {
-    try {
-      return await invoke<string[]>("get_account_large_delete_preview", { profileId });
-    } catch (error) {
-      showToast(`Failed to load deletion preview: ${error}`, "error");
-      return [];
     }
   };
 
@@ -268,11 +231,9 @@ export function createAccountActions({
     retryAccountSync,
     retryFailedDownload,
     retryAllFailedDownloads,
-    fetchSyncProblems,
     resolveSyncConflicts,
     confirmAccountLargeDelete,
     keepCloudFilesAfterLargeDelete,
-    fetchAccountLargeDeletePreview,
     exportAccountLargeDeletePreview,
   };
 }

@@ -1,7 +1,7 @@
-import type { CleanupActions, ConflictResolution, SyncProblemsView, SyncRuntimeAccountStatus } from "../../types/somedrive";
+import type { CleanupActions, ConflictResolution, SyncRuntimeAccountStatus } from "../../types/somedrive";
+import { useAccountAreas } from "../../state/accountAreas";
 import { AccountCleanup } from "./AccountCleanup";
 import { AccountNotSynced } from "./AccountNotSynced";
-import { useSyncProblems } from "../../hooks/useSyncProblems";
 import { AccountSyncProblems } from "./AccountSyncProblems";
 import { useTransferRates } from "../../hooks/useTransferRates";
 import { AccountSyncActivityList } from "./AccountSyncActivityList";
@@ -27,7 +27,6 @@ interface AccountSyncActivityPanelProps {
   onKeepCloudFiles: () => Promise<void>;
   largeDeletePreviewPaths: string[];
   onExportLargeDeletePreview: () => Promise<void>;
-  onFetchSyncProblems: (accountId: string) => Promise<SyncProblemsView>;
   onResolveSyncConflicts: (accountId: string, paths: string[], resolution: ConflictResolution) => Promise<void>;
   cleanupActions: CleanupActions;
 }
@@ -56,15 +55,16 @@ export function AccountSyncActivityPanel({
   onKeepCloudFiles,
   largeDeletePreviewPaths,
   onExportLargeDeletePreview,
-  onFetchSyncProblems,
   onResolveSyncConflicts,
   cleanupActions,
 }: AccountSyncActivityPanelProps) {
   const rates = useTransferRates(runtimeStatus);
-  const { problems, notSynced, resolve } = useSyncProblems(accountId, runtimeStatus?.updatedAt, {
-    fetchProblems: onFetchSyncProblems,
-    resolveConflicts: onResolveSyncConflicts,
-  });
+  const areas = useAccountAreas();
+  const problemsArea = areas.useSyncProblems(accountId, runtimeStatus?.dataRevisions.problems);
+  const problems = problemsArea.data?.problems ?? [];
+  const notSynced = problemsArea.data?.notSynced ?? [];
+  const resolve = (paths: string[], resolution: ConflictResolution) =>
+    onResolveSyncConflicts(accountId, paths, resolution);
   const openConflictCount = problems.filter((problem) => problem.isConflict && problem.resolution === null).length;
   return (
     <div class="sync-panel" role="region" aria-label="Sync status">
@@ -96,10 +96,18 @@ export function AccountSyncActivityPanel({
           problemCount={problems.length}
           notSyncedCount={notSynced.length}
           notSynced={<AccountNotSynced items={notSynced} onOpenItemFolder={onOpenItemFolder} />}
-          cleanup={<AccountCleanup accountId={accountId} actions={cleanupActions} onOpenItemFolder={onOpenItemFolder} />}
+          cleanup={
+            <AccountCleanup
+              accountId={accountId}
+              revision={runtimeStatus?.dataRevisions.cleanup}
+              actions={cleanupActions}
+              onOpenItemFolder={onOpenItemFolder}
+            />
+          }
           problems={
             <AccountSyncProblems
               problems={problems}
+              loadError={problemsArea.error}
               onResolve={resolve}
               onRetryFailedDownload={onRetryFailedDownload}
               onRetryAllFailedDownloads={onRetryAllFailedDownloads}

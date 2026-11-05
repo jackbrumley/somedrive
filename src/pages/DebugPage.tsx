@@ -1,4 +1,4 @@
-import { IconFileText, IconRefresh } from "@tabler/icons-preact";
+import { IconFileText } from "@tabler/icons-preact";
 import { useState } from "preact/hooks";
 import { PageHeader } from "../components/shell/PageHeader";
 import { SettingRow } from "../components/ui/SettingRow";
@@ -10,7 +10,6 @@ interface DebugPageProps {
   status: AppStatusSnapshot;
   onBack: () => void;
   onNavigateUiLab: () => void;
-  onRefreshStatus: () => Promise<void>;
   onFetchSessionLogText: () => Promise<string>;
   onOpenProfileLog: (profileId: string) => Promise<void>;
 }
@@ -20,7 +19,6 @@ export function DebugPage({
   status,
   onBack,
   onNavigateUiLab,
-  onRefreshStatus,
   onFetchSessionLogText,
   onOpenProfileLog,
 }: DebugPageProps) {
@@ -59,12 +57,6 @@ export function DebugPage({
             </div>
           </dl>
           <div class="settings-list">
-            <SettingRow label="Runtime state" description="Reload accounts and sync status from the backend.">
-              <button type="button" class="ghost" onClick={() => void onRefreshStatus()}>
-                <IconRefresh size={15} />
-                Refresh
-              </button>
-            </SettingRow>
             <SettingRow label="UI Lab" description="Preview account states and screen variants while tuning the design.">
               <button type="button" class="ghost" onClick={onNavigateUiLab}>
                 Open

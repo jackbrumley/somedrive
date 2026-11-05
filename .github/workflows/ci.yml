@@ -32,6 +32,7 @@ jobs:
       - run: npm run lint
       - run: npm run check:structure
       - run: npm run check:sync-status-writes
+      - run: npm run check:ui-data-reads
       - run: npm run build
 
   rust:

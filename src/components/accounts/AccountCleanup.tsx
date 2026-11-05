@@ -1,5 +1,6 @@
-import { IconAlertTriangle, IconEye, IconRefresh } from "@tabler/icons-preact";
-import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { IconAlertTriangle, IconEye } from "@tabler/icons-preact";
+import { useRef, useState } from "preact/hooks";
+import { useAccountAreas } from "../../state/accountAreas";
 import type { CleanupActions, CleanupView, DuplicateSuggestion, LargeFile } from "../../types/somedrive";
 import { CleanupDeleteDialog } from "./CleanupDeleteDialog";
 import { DuplicateDeleteSummary, DuplicateSuggestionItem, LargeFileDeleteSummary, LargeFileItem } from "./CleanupItems";
@@ -18,6 +19,8 @@ type PendingDelete = { kind: "duplicates"; suggestion: DuplicateSuggestion } | {
 
 interface AccountCleanupProps {
   accountId: string;
+  /** The account's Clean up change counter: the list is reread when it moves. */
+  revision: number | undefined;
   actions: CleanupActions;
   onOpenItemFolder: (relativePath: string) => Promise<void>;
 }
@@ -34,42 +37,19 @@ function copiesLabel(count: number): string {
 /**
  * The Clean up tab: identical copies (as whole folders where possible) and
  * the largest files, as two separate lists. Each delete needs a typed
- * confirmation. Read when the tab opens and after every change.
+ * confirmation. Read from the store while the tab is open; it updates by
+ * itself after a delete, a hide or a sync change.
  */
-export function AccountCleanup({ accountId, actions, onOpenItemFolder }: AccountCleanupProps) {
-  const [view, setView] = useState<CleanupView | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+export function AccountCleanup({ accountId, revision, actions, onOpenItemFolder }: AccountCleanupProps) {
+  const { data: view, error: loadError } = useAccountAreas().useCleanup(accountId, revision);
   const [list, setList] = useState<CleanupList>("copies");
   const [showSmall, setShowSmall] = useState(false);
   const [pending, setPending] = useState<PendingDelete | null>(null);
   const actionsRef = useRef(actions);
   actionsRef.current = actions;
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      setView(await actionsRef.current.list(accountId));
-      setLoadError(null);
-    } catch (reason) {
-      setLoadError(String(reason));
-    } finally {
-      setLoading(false);
-    }
-  }, [accountId]);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  const hide = async (path: string) => {
-    await actionsRef.current.hide(accountId, path);
-    await refresh();
-  };
-  const unhide = async (path: string) => {
-    await actionsRef.current.unhide(accountId, path);
-    await refresh();
-  };
+  const hide = (path: string) => actionsRef.current.hide(accountId, path);
+  const unhide = (path: string) => actionsRef.current.unhide(accountId, path);
 
   if (!view) {
     return loadError ? (
@@ -100,10 +80,8 @@ export function AccountCleanup({ accountId, actions, onOpenItemFolder }: Account
             Large files <span class="cleanup-switch-count">{view.largeFiles.length}</span>
           </button>
         </div>
-        <button type="button" class="ghost" disabled={loading} onClick={() => void refresh()}>
-          <IconRefresh size={15} /> Refresh
-        </button>
       </div>
+      {loadError && <p class="sync-problems-note">Couldn't update this list: {loadError}</p>}
 
       {list === "copies" ? (
         <CopiesList
@@ -150,7 +128,6 @@ export function AccountCleanup({ accountId, actions, onOpenItemFolder }: Account
           busyText="Comparing every file with its copy, then moving them to the Trash…"
           onConfirm={async () => {
             await actionsRef.current.deleteDuplicates(accountId, pending.suggestion.id);
-            await refresh();
           }}
           onClose={() => setPending(null)}
         />
@@ -165,7 +142,6 @@ export function AccountCleanup({ accountId, actions, onOpenItemFolder }: Account
           busyText="Moving the file to the Trash…"
           onConfirm={async () => {
             await actionsRef.current.deleteLargeFile(accountId, pending.file.path);
-            await refresh();
           }}
           onClose={() => setPending(null)}
         />

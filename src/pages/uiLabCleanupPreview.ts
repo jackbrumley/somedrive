@@ -90,7 +90,6 @@ export const previewCleanupView: CleanupView = {
 
 /** Preview actions: nothing is deleted; a delete reports what it would do. */
 export const previewCleanupActions: CleanupActions = {
-  list: async () => previewCleanupView,
   deleteDuplicates: async () => Promise.reject("UI Lab preview: nothing was deleted."),
   deleteLargeFile: async () => Promise.reject("UI Lab preview: nothing was deleted."),
   hide: async () => undefined,

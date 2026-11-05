@@ -56,8 +56,8 @@ a failure can't hide). All must pass with zero warnings:
 6. `cargo test` (in `src-tauri/`)
 
 CI (`.github/workflows/ci.yml`) runs the same checks plus
-`npm run check:sync-status-writes`, the frontend build and `bash -n` on the
-installers. A necessary `#[allow]` carries a
+`npm run check:sync-status-writes`, `npm run check:ui-data-reads`, the
+frontend build and `bash -n` on the installers. A necessary `#[allow]` carries a
 comment saying why; dead code is deleted, not silenced.
 
 ### File Size Budget
@@ -137,6 +137,12 @@ blockers, counters) has one authority and one write path.
 - **The UI renders, it doesn't infer.** No UI-local state may compete with
   the persisted lifecycle/runtime state, and the UI never shows progress
   animation without active work.
+- **One path to the window** (`docs/ui-data-flow.md`). SQLite triggers raise
+  each account's change counters on every real change, and JSON writes say
+  whether the window shows the file (`ShownInWindow`), so nothing changes
+  what the window shows without the window hearing. Only the store in
+  `src/state/` reads from the backend (`npm run check:ui-data-reads`);
+  screens send actions and never reload or fetch.
 - **Pause, resume, retry, startup restore and error transitions** are
   reflected immediately in the authoritative state and stay consistent
   across reloads.
@@ -151,8 +157,10 @@ no migration code or legacy parsing paths, and testing from a clean
 
 ### Frontend (`src/`)
 - Strict TypeScript (no `any`), functional components, logic in hooks under
-  `src/hooks/` (`useAppRuntime` orchestrates; `useUpdates`, `useToastManager`,
-  `useWindowControls` own their concerns).
+  `src/hooks/` (`useAppRuntime` composes the store with navigation and
+  actions; `useUpdates`, `useToastManager`, `useWindowControls` own their
+  concerns). Everything the window shows comes from the store in
+  `src/state/`.
 - `main.tsx` is entry wiring only; `App.tsx` composes shell, layout and hooks.
 - `src/styles.css` only imports the focused files in `src/styles/`.
 - **UI consistency contract:** shared layout primitives (`.page`,
@@ -166,7 +174,7 @@ no migration code or legacy parsing paths, and testing from a clean
 - `npm run dev` / `npm run build` / `npm run preview`: the frontend alone
   (`build` typechecks first).
 - `npm run typecheck`, `npm run lint`, `npm run check:structure`,
-  `npm run check:sync-status-writes`.
+  `npm run check:sync-status-writes`, `npm run check:ui-data-reads`.
 - `npm run icons:generate`: regenerate the app icons from `docs/logo.svg`.
 - `npm run release:linux|prepare|notes|verify|promote`: see `docs/RELEASE.md`.
 - In `src-tauri/`: `cargo fmt`, `cargo check`, `cargo clippy --all-targets`,
@@ -213,7 +221,8 @@ no migration code or legacy parsing paths, and testing from a clean
   stops start-up; an unreadable or damaged `auth.json` means that account
   must sign in again.
 - **Settings order:** General, Updates, Sync Performance, Debug.
-- **CI:** Linux only, and it also runs `npm run check:sync-status-writes`.
+- **CI:** Linux only, and it also runs `npm run check:sync-status-writes`
+  and `npm run check:ui-data-reads`.
 
 ### From the Release and Update Standard
 The step-by-step procedure is `docs/RELEASE.md`. Never run

@@ -14,15 +14,6 @@ export interface AccountProfile {
   lastSyncAt: string | null;
 }
 
-export interface ActivityEvent {
-  id: string;
-  profileId: string;
-  profileName: string;
-  kind: "info" | "success" | "warning" | "error";
-  message: string;
-  timestamp: string;
-}
-
 export interface DeviceAuthSession {
   profileId: string;
   userCode: string;
@@ -173,7 +164,24 @@ export interface SyncRuntimeAccountStatus {
   localScanCurrentPath?: string | null;
   currentActivity?: SyncRuntimeCurrentActivity;
   consistency?: SyncRuntimeConsistency;
+  dataRevisions: DataRevisions;
   updatedAt: string;
+}
+
+/** Mirrors `sync_runtime::DataRevisions`: the account's change counters.
+ *  The store reloads an area's list when its counter moves. */
+export interface DataRevisions {
+  /** Transfers and deletes (carried by this status itself). */
+  activity: number;
+  /** Sync problems, Not synced and the deletes held for review. */
+  problems: number;
+  /** The Clean up tab. */
+  cleanup: number;
+}
+
+/** `app-data-changed`: accounts, settings or sign-in state were saved. */
+export interface AppDataChangedEvent {
+  revision: number;
 }
 
 export interface SyncRuntimeSnapshot {
@@ -308,7 +316,6 @@ export interface CleanupDeleteResult {
 /** The Clean up tab's backend calls. The deletes reject with the reason
  *  when nothing was deleted. */
 export interface CleanupActions {
-  list: (accountId: string) => Promise<CleanupView>;
   deleteDuplicates: (accountId: string, suggestionId: string) => Promise<CleanupDeleteResult>;
   deleteLargeFile: (accountId: string, path: string) => Promise<CleanupDeleteResult>;
   hide: (accountId: string, path: string) => Promise<void>;

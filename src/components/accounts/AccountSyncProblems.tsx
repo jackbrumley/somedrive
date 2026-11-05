@@ -5,6 +5,8 @@ import { formatBytes, splitSyncPath } from "./syncFormatting";
 
 interface AccountSyncProblemsProps {
   problems: SyncProblem[];
+  /** Why the list could not be read, if it could not. */
+  loadError: string | null;
   onResolve: (paths: string[], resolution: ConflictResolution) => Promise<void>;
   onRetryFailedDownload: (retryId: string, path: string) => Promise<void>;
   onRetryAllFailedDownloads: () => Promise<void>;
@@ -54,6 +56,7 @@ function ResolutionButtons({
  */
 export function AccountSyncProblems({
   problems,
+  loadError,
   onResolve,
   onRetryFailedDownload,
   onRetryAllFailedDownloads,
@@ -86,6 +89,9 @@ export function AccountSyncProblems({
     });
   };
 
+  if (loadError && problems.length === 0) {
+    return <p class="sync-activity-empty">Couldn't read the sync problems: {loadError}</p>;
+  }
   if (problems.length === 0) {
     return <p class="sync-activity-empty">No problems. Everything is syncing normally.</p>;
   }

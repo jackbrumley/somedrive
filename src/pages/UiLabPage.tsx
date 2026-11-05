@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import { PageHeader } from "../components/shell/PageHeader";
 import { AccountCard } from "../components/accounts/AccountCard";
 import { AccountDetailPage } from "./AccountDetailPage";
-import { previewCleanupActions } from "./uiLabCleanupPreview";
+import { previewCleanupActions, previewCleanupView } from "./uiLabCleanupPreview";
+import { AccountAreasContext, type AccountAreaSource } from "../state/accountAreas";
 import type {
   AccountProfile,
   NotSyncedItem,
@@ -135,6 +136,13 @@ const previewSyncProblems: SyncProblem[] = [
 ];
 
 /** Sample skipped-by-design items so the Not synced tab can be previewed. */
+/** The account page's lists in the preview: sample data, never the backend. */
+const previewAccountAreas: AccountAreaSource = {
+  useSyncProblems: () => ({ data: { problems: previewSyncProblems, notSynced: previewNotSynced }, error: null }),
+  useCleanup: () => ({ data: previewCleanupView, error: null }),
+  useLargeDeletePreview: () => ({ data: [], error: null }),
+};
+
 const previewNotSynced: NotSyncedItem[] = [
   {
     path: "Documents/Family Notebook",
@@ -189,6 +197,7 @@ export function UiLabPage({ onBack }: UiLabPageProps) {
         issueActions: [],
         issuePath: null,
         issueSecondaryPath: null,
+        dataRevisions: { activity: 0, problems: 0, cleanup: 0 },
         updatedAt: new Date().toISOString(),
         inProgress: [
           {
@@ -242,6 +251,7 @@ export function UiLabPage({ onBack }: UiLabPageProps) {
         issueActions: [],
         issuePath: null,
         issueSecondaryPath: null,
+        dataRevisions: { activity: 0, problems: 0, cleanup: 0 },
         updatedAt: new Date().toISOString(),
         inProgress: [],
         recentCompleted: [],
@@ -257,6 +267,7 @@ export function UiLabPage({ onBack }: UiLabPageProps) {
         issueActions: ["open_conflict", "open_sync_root", "retry_sync"],
         issuePath: "Designs/Brand/logo.ai",
         issueSecondaryPath: "Designs/Brand/logo.ai.safebackup",
+        dataRevisions: { activity: 0, problems: 0, cleanup: 0 },
         updatedAt: new Date().toISOString(),
         inProgress: [
           {
@@ -311,6 +322,7 @@ export function UiLabPage({ onBack }: UiLabPageProps) {
         issueActions: [],
         issuePath: null,
         issueSecondaryPath: null,
+        dataRevisions: { activity: 0, problems: 0, cleanup: 0 },
         updatedAt: new Date().toISOString(),
         inProgress: [],
         recentCompleted: [
@@ -336,6 +348,7 @@ export function UiLabPage({ onBack }: UiLabPageProps) {
         issueActions: ["reauthenticate", "retry_sync"],
         issuePath: null,
         issueSecondaryPath: null,
+        dataRevisions: { activity: 0, problems: 0, cleanup: 0 },
         updatedAt: new Date().toISOString(),
         inProgress: [],
         recentCompleted: [],
@@ -381,35 +394,35 @@ export function UiLabPage({ onBack }: UiLabPageProps) {
 
   if (selectedLabAccount) {
     return (
-      <AccountDetailPage
-        account={selectedLabAccount}
-        runtimeStatus={selectedRuntimeStatus}
-        view={selectedLabAccountView}
-        onBack={() => navigateUiLab(null)}
-        onOpenSettings={(accountId) => navigateUiLab(accountId, "settings")}
-        onOpenSync={(accountId) => navigateUiLab(accountId, "sync")}
-        onSetAgentState={async (accountId, nextState) => {
-          setLabAgentStateById((current) => ({ ...current, [accountId]: nextState }));
-        }}
-        onStartAuth={async () => null}
-        onRename={async () => undefined}
-        onSetSyncRoot={async () => undefined}
-        onClearAuth={async () => undefined}
-        onRemoveProfile={async () => undefined}
-        onOpenSyncRootFolder={async () => undefined}
-        onOpenItemFolder={async () => undefined}
-        onReauthenticate={async () => null}
-        onRetrySync={async () => undefined}
-        onRetryFailedDownload={async () => undefined}
-        onRetryAllFailedDownloads={async () => undefined}
-        onConfirmLargeDelete={async () => undefined}
-        onKeepCloudFiles={async () => undefined}
-        onFetchLargeDeletePreview={async () => []}
-        onExportLargeDeletePreview={async () => undefined}
-        onFetchSyncProblems={async () => ({ problems: previewSyncProblems, notSynced: previewNotSynced })}
-        onResolveSyncConflicts={async () => undefined}
-        cleanupActions={previewCleanupActions}
-      />
+      <AccountAreasContext.Provider value={previewAccountAreas}>
+        <AccountDetailPage
+          account={selectedLabAccount}
+          runtimeStatus={selectedRuntimeStatus}
+          view={selectedLabAccountView}
+          onBack={() => navigateUiLab(null)}
+          onOpenSettings={(accountId) => navigateUiLab(accountId, "settings")}
+          onOpenSync={(accountId) => navigateUiLab(accountId, "sync")}
+          onSetAgentState={async (accountId, nextState) => {
+            setLabAgentStateById((current) => ({ ...current, [accountId]: nextState }));
+          }}
+          onStartAuth={async () => null}
+          onRename={async () => undefined}
+          onSetSyncRoot={async () => undefined}
+          onClearAuth={async () => undefined}
+          onRemoveProfile={async () => undefined}
+          onOpenSyncRootFolder={async () => undefined}
+          onOpenItemFolder={async () => undefined}
+          onReauthenticate={async () => null}
+          onRetrySync={async () => undefined}
+          onRetryFailedDownload={async () => undefined}
+          onRetryAllFailedDownloads={async () => undefined}
+          onConfirmLargeDelete={async () => undefined}
+          onKeepCloudFiles={async () => undefined}
+          onExportLargeDeletePreview={async () => undefined}
+          onResolveSyncConflicts={async () => undefined}
+          cleanupActions={previewCleanupActions}
+        />
+      </AccountAreasContext.Provider>
     );
   }
 
