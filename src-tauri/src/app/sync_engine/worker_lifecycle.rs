@@ -84,6 +84,10 @@ pub(crate) fn start_sync_worker(
         runtime_clear_issue(&sync_runtime, &profile_id_owned);
         let worker_task = tauri::async_runtime::spawn(async move {
             let mut ticker = tokio::time::interval(std::time::Duration::from_secs(15));
+            // After a long cycle (a big upload), wait a full interval rather
+            // than firing every missed tick at once: the default "burst"
+            // ran a 14-minute cycle's 56 missed ticks back to back.
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             let mut consecutive_failures: u32 = 0;
             if let Some(delay) = initial_delay {
                 log::info!(

@@ -245,6 +245,8 @@
   min-width: 0;
   display: flex;
   align-items: center;
+  /* The global button style centres its content. */
+  justify-content: flex-start;
   gap: var(--space-3);
   padding: 7px 10px;
   border: none;
