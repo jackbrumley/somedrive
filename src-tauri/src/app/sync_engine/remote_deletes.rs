@@ -287,11 +287,13 @@ pub(crate) async fn delete_remote_items(
 }
 
 /// Deletes one item if it still holds what the plan saw. A file with a
-/// known eTag goes in one request that OneDrive only carries out while the
-/// eTag still matches; the planner only deletes a file whose last-seen
-/// version is the synced one, so this is the same check without a read.
-/// Anything else is read first: a folder must be empty, and a file without
-/// an eTag must still hold the synced content.
+/// known eTag first goes in one request that OneDrive only carries out
+/// while the eTag still matches; the planner only deletes a file whose
+/// last-seen version is the synced one, so this is the same check without
+/// a read. OneDrive sometimes moves an eTag without a content change, so a
+/// refusal is not taken as a change: the file is then read and its content
+/// compared with the baseline, as is any file without an eTag. A folder
+/// must be empty.
 pub(crate) async fn delete_one_remote_item(
     graph: &GraphContext,
     row: &SyncFileRow,
@@ -301,13 +303,16 @@ pub(crate) async fn delete_one_remote_item(
         return Ok(ItemDeleteOutcome::NotInCloud);
     };
     if let (false, Some(etag)) = (row.is_dir, row.cloud_etag.as_deref()) {
-        return Ok(
-            match delete_remote_item(graph, item_id, Some(etag), cancel_flag).await? {
-                GraphDeleteOutcome::Deleted => ItemDeleteOutcome::Deleted,
-                GraphDeleteOutcome::NotFound => ItemDeleteOutcome::AlreadyGone,
-                GraphDeleteOutcome::ChangedSinceRead => ItemDeleteOutcome::ChangedSincePlan,
-            },
-        );
+        match delete_remote_item(graph, item_id, Some(etag), cancel_flag).await? {
+            GraphDeleteOutcome::Deleted => return Ok(ItemDeleteOutcome::Deleted),
+            GraphDeleteOutcome::NotFound => return Ok(ItemDeleteOutcome::AlreadyGone),
+            GraphDeleteOutcome::ChangedSinceRead => log::info!(
+                "{} [cycle:{}] REMOTE_DELETE_ETAG_REFUSED path={} action=compare_content",
+                graph.account_prefix,
+                graph.cycle_id,
+                row.path
+            ),
+        }
     }
     let Some(current) = fetch_remote_item(graph, item_id, cancel_flag).await? else {
         return Ok(ItemDeleteOutcome::AlreadyGone);
