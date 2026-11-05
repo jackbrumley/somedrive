@@ -198,6 +198,7 @@ export function UiLabPage({ onBack }: UiLabPageProps) {
         issuePath: null,
         issueSecondaryPath: null,
         dataRevisions: { activity: 0, problems: 0, cleanup: 0 },
+        localChangesWatched: true,
         updatedAt: new Date().toISOString(),
         inProgress: [
           {
@@ -252,6 +253,7 @@ export function UiLabPage({ onBack }: UiLabPageProps) {
         issuePath: null,
         issueSecondaryPath: null,
         dataRevisions: { activity: 0, problems: 0, cleanup: 0 },
+        localChangesWatched: true,
         updatedAt: new Date().toISOString(),
         inProgress: [],
         recentCompleted: [],
@@ -268,6 +270,7 @@ export function UiLabPage({ onBack }: UiLabPageProps) {
         issuePath: "Designs/Brand/logo.ai",
         issueSecondaryPath: "Designs/Brand/logo.ai.safebackup",
         dataRevisions: { activity: 0, problems: 0, cleanup: 0 },
+        localChangesWatched: true,
         updatedAt: new Date().toISOString(),
         inProgress: [
           {
@@ -323,6 +326,7 @@ export function UiLabPage({ onBack }: UiLabPageProps) {
         issuePath: null,
         issueSecondaryPath: null,
         dataRevisions: { activity: 0, problems: 0, cleanup: 0 },
+        localChangesWatched: true,
         updatedAt: new Date().toISOString(),
         inProgress: [],
         recentCompleted: [
@@ -349,6 +353,7 @@ export function UiLabPage({ onBack }: UiLabPageProps) {
         issuePath: null,
         issueSecondaryPath: null,
         dataRevisions: { activity: 0, problems: 0, cleanup: 0 },
+        localChangesWatched: true,
         updatedAt: new Date().toISOString(),
         inProgress: [],
         recentCompleted: [],

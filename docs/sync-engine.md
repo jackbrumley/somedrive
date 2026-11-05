@@ -318,6 +318,19 @@ setup work:
   or dropped connection continues from the offset OneDrive reports, as
   long as the file's size and time are unchanged and the session has not
   expired (`upload_session.rs`).
+- **Finding local changes:** the sync folder is watched (inotify, through
+  the `notify` crate; `local_watch.rs`). A cycle scans this device only
+  when the watcher saw a change, on the first cycle, when the exclude
+  rules or the folder changed, when the watcher is unavailable or failed,
+  or every 10 minutes as a safety net; otherwise it logs
+  `LOCAL_SCAN_SKIPPED` and plans from the database, which the engine keeps
+  current with its own transfers and deletes. A cycle starts every 15
+  seconds for OneDrive's changes, or as soon as local changes have been
+  quiet for 2 seconds. Reads and SomeDrive's own partial downloads are not
+  changes; dropped events (queue overflow) are. A watcher that could not
+  start (no folder, the system's watch limit) is retried with the
+  10-minute scan, every cycle scans meanwhile, and the account page says
+  so (`local_changes_watched`).
 - **Content check on every core:** rows present on both sides are hashed
   on one worker thread per CPU core (`content_check.rs`), and the window
   shows "Checking files against OneDrive · N of M files". Each file is read

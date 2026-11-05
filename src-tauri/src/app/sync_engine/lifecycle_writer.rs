@@ -106,6 +106,19 @@ pub(crate) fn runtime_set_local_scan_progress(
     }
 }
 
+/// Records whether the account's folder is watched for changes, and
+/// sends the status when it changed.
+pub(crate) fn runtime_set_local_watch(profile_id: &str, watching: bool) {
+    if let Err(error) = persist_local_watch_state(profile_id, watching) {
+        log::warn!(
+            "{} LOCAL_WATCH_STATE_PERSIST_FAILED error={}",
+            log_context::account_prefix(profile_id),
+            error
+        );
+    }
+    sync_runtime::request_status_event(profile_id, sync_runtime::StatusEventEmitMode::Immediate);
+}
+
 // the structured activity contract (stage, progress_mode, current, total, unit, detail, cycle_id) is passed field by field; bundling it into one struct is tracked in docs/TODO.md.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn runtime_set_current_activity(

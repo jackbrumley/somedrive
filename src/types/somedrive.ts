@@ -165,6 +165,9 @@ export interface SyncRuntimeAccountStatus {
   currentActivity?: SyncRuntimeCurrentActivity;
   consistency?: SyncRuntimeConsistency;
   dataRevisions: DataRevisions;
+  /** Whether the sync folder is watched for changes; null before the first
+   *  cycle. When false, every cycle scans this device instead. */
+  localChangesWatched: boolean | null;
   updatedAt: string;
 }
 

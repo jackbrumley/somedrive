@@ -278,6 +278,7 @@ pub fn hydrate_runtime_status_from_db(
     let download_counters = query_download_job_counters(&snapshot, &profile_id)?;
     let upload_counters = query_upload_job_counters(&snapshot, &profile_id)?;
     status.data_revisions = read_data_revisions(&snapshot)?;
+    status.local_changes_watched = read_local_watch_state(&snapshot)?;
     drop(snapshot);
     let planner_counters = read_sync_file_planner_counters(&profile_id)?;
 

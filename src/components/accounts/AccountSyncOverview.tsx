@@ -7,6 +7,7 @@ import {
   IconCloudDownload,
   IconHourglassHigh,
   IconInfoCircle,
+  IconRadar,
 } from "@tabler/icons-preact";
 import type { SyncRuntimeAccountStatus } from "../../types/somedrive";
 import { syncModeMessage, type SyncModeTone } from "./syncModeMessaging";
@@ -152,6 +153,7 @@ export function AccountSyncOverview({
   // check every few seconds changes its text instead of pushing the page
   // below down and back up.
   const showStepLine = runtimeStatus?.engineState === "running" && phase !== "paused" && phase !== "error";
+  const notWatched = runtimeStatus?.localChangesWatched === false;
 
   return (
     <section class={`sync-overview sync-tone-${message.tone}`} aria-live="polite">
@@ -173,7 +175,7 @@ export function AccountSyncOverview({
         </div>
       )}
 
-      {(showStepLine || throttledRecently || retryWaiting > 0 || openConflictCount > 0) && (
+      {(showStepLine || notWatched || throttledRecently || retryWaiting > 0 || openConflictCount > 0) && (
         <ul class="sync-overview-notes">
           {openConflictCount > 0 && (
             <li class="sync-overview-note-attention">
@@ -188,6 +190,15 @@ export function AccountSyncOverview({
             <li class="sync-overview-step">
               {engineRunning ? <IconHourglassHigh size={15} /> : <IconClockCheck size={15} />}
               <span>{stepLabel || "Waiting for the next check"}</span>
+            </li>
+          )}
+          {notWatched && (
+            <li>
+              <IconRadar size={15} />
+              <span>
+                This folder can't be watched for changes, so SomeDrive checks it every 15 seconds instead. Saved files
+                may take a little longer to start syncing.
+              </span>
             </li>
           )}
           {throttledRecently && (

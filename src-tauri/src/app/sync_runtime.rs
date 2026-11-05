@@ -127,6 +127,9 @@ pub struct SyncRuntimeAccountStatus {
     pub current_activity: SyncRuntimeCurrentActivity,
     pub consistency: SyncRuntimeConsistency,
     pub data_revisions: DataRevisions,
+    /// Whether changes in the sync folder are watched (`None` before the
+    /// first cycle). When not, every cycle scans this device instead.
+    pub local_changes_watched: Option<bool>,
     pub updated_at: String,
 }
 
@@ -201,6 +204,7 @@ impl SyncRuntimeAccountStatus {
                 violations: Vec::new(),
             },
             data_revisions: DataRevisions::default(),
+            local_changes_watched: None,
             updated_at: now,
         }
     }

@@ -6,6 +6,12 @@ pub(crate) static SYNC_RETRY_NOT_BEFORE: std::sync::LazyLock<
     std::sync::Mutex<HashMap<String, std::time::Instant>>,
 > = std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
+/// How often a cycle runs to pick up OneDrive's changes (this device's
+/// changes start one as soon as they settle; see `local_watch.rs`).
+pub(crate) const SYNC_CYCLE_INTERVAL: Duration = Duration::from_secs(15);
+/// How often the worker looks at whether a cycle is due.
+const WORKER_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+
 pub(crate) const SYNC_RETRY_FIRST_DELAY: Duration = Duration::from_secs(30);
 pub(crate) const SYNC_RETRY_MAX_DELAY: Duration = Duration::from_secs(15 * 60);
 
@@ -54,7 +60,7 @@ pub(crate) fn start_sync_worker(
     }
     let cancel_flag = set_cancel_flag(state, profile_id, false)?;
     let cycle_lock = get_or_create_cycle_lock(state, profile_id)?;
-    let initial_delay = remaining_until_next_cycle(profile_id, Duration::from_secs(15));
+    let initial_delay = remaining_until_next_cycle(profile_id, SYNC_CYCLE_INTERVAL);
     {
         let mut stops = state
             .sync_worker_stops
@@ -83,11 +89,14 @@ pub(crate) fn start_sync_worker(
         );
         runtime_clear_issue(&sync_runtime, &profile_id_owned);
         let worker_task = tauri::async_runtime::spawn(async move {
-            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(15));
-            // After a long cycle (a big upload), wait a full interval rather
-            // than firing every missed tick at once: the default "burst"
-            // ran a 14-minute cycle's 56 missed ticks back to back.
+            // A cycle starts when SYNC_CYCLE_INTERVAL has passed since the
+            // last one began (for OneDrive's changes), or as soon as the
+            // folder watcher has seen local changes settle. The ticker only
+            // looks; missed looks are skipped, never run back to back.
+            let mut ticker = tokio::time::interval(WORKER_CHECK_INTERVAL);
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            let mut local_watch = LocalChangeWatch::new(&profile_id_owned);
+            let mut last_cycle_started: Option<std::time::Instant> = None;
             let mut consecutive_failures: u32 = 0;
             if let Some(delay) = initial_delay {
                 log::info!(
@@ -127,6 +136,11 @@ pub(crate) fn start_sync_worker(
                         break;
                     }
                     _ = ticker.tick() => {
+                        let interval_due = last_cycle_started
+                            .is_none_or(|started| started.elapsed() >= SYNC_CYCLE_INTERVAL);
+                        if !interval_due && !local_watch.changes_settled() {
+                            continue;
+                        }
                         if cancel_flag.load(Ordering::Relaxed)
                             || !sync_accepts_new_work()
                             || sync_retry_pending(&profile_id_owned)
@@ -156,8 +170,21 @@ pub(crate) fn start_sync_worker(
                                 continue;
                             }
                         };
-                        log::info!("{} SYNC_TICK", log_context::account_prefix(&profile_id_owned));
-                        match tick_sync_cycle(&profiles_lock, &sync_runtime, &profile_id_owned, &cancel_flag).await {
+                        log::info!(
+                            "{} SYNC_TICK trigger={}",
+                            log_context::account_prefix(&profile_id_owned),
+                            if interval_due { "interval" } else { "local_changes" }
+                        );
+                        last_cycle_started = Some(std::time::Instant::now());
+                        match tick_sync_cycle(
+                            &profiles_lock,
+                            &sync_runtime,
+                            &profile_id_owned,
+                            &mut local_watch,
+                            &cancel_flag,
+                        )
+                        .await
+                        {
                             Ok(stats) => {
                                 record_cycle_completed(&sync_runtime, &profile_id_owned);
                                 if consecutive_failures > 0 {

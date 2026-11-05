@@ -11,6 +11,8 @@ pub(crate) const ISSUE_EXCLUDED_BY_RULE: &str = "excluded_by_rule";
 pub(crate) struct ExclusionRules {
     pub(crate) matcher: globset::GlobSet,
     pub(crate) is_empty: bool,
+    /// The rules as written, so a change to them can be noticed.
+    pub(crate) patterns: Vec<String>,
 }
 
 impl ExclusionRules {
@@ -47,6 +49,7 @@ impl ExclusionRules {
         Ok(Self {
             matcher,
             is_empty: count == 0,
+            patterns: patterns.to_vec(),
         })
     }
 

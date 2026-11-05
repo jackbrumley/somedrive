@@ -12,6 +12,7 @@ pub(crate) async fn tick_sync_cycle(
     profiles_lock: &Arc<std::sync::Mutex<()>>,
     sync_runtime: &Arc<std::sync::Mutex<SyncRuntimeMap>>,
     profile_id: &str,
+    local_watch: &mut LocalChangeWatch,
     cancel_flag: &Arc<AtomicBool>,
 ) -> SyncResult<SyncCycleStats> {
     ensure_not_cancelled(cancel_flag)?;
@@ -72,34 +73,31 @@ pub(crate) async fn tick_sync_cycle(
     // Cloud renames recorded by an earlier, interrupted cycle.
     apply_pending_local_moves(profile_id, &account_prefix, &sync_root)?;
 
-    // 1. This device first, so every download decision knows what is on disk.
-    runtime_set_phase(
-        &graph.sync_runtime,
-        profile_id,
-        "scanning_local",
-        "Checking this device",
-    );
-    let local_snapshot = run_local_scan_with_runtime_updates(
-        &graph.account_prefix,
-        &graph.cycle_id,
-        &graph.sync_runtime,
-        profile_id,
-        &sync_root,
-        Arc::clone(&graph.exclusions),
-        cancel_flag,
-    )
-    .await?;
-    apply_local_scan(profile_id, &local_snapshot)?;
-    apply_exclusion_rules(profile_id, &graph.exclusions)?;
-    stats.local_items_seen = local_snapshot.len();
-    stats.name_issues = record_local_name_issues(profile_id, &local_snapshot)?;
-    log::info!(
-        "{} [cycle:{}] LOCAL_SCAN_COMPLETE items={} name_issues={}",
-        account_prefix,
-        cycle_id,
-        stats.local_items_seen,
-        stats.name_issues
-    );
+    // 1. This device first, so every download decision knows what is on
+    // disk. The folder watcher says whether anything changed since the last
+    // scan; with nothing changed, the database already holds this device's
+    // state (the engine records its own transfers and deletes as it makes
+    // them), so the scan is skipped.
+    let scan_reason = local_watch.scan_decision(&sync_root, &graph.exclusions.patterns);
+    if let Some(watching) = local_watch.unreported_watching_state() {
+        runtime_set_local_watch(profile_id, watching);
+    }
+    match scan_reason {
+        Some(reason) => {
+            log::info!(
+                "{} [cycle:{}] LOCAL_SCAN_REASON reason={}",
+                account_prefix,
+                cycle_id,
+                reason.as_str()
+            );
+            scan_this_device(&graph, &sync_root, &mut stats, cancel_flag).await?;
+        }
+        None => log::info!(
+            "{} [cycle:{}] LOCAL_SCAN_SKIPPED reason=no_changes_seen",
+            account_prefix,
+            cycle_id
+        ),
+    }
 
     // 2. Cloud changes; planned downloads start while pages arrive.
     fetch_and_apply_delta_changes(&mut graph, &sync_root, &mut stats, cancel_flag).await?;
@@ -223,6 +221,44 @@ pub(crate) async fn tick_sync_cycle(
         "Up to date - waiting for the next check",
     );
     Ok(stats)
+}
+
+/// Scans this device and records what is on disk.
+async fn scan_this_device(
+    graph: &GraphContext,
+    sync_root: &Path,
+    stats: &mut SyncCycleStats,
+    cancel_flag: &Arc<AtomicBool>,
+) -> SyncResult<()> {
+    let profile_id = graph.profile_id.as_str();
+    runtime_set_phase(
+        &graph.sync_runtime,
+        profile_id,
+        "scanning_local",
+        "Checking this device",
+    );
+    let local_snapshot = run_local_scan_with_runtime_updates(
+        &graph.account_prefix,
+        &graph.cycle_id,
+        &graph.sync_runtime,
+        profile_id,
+        sync_root,
+        Arc::clone(&graph.exclusions),
+        cancel_flag,
+    )
+    .await?;
+    apply_local_scan(profile_id, &local_snapshot)?;
+    apply_exclusion_rules(profile_id, &graph.exclusions)?;
+    stats.local_items_seen = local_snapshot.len();
+    stats.name_issues = record_local_name_issues(profile_id, &local_snapshot)?;
+    log::info!(
+        "{} [cycle:{}] LOCAL_SCAN_COMPLETE items={} name_issues={}",
+        graph.account_prefix,
+        graph.cycle_id,
+        stats.local_items_seen,
+        stats.name_issues
+    );
+    Ok(())
 }
 
 /// The sync folder must be there before anything is planned. Before the

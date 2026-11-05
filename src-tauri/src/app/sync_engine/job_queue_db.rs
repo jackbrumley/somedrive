@@ -153,6 +153,13 @@ pub(crate) const SYNC_SCHEMA_SQL: &str = "
         hidden_at INTEGER NOT NULL,
         PRIMARY KEY(profile_id, path)
     );
+    -- Whether the sync folder is being watched for changes
+    -- (sync_engine/local_watch.rs); shown on the account page when not.
+    CREATE TABLE IF NOT EXISTS sync_local_watch (
+        profile_id TEXT PRIMARY KEY,
+        watching INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    );
     -- Big uploads' sessions, so a cut-off upload continues where it stopped
     -- (sync_engine/upload_session.rs).
     CREATE TABLE IF NOT EXISTS sync_upload_sessions (
@@ -167,7 +174,8 @@ pub(crate) const SYNC_SCHEMA_SQL: &str = "
 ";
 
 /// Tables of the pre-baseline engine, dropped when an old database is found.
-pub(crate) const LEGACY_SYNC_TABLES: [&str; 11] = [
+pub(crate) const LEGACY_SYNC_TABLES: [&str; 12] = [
+    "sync_local_watch",
     "sync_upload_sessions",
     "ui_data_revisions",
     "sync_approved_deletes",
