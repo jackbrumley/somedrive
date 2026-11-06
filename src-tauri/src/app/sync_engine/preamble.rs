@@ -106,8 +106,8 @@ pub fn confirm_large_delete_guard(
 }
 
 /// The user keeps the files instead: each held path forgets its baseline, so
-/// the next plan restores it on whichever side it is missing (an upload or a
-/// download) rather than deleting it.
+/// the next plan downloads it again from OneDrive rather than deleting it
+/// there.
 pub fn keep_cloud_files_after_large_delete(
     state: &tauri::State<'_, AppState>,
     profile_id: &str,

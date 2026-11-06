@@ -147,12 +147,15 @@ pub(crate) fn resolve_stall_timeout() -> Duration {
         .unwrap_or(Duration::from_secs(DEFAULT_STALL_TIMEOUT_SECONDS))
 }
 
+/// More deletes than this within the delete guard's window are held.
+const DEFAULT_LARGE_DELETE_GUARD_THRESHOLD: usize = 100;
+
 pub(crate) fn resolve_large_delete_guard_threshold() -> usize {
     std::env::var("SOMEDRIVE_SYNC_LARGE_DELETE_THRESHOLD")
         .ok()
         .and_then(|value| value.trim().parse::<usize>().ok())
         .map(|value| value.clamp(1, 100_000))
-        .unwrap_or(10)
+        .unwrap_or(DEFAULT_LARGE_DELETE_GUARD_THRESHOLD)
 }
 
 pub(crate) fn current_unix_seconds() -> i64 {

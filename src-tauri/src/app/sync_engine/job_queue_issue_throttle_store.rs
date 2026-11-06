@@ -85,7 +85,7 @@ pub(crate) fn read_persisted_sync_issue(
 }
 
 /// Records an event. Transfer events are kept for an hour (the throttle
-/// counters); delete events for the delete guard's whole window.
+/// counters); delete events for the delete guard's window.
 pub(crate) fn record_throttle_event(profile_id: &str, direction: &str) -> Result<(), String> {
     let connection = open_sync_jobs_connection(profile_id)?;
     let now = current_unix_seconds();
@@ -169,31 +169,37 @@ mod throttle_event_tests {
     use super::*;
 
     #[test]
-    fn delete_events_count_for_the_whole_delete_guard_window() {
+    fn delete_events_count_only_within_the_delete_guard_window() {
         let profile_id = test_profile_id("delete-window");
         let connection = open_sync_jobs_connection(&profile_id).expect("open");
-        let two_hours_ago = current_unix_seconds() - 2 * 3600;
-        for direction in [DELETE_EVENT_DIRECTION, DOWNLOAD_JOB_DIRECTION] {
+        let now = current_unix_seconds();
+        let insert = |direction: &str, occurred_at: i64| {
             connection
                 .execute(
                     "INSERT INTO sync_throttle_events (profile_id, direction, occurred_at)
                      VALUES (?1, ?2, ?3)",
-                    params![profile_id, direction, two_hours_ago],
+                    params![profile_id, direction, occurred_at],
                 )
                 .expect("insert");
-        }
+        };
+        insert(DELETE_EVENT_DIRECTION, now - 60);
+        insert(
+            DELETE_EVENT_DIRECTION,
+            now - DELETE_GUARD_WINDOW_SECONDS - 60,
+        );
+        insert(DOWNLOAD_JOB_DIRECTION, now - 30 * 60);
         record_throttle_event(&profile_id, DELETE_EVENT_DIRECTION).expect("record");
 
         let since_window = current_unix_seconds() - DELETE_GUARD_WINDOW_SECONDS;
         assert_eq!(
             count_events_since(&profile_id, DELETE_EVENT_DIRECTION, since_window).expect("count"),
             2,
-            "the two-hour-old delete still counts"
+            "the delete a minute ago and the new one count; the older one does not"
         );
         assert_eq!(
-            count_events_since(&profile_id, DOWNLOAD_JOB_DIRECTION, since_window).expect("count"),
-            0,
-            "transfer events are trimmed after an hour"
+            count_events_since(&profile_id, DOWNLOAD_JOB_DIRECTION, now - 3600).expect("count"),
+            1,
+            "transfer events are kept for an hour, not trimmed to the delete window"
         );
     }
 }

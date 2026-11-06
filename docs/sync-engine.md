@@ -171,12 +171,18 @@ its id" (fixes A6, A9).
 ### 6.4 Deletes
 - Local deletes go to the XDG Trash (`gio trash` semantics), never
   `remove_file`/`remove_dir_all` (fixes A4).
-- One **delete guard** covers both directions: if a cycle plans more than
-  the threshold (default 10, or 10% of tracked files, whichever is larger)
-  deletes, it pauses deletes and asks. The approval re-checks each path
-  against the **current** state before acting; anything that came back is
-  dropped from the list (fixes A5). Small deletes spread over several cycles
-  count against a rolling 24-hour window.
+- The **delete guard** covers deletes made on this computer: if a cycle
+  would delete more than the threshold (default 100 files, or
+  `SOMEDRIVE_SYNC_LARGE_DELETE_THRESHOLD`) from OneDrive, counting this
+  computer's deletes of the last 5 minutes, it holds them and asks. The
+  window adds up a folder a file manager removes in pieces; a folder counts
+  as every file in it. The warning names the earlier deletes when they
+  pushed the batch over. The approval re-checks each path against the
+  **current** state before acting; anything that came back is dropped from
+  the list (fixes A5).
+- Deletes made in the cloud are never held and do not count: OneDrive asked
+  when they were made, its recycle bin keeps them, and the local copy goes
+  to the Trash.
 - A missing or empty sync root is never "everything deleted": the cycle
   stops with a "sync folder unavailable" issue (fixes the unmounted-drive
   case).
@@ -508,7 +514,8 @@ Agreed 2026-11-04:
 
 - Conflict copies are named `name (conflict YYYY-MM-DD HHMM on <hostname>).ext`.
 - The delete guard asks before more than 10 files or 10% of tracked files,
-  whichever is larger, in either direction.
+  whichever is larger, in either direction. Replaced 2026-11-06: more than
+  100 files in 5 minutes, deletes made on this computer only (section 6.4).
 - Local deletes always go to the Trash.
 - This document replaces the earlier sync plan documents; their lasting
   rules (database authority, single status writer) are in AGENTS.md.
