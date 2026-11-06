@@ -76,7 +76,8 @@ fn log_timestamp() -> String {
 /// Starts this run's session log: rotates the previous one to
 /// `last-session.log` and writes the header. Runs after the single-instance
 /// guard, so a second launch never rotates the running instance's log.
-pub fn initialize_session_logging() -> Result<(), String> {
+/// `raw_logger_mode` is the saved developer option, read by the caller.
+pub fn initialize_session_logging(raw_logger_mode: bool) -> Result<(), String> {
     let debug_dir = crate::paths::debug_dir()?;
     let session_log_path = debug_dir.join(SESSION_LOG_FILE_NAME);
     let profile_log_dir = debug_dir.join("profiles");
@@ -93,9 +94,8 @@ pub fn initialize_session_logging() -> Result<(), String> {
     let _ = PROFILE_LOG_DIR.set(profile_log_dir);
     let _ = RAW_LOG_SESSION_PATH.set(Mutex::new(None));
 
-    let raw_mode_enabled = app_settings::load_raw_logger_mode().unwrap_or(false);
-    RAW_LOG_MODE.store(raw_mode_enabled, Ordering::Relaxed);
-    if raw_mode_enabled {
+    RAW_LOG_MODE.store(raw_logger_mode, Ordering::Relaxed);
+    if raw_logger_mode {
         let _ = ensure_raw_session_path();
     }
 
@@ -108,11 +108,11 @@ pub fn initialize_session_logging() -> Result<(), String> {
     Ok(())
 }
 
-/// Installs the `log` backend at the level chosen in Settings -> Debug.
-pub fn initialize_app_logger() -> Result<(), String> {
+/// Installs the `log` backend at `level`, the one chosen in Settings -> Debug
+/// (read by the caller).
+pub fn initialize_app_logger(level: &str) -> Result<(), String> {
     log::set_logger(&LOGGER).map_err(|error| error.to_string())?;
-    let level = app_settings::load_log_level().unwrap_or_else(|_| "info".to_string());
-    log::set_max_level(parse_log_level(&level).unwrap_or(LevelFilter::Info));
+    log::set_max_level(parse_log_level(level).unwrap_or(LevelFilter::Info));
     Ok(())
 }
 

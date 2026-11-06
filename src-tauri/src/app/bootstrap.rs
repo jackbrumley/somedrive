@@ -9,6 +9,7 @@ use crate::app::state::AppState;
 use crate::app::sync_engine;
 use crate::app::sync_runtime;
 use crate::app::tray;
+use crate::paths::SettingsFileMigration;
 use crate::LaunchOptions;
 use tauri::Manager;
 
@@ -17,10 +18,30 @@ pub fn run_setup(
     app: &mut tauri::App<tauri::Wry>,
     launch: LaunchOptions,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if let Err(error) = session_log::initialize_session_logging() {
+    // Before anything reads the settings: the first settings load would
+    // otherwise create a default settings.json beside the legacy file.
+    let settings_file_migration = crate::paths::migrate_legacy_settings_file();
+    let migration_failure = match &settings_file_migration {
+        Some(SettingsFileMigration::Failed(report)) => Some(report.clone()),
+        _ => None,
+    };
+
+    // A failed rename leaves the user's settings in the legacy file, so the
+    // settings must not be read (that would create a default settings.json):
+    // logging starts on its defaults and start-up stops below.
+    let (raw_logger_mode, log_level) = if migration_failure.is_some() {
+        (false, app_settings::DEFAULT_LOG_LEVEL.to_string())
+    } else {
+        (
+            app_settings::load_raw_logger_mode().unwrap_or(false),
+            app_settings::load_log_level()
+                .unwrap_or_else(|_| app_settings::DEFAULT_LOG_LEVEL.to_string()),
+        )
+    };
+    if let Err(error) = session_log::initialize_session_logging(raw_logger_mode) {
         eprintln!("Failed to initialize session logging: {}", error);
     }
-    if let Err(error) = session_log::initialize_app_logger() {
+    if let Err(error) = session_log::initialize_app_logger(&log_level) {
         eprintln!("Failed to initialize app logger: {}", error);
     }
     log::info!(
@@ -30,11 +51,24 @@ pub fn run_setup(
         std::env::consts::ARCH,
         launch.start_hidden
     );
+    log_settings_file_migration(settings_file_migration);
+    if let Some(report) = migration_failure {
+        exit_with_settings_error(
+            app.handle(),
+            &report,
+            "Make sure you can write to that folder, or rename the file yourself, and start SomeDrive again.",
+        );
+        return Ok(());
+    }
 
     json_store::enable_recovery_notices(app.handle());
     if let Err(error) = ensure_settings_readable() {
         log::error!("SETTINGS_UNREADABLE {error}");
-        exit_with_settings_error(app.handle(), &error);
+        exit_with_settings_error(
+            app.handle(),
+            &error,
+            "Fix its permissions (it must be readable by you) and start SomeDrive again.",
+        );
         return Ok(());
     }
 
@@ -61,6 +95,21 @@ pub fn run_setup(
     Ok(())
 }
 
+fn log_settings_file_migration(migration: Option<SettingsFileMigration>) {
+    match migration {
+        None => {}
+        Some(SettingsFileMigration::Renamed(report)) => {
+            log::info!("Settings file migration: {report}");
+        }
+        Some(SettingsFileMigration::KeptNew(report)) => {
+            log::warn!("Settings file migration: {report}");
+        }
+        Some(SettingsFileMigration::Failed(report)) => {
+            log::error!("SETTINGS_MIGRATION_FAILED {report}");
+        }
+    }
+}
+
 /// A settings file that exists but cannot be read (permissions, I/O) must
 /// stop start-up: carrying on would replace it with defaults.
 fn ensure_settings_readable() -> Result<(), String> {
@@ -68,14 +117,16 @@ fn ensure_settings_readable() -> Result<(), String> {
     json_store::ensure_readable(&account_profiles::storage_file_path()?)
 }
 
-fn exit_with_settings_error(app_handle: &tauri::AppHandle, error: &str) {
+/// Shows why the settings cannot be used and exits; `remedy` tells the user
+/// what to fix. Never carries on with defaults (App Standard section 5).
+fn exit_with_settings_error(app_handle: &tauri::AppHandle, error: &str, remedy: &str) {
     use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
     let exit_handle = app_handle.clone();
     app_handle
         .dialog()
         .message(format!(
-            "{error}\n\nSomeDrive has not changed this file. Fix its permissions (it must be readable by you) and start SomeDrive again."
+            "{error}\n\nSomeDrive has not changed this file. {remedy}"
         ))
         .title("SomeDrive cannot read its settings")
         .kind(MessageDialogKind::Error)

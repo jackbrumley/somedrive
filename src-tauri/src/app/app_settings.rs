@@ -112,8 +112,11 @@ impl Default for DeveloperSettings {
     }
 }
 
+/// The log level used when none is saved or the settings cannot be read.
+pub const DEFAULT_LOG_LEVEL: &str = "info";
+
 fn default_log_level() -> String {
-    "info".to_string()
+    DEFAULT_LOG_LEVEL.to_string()
 }
 
 fn default_download_concurrency() -> usize {

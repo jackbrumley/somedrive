@@ -17,7 +17,7 @@ import type {
 // pause, save a setting) and the store hears about the result through the
 // change counters.
 
-/** What Settings shows, saved in `app_settings.json` (plus auto-start, which
+/** What Settings shows, saved in `settings.json` (plus auto-start, which
  *  the desktop holds). */
 export interface AppSettingsView {
   autostartEnabled: boolean;

@@ -5,6 +5,7 @@ pub mod auth;
 pub mod bootstrap;
 pub mod clipboard;
 pub mod commands;
+pub mod identity;
 pub mod json_store;
 pub mod log_context;
 pub mod session_log;

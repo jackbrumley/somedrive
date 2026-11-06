@@ -1,5 +1,5 @@
 //! Reading and writing SomeDrive's JSON settings and state files (App
-//! Standard section 5): `app_settings.json`, `accounts/profiles.json`, each
+//! Standard section 5): `settings.json`, `accounts/profiles.json`, each
 //! account's `auth.json` and `activity/events.json`.
 //!
 //! - Writes are atomic: a temp file in the same directory is written,
@@ -217,7 +217,7 @@ mod tests {
     #[test]
     fn write_replaces_the_file_and_leaves_no_temp() {
         let directory = test_directory("write");
-        let target = directory.join("app_settings.json");
+        let target = directory.join("settings.json");
         fs::write(&target, b"old").unwrap();
 
         write_json(

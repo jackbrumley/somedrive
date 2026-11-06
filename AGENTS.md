@@ -104,7 +104,8 @@ comment saying why; dead code is deleted, not silenced.
   modules.
 - `paths.rs` owns every on-disk location (all under `~/.config/somedrive`;
   synced files default to `~/SomeDrive/<account>`).
-- `app/json_store.rs` owns JSON settings and state: `app_settings.json`,
+- `app/identity.rs` holds `APP_ID`, the app's identity (see Variations).
+- `app/json_store.rs` owns JSON settings and state: `settings.json`,
   `accounts/profiles.json`, each account's `auth.json` (refresh tokens,
   written 0600) and `activity/events.json`.
 - `app/session_log.rs` is the `log` backend (see Variations for the log
@@ -153,7 +154,12 @@ blockers, counters) has one authority and one write path.
 ### Development-Phase Data Policy
 SomeDrive is pre-1.0. Local config and state formats may change directly:
 no migration code or legacy parsing paths, and testing from a clean
-`~/.config/somedrive` is expected. Revisit before a stable release.
+`~/.config/somedrive` is expected. Revisit before a stable release. The one
+exception, approved for cross-app consistency: at start-up
+`paths::migrate_legacy_settings_file` renames `app_settings.json` to
+`settings.json` (if both exist it keeps `settings.json`, logs a warning and
+leaves the old file untouched; if the rename fails, start-up stops with the
+unreadable-settings error dialog).
 
 ### Frontend (`src/`)
 - Strict TypeScript (no `any`), functional components, logic in hooks under
@@ -217,7 +223,7 @@ no migration code or legacy parsing paths, and testing from a clean
   mode. The Debug Tools page behind it holds UI Lab, the session log preview,
   per-account logs and the runtime snapshot.
 - **Settings storage:** `migrate_legacy_fields` is not needed yet (no field
-  has been renamed). An unreadable `app_settings.json` or `profiles.json`
+  has been renamed). An unreadable `settings.json` or `profiles.json`
   stops start-up; an unreadable or damaged `auth.json` means that account
   must sign in again.
 - **Settings order:** General, Updates, Sync Performance, Debug.
@@ -234,7 +240,8 @@ The step-by-step procedure is `docs/RELEASE.md`. Never run
 - **Install site:** `https://somedrive.org` (GitHub Pages from
   `main:/docs`).
 - **Identity:** app ID `info.brumley.somedrive` (standard section 10): Tauri
-  `identifier`, `APP_ID` / GTK prgname (`src-tauri/src/platform/linux/wayland/env.rs`),
+  `identifier`, `APP_ID` (`src-tauri/src/app/identity.rs`; the GTK prgname
+  and tray ID),
   and the launcher `src-tauri/packaging/info.brumley.somedrive.desktop`
   (Tauri's own `somedrive.desktop` is the Hidden stub from
   `bundler-stub.desktop.hbs`). `productName` is `somedrive`, so the binary,
