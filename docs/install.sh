@@ -358,6 +358,11 @@ if [[ "$install_system" == true ]]; then
   if [[ "$pm" == "dnf" ]]; then
     run_as_root dnf install -y "$package_path"
   else
+    # A stale package list names dependency versions the mirror has since
+    # removed (404), so refresh it first. An unrelated broken repository can
+    # make the refresh fail; the install is still worth trying then.
+    run_as_root apt-get update \
+      || warn "apt-get update failed; installing with the existing package list"
     run_as_root apt-get install -y "$package_path"
   fi
   log "System install complete"
