@@ -447,18 +447,33 @@ input::placeholder {
 }
 
 .modal-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  background: var(--overlay-backdrop);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 60;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
   padding: 16px;
   overflow-y: auto;
 }
 
+.modal-overlay[open] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-overlay::backdrop {
+  background: var(--overlay-backdrop);
+}
+
 .modal-shell {
+  flex: none;
+  margin: auto;
   width: min(540px, 100%);
   border-radius: var(--radius-card);
   border: 1px solid var(--line-soft);

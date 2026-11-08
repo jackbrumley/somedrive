@@ -36,7 +36,7 @@ export function AddAccountModal({ onClose, onCreateAccount }: AddAccountModalPro
   };
 
   return (
-    <Modal title="Add Account" onClose={onClose}>
+    <Modal title="Add Account" onClose={onClose} dismissible={!saving}>
       <form class="account-form" onSubmit={submit}>
         <label class="field-label" for="new-account-name">
           Account Name
@@ -64,7 +64,7 @@ export function AddAccountModal({ onClose, onCreateAccount }: AddAccountModalPro
           <button type="submit" disabled={!name.trim() || saving}>
             {saving ? "Adding..." : "Add Account"}
           </button>
-          <button type="button" class="ghost" onClick={onClose}>
+          <button type="button" class="ghost" onClick={onClose} disabled={saving}>
             Cancel
           </button>
         </div>

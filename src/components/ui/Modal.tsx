@@ -1,62 +1,32 @@
 import type { ComponentChildren } from "preact";
 import { IconX } from "@tabler/icons-preact";
-import { useEffect, useId, useRef } from "preact/hooks";
+import { useId, useLayoutEffect, useRef } from "preact/hooks";
 
 interface ModalProps {
   title: string;
   onClose: () => void;
+  dismissible: boolean;
   children: ComponentChildren;
 }
 
 // An accessible dialog (App Standard section 6): labelled by its heading,
 // closes on Escape, takes focus when it opens and returns it when it closes.
-export function Modal({ title, onClose, children }: ModalProps) {
+export function Modal({ title, onClose, dismissible, children }: ModalProps) {
   const titleId = useId();
-  const shellRef = useRef<HTMLElement | null>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const backdropPointerDown = useRef(false);
   // Captured on the first render, before any child can autoFocus itself.
   const returnFocusRef = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null);
 
-  useEffect(() => {
-    const { body } = document;
-    const currentCount = Number.parseInt(body.dataset.modalOpenCount ?? "0", 10);
-    const nextCount = Number.isNaN(currentCount) ? 1 : currentCount + 1;
-
-    body.dataset.modalOpenCount = String(nextCount);
-    body.classList.add("app-modal-open");
-
-    return () => {
-      const previousCount = Number.parseInt(body.dataset.modalOpenCount ?? "1", 10);
-      const updatedCount = Number.isNaN(previousCount) ? 0 : Math.max(0, previousCount - 1);
-
-      if (updatedCount === 0) {
-        delete body.dataset.modalOpenCount;
-        body.classList.remove("app-modal-open");
-        return;
-      }
-
-      body.dataset.modalOpenCount = String(updatedCount);
-    };
-  }, []);
-
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current!;
     const previouslyFocused = returnFocusRef.current;
-    // A child may already have focused itself (autoFocus); otherwise focus the dialog.
-    if (!shellRef.current?.contains(document.activeElement)) {
-      shellRef.current?.focus();
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onCloseRef.current();
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
+    // The top layer escapes ancestor clipping and stacking contexts. The
+    // browser manages focus and makes the background inert.
+    dialog.showModal();
 
     return () => {
-      document.removeEventListener("keydown", handleKeyDown);
+      dialog.close();
       if (previouslyFocused?.isConnected) {
         previouslyFocused.focus();
       }
@@ -64,24 +34,35 @@ export function Modal({ title, onClose, children }: ModalProps) {
   }, []);
 
   return (
-    <div class="modal-overlay" onClick={onClose}>
-      <section
-        ref={shellRef}
-        class="modal-shell"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
-        onClick={(event) => event.stopPropagation()}
-      >
+    <dialog
+      ref={dialogRef}
+      class="modal-overlay"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        // The caller owns visibility, including refusing dismissal while busy.
+        event.preventDefault();
+        if (dismissible) onClose();
+      }}
+      onPointerDown={(event) => {
+        backdropPointerDown.current = event.target === event.currentTarget;
+      }}
+      onClick={(event) => {
+        if (dismissible && backdropPointerDown.current && event.target === event.currentTarget) {
+          onClose();
+        }
+        backdropPointerDown.current = false;
+      }}
+    >
+      <section class="modal-shell" tabIndex={-1}>
         <header class="modal-header">
           <h3 id={titleId}>{title}</h3>
-          <button class="modal-close" onClick={onClose} aria-label="Close dialog">
+          <button type="button" class="modal-close" onClick={onClose} disabled={!dismissible} aria-label="Close dialog">
             <IconX size={16} stroke={2.2} />
           </button>
         </header>
         <div class="modal-body">{children}</div>
       </section>
-    </div>
+    </dialog>
   );
 }

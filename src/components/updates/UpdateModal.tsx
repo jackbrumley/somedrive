@@ -26,7 +26,7 @@ export function UpdateModal({
   const installing = installStage !== "idle";
 
   return (
-    <Modal title="Update Available" onClose={onLater}>
+    <Modal title="Update Available" onClose={onLater} dismissible={!installing}>
       <div class="update-modal">
         <p class="update-modal-versions">
           <span>v{updateResult.currentVersion}</span>

@@ -65,7 +65,7 @@ export function CleanupDeleteDialog({
   };
 
   return (
-    <Modal title={title} onClose={busy ? () => undefined : onClose}>
+    <Modal title={title} onClose={onClose} dismissible={!busy}>
       <form
         class="cleanup-confirm"
         onSubmit={(event) => {
