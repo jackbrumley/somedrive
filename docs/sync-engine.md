@@ -427,8 +427,9 @@ sections above and win where they differ:
 - **Times:** after setting a downloaded file's time, the file is read back and
   that value is the baseline (OneDrive keeps whole seconds).
 - **Excluded items** (per-file issues, never synced or deleted): OneNote
-  notebooks (`package` facet) and everything inside them, local `.one` and
-  `.onetoc2` files, items with a `malware` facet, shared shortcuts
+  notebooks (`package` facet) and everything inside them (loose `.one` and
+  `.onetoc2` files outside a notebook sync as ordinary files), items with a
+  `malware` facet, shared shortcuts
   (`remoteItem`), and invalid local names: `" * : < > ? \ |`, leading or
   trailing spaces, a trailing dot, `CON PRN AUX NUL COM0-9 LPT0-9` (with any
   extension), `.lock`, `desktop.ini`, `~$*`, `*_vti_*`, control characters,

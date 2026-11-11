@@ -53,11 +53,14 @@ pub(crate) fn is_resumable_partial_name(name: &str) -> bool {
     name.starts_with(PARTIAL_DOWNLOAD_PREFIX)
 }
 
-/// Local files that are never synced: OneNote notebook files (OneNote keeps
-/// notebooks in the cloud) and Office's own lock files.
+/// Local files that are never synced: Office's own lock files. Loose `.one`
+/// and `.onetoc2` files are ordinary files on both sides; only OneNote
+/// notebooks (the cloud's `package` items) are skipped, and that is decided
+/// on the cloud side, where a notebook is recognisable. Skipping them here
+/// as well made a downloaded loose file look deleted locally, so the planner
+/// deleted it from the cloud.
 pub(crate) fn is_excluded_local_name(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    lower.ends_with(".one") || lower.ends_with(".onetoc2") || name.starts_with("~$")
+    name.starts_with("~$")
 }
 
 pub(crate) fn local_entry_from_metadata(metadata: &std::fs::Metadata) -> LocalEntry {
@@ -384,4 +387,32 @@ pub(crate) fn shared_kind_from_delta_item(item: &GraphDriveItem) -> Option<Strin
         return Some("package".to_string());
     }
     Some("unknown".to_string())
+}
+
+#[cfg(test)]
+mod local_scan_tests {
+    use super::*;
+
+    #[test]
+    fn loose_onenote_files_are_seen_and_office_lock_files_are_not() {
+        let root = std::env::temp_dir().join(format!(
+            "somedrive-local-scan-test-{}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(root.join("Notes")).expect("dirs");
+        std::fs::write(root.join("Notes/Quick Notes.one"), b"section").expect("write");
+        std::fs::write(root.join("Notes/Open Notebook.onetoc2"), b"toc").expect("write");
+        std::fs::write(root.join("Notes/~$Report.docx"), b"lock").expect("write");
+        let rules = ExclusionRules::compile(&[]).expect("no rules");
+
+        let snapshot = collect_local_snapshot_with_progress(&root, &rules, |_| {}).expect("scan");
+        std::fs::remove_dir_all(&root).expect("clean up");
+
+        assert!(
+            snapshot.contains_key("Notes/Quick Notes.one"),
+            "a downloaded loose section must not look deleted locally"
+        );
+        assert!(snapshot.contains_key("Notes/Open Notebook.onetoc2"));
+        assert!(!snapshot.contains_key("Notes/~$Report.docx"));
+    }
 }
