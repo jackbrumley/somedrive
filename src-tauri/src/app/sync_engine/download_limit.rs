@@ -94,13 +94,14 @@ struct AdaptiveDownloadLimitState {
     /// 429s for requests started before this belong to the last cut.
     cut_covers_until: Option<Instant>,
     /// Parallel downloads and request rate when Microsoft last refused (or
-    /// warned), and when.
+    /// warned).
     ceiling: Option<(usize, f64)>,
-    ceiling_set_at: Instant,
-    /// The highest start rate allowed until `CEILING_HOLD` after the
-    /// ceiling was set: 95% of a refused rate, or the eased rate after an
-    /// early warning.
+    /// The highest start rate allowed until `hold_until`: 95% of a refused
+    /// rate, or the eased rate after an early warning. Set only by a refusal
+    /// or warning in this cycle, never by a learned ceiling, so a new cycle
+    /// can always climb again.
     hold_rate: Option<f64>,
+    hold_until: Option<Instant>,
     /// Transfers that succeeded since the last cut; `None` before the
     /// cycle's first cut.
     successes_since_cut: Option<usize>,
@@ -134,7 +135,11 @@ impl AdaptiveDownloadLimit {
                 learned
                     .starts_per_second
                     .clamp(START_RATE_FLOOR, START_RATE_CEILING),
-                learned.ceiling,
+                // A ceiling below the floor can only come from a measuring
+                // fault; it would hold the account at the floor.
+                learned
+                    .ceiling
+                    .filter(|(_, rate)| *rate >= START_RATE_FLOOR),
             ),
             None => (DOWNLOAD_LIMIT_START.min(maximum), START_RATE_INITIAL, None),
         };
@@ -147,15 +152,11 @@ impl AdaptiveDownloadLimit {
                 permits_refilled_at: now,
                 last_change_at: now,
                 cut_covers_until: None,
+                // A learned ceiling sets the settle point and the slow probe
+                // pace above it; it is not held.
                 ceiling,
-                // A ceiling learned in an earlier cycle is held as if just
-                // met: the hold restarts with each cycle.
-                ceiling_set_at: now,
-                hold_rate: ceiling.map(|(_, rate)| {
-                    (rate * CEILING_HOLD_FRACTION)
-                        .min(starts_per_second)
-                        .max(START_RATE_FLOOR)
-                }),
+                hold_rate: None,
+                hold_until: None,
                 successes_since_cut: None,
                 request_starts: VecDeque::new(),
                 measuring_since: now,
@@ -266,7 +267,7 @@ impl AdaptiveDownloadLimit {
         if let Some((ceiling_parallel, ceiling_rate)) = state.ceiling {
             let settle_rate = ceiling_rate * SETTLE_FRACTION;
             probing = state.starts_per_second >= settle_rate;
-            if now.saturating_duration_since(state.ceiling_set_at) < CEILING_HOLD {
+            if state.hold_until.is_some_and(|until| now < until) {
                 parallel_cap = parallel_cap.min(ceiling_parallel.max(state.current));
                 let hold_rate = state
                     .hold_rate
@@ -342,7 +343,7 @@ impl AdaptiveDownloadLimit {
         state.cut_covers_until = Some(now + retry_after + CUT_GRACE);
         state.last_change_at = now + retry_after;
         state.ceiling = Some((state.current, refused_rate));
-        state.ceiling_set_at = now;
+        state.hold_until = Some(now + CEILING_HOLD);
         state.hold_rate = Some((refused_rate * CEILING_HOLD_FRACTION).max(START_RATE_FLOOR));
         state.successes_since_cut = Some(0);
         state.request_starts.clear();
@@ -387,7 +388,7 @@ impl AdaptiveDownloadLimit {
         state.start_permits = state.start_permits.min(eased);
         state.last_change_at = now;
         state.hold_rate = Some(eased);
-        state.ceiling_set_at = now;
+        state.hold_until = Some(now + CEILING_HOLD);
         if state
             .ceiling
             .is_none_or(|(_, ceiling_rate)| ceiling_rate > before)

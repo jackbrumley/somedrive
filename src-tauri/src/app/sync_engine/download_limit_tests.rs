@@ -35,6 +35,24 @@ fn starts_from_the_learned_rate_within_the_setting() {
 }
 
 #[test]
+fn a_learned_ceiling_is_not_held_and_one_below_the_floor_is_ignored() {
+    let mut now = Instant::now();
+    let limit = AdaptiveDownloadLimit::new_at(32, Some(learned(10, 8.0, Some((12, 9.0)))), now);
+    now += PROBE_INTERVAL;
+    let change = limit
+        .record_success_at(now)
+        .expect("probes again in a new cycle");
+    assert!(change.starts_per_second > 8.0);
+
+    let faulty = AdaptiveDownloadLimit::new(32, Some(learned(6, 2.0, Some((6, 0.1)))));
+    assert_eq!(
+        faulty.learned().and_then(|rate| rate.ceiling),
+        None,
+        "a ceiling below the floor is dropped"
+    );
+}
+
+#[test]
 fn rises_one_small_step_per_interval_and_never_above_the_setting() {
     let start = Instant::now();
     let limit = AdaptiveDownloadLimit::new_at(9, None, start);
