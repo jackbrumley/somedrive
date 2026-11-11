@@ -121,7 +121,7 @@ impl GraphContext {
                         self.account_prefix,
                         self.cycle_id
                     );
-                    return Ok(self.start_request());
+                    return Ok(std::time::Instant::now());
                 }
             }
             let probe_until = self
@@ -130,7 +130,7 @@ impl GraphContext {
                 .map_err(|_| "Graph throttle lock is poisoned".to_string())?
                 .filter(|until| *until > now);
             let Some(probe_until) = probe_until else {
-                return Ok(self.start_request());
+                return Ok(std::time::Instant::now());
             };
             let spread = release
                 .and_then(|order| u32::try_from(order % THROTTLE_RELEASE_SPREAD).ok())
@@ -141,13 +141,6 @@ impl GraphContext {
             )
             .await?;
         }
-    }
-
-    /// Counts a request starting now (for the measured request rate) and
-    /// returns its start time.
-    fn start_request(&self) -> std::time::Instant {
-        self.download_limit.record_request_start();
-        std::time::Instant::now()
     }
 
     /// Saves the limits after a change, so the next cycle starts there.

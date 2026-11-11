@@ -1,5 +1,4 @@
 use super::*;
-use std::collections::VecDeque;
 use std::time::Instant;
 
 /// Parallel downloads an account starts with before it has learned how much
@@ -26,27 +25,23 @@ const START_RATE_CEILING: f64 = 40.0;
 /// Microsoft keeps refusing for a moment after the wait, so without it each
 /// request released after the wait would count as a new cut.
 const CUT_GRACE: Duration = Duration::from_secs(10);
-/// A 429 sets the rate to this fraction of the request rate Microsoft
-/// refused (measured over `RATE_WINDOW`, not the configured rate), so it
-/// runs steadily just under the limit instead of dropping far below it and
-/// climbing back.
+/// A 429 sets the rate to this fraction of the rate Microsoft refused (the
+/// rate SomeDrive was allowing), so it runs steadily just under the limit
+/// instead of dropping far below it and climbing back. The rate is never
+/// measured from traffic: around Microsoft's waits, what gets through is
+/// whatever Microsoft lets through, and measuring it twice taught a rate
+/// near the floor.
 const SETTLE_FRACTION: f64 = 0.85;
 /// Above the settle point the limits only probe upwards: one small step per
 /// interval, in case Microsoft now allows more.
 const PROBE_INTERVAL: Duration = Duration::from_secs(60);
 const PROBE_STEP: f64 = 0.02;
-/// For this long after a refusal, probing stops at `CEILING_HOLD_FRACTION`
-/// of the refused rate, so the same limit is not met again every few
-/// minutes. After it, probing may pass the old ceiling (Microsoft's limits
-/// move with the load on the tenant).
+/// For this long after a refusal or warning the rate holds flat where it
+/// was set, without probing. Microsoft's window lags, so the refused rate
+/// sits a little above the true limit: probing back towards it met the
+/// limit again within minutes. After the hold, probing resumes slowly
+/// (Microsoft's limits move with the load on the tenant).
 const CEILING_HOLD: Duration = Duration::from_secs(30 * 60);
-const CEILING_HOLD_FRACTION: f64 = 0.95;
-/// The request rate is measured over this window.
-const RATE_WINDOW: Duration = Duration::from_secs(60);
-/// Measuring restarts after each penalty (requests held by Microsoft's wait
-/// say nothing about the rate it refused). A refusal with less clean
-/// measurement than this takes the configured rate as the refused one.
-const MIN_MEASURE_SPAN: Duration = Duration::from_secs(20);
 /// After a cut, Microsoft often refuses the requests released after its
 /// wait for a while longer: the same penalty, not a verdict on the new rate.
 /// A refusal is a new cut only after this many transfers have succeeded
@@ -77,9 +72,8 @@ pub(crate) struct LearnedDownloadRate {
 /// How fast one account transfers: how many downloads run at once, and how
 /// many may start per second. Before the first refusal both creep up one
 /// small step per `RAISE_INTERVAL` while downloads succeed. A 429 sets them
-/// to `SETTLE_FRACTION` of the request rate actually measured when Microsoft
-/// refused; above that they only probe upwards slowly, and for
-/// `CEILING_HOLD` not past `CEILING_HOLD_FRACTION` of the refused rate.
+/// to `SETTLE_FRACTION` of the rate Microsoft refused and hold them there
+/// for `CEILING_HOLD`; after that they only probe upwards slowly.
 /// Microsoft's early-warning headers ease the rate before a refusal comes.
 /// One throttle episode is one cut (`CUT_GRACE`), never a cascade.
 pub(crate) struct AdaptiveDownloadLimit {
@@ -107,9 +101,6 @@ struct AdaptiveDownloadLimitState {
     /// Transfers that succeeded since the last cut; `None` before the
     /// cycle's first cut.
     successes_since_cut: Option<usize>,
-    /// Requests started within the last `RATE_WINDOW`.
-    request_starts: VecDeque<Instant>,
-    measuring_since: Instant,
     last_pressure_at: Option<Instant>,
 }
 
@@ -160,8 +151,6 @@ impl AdaptiveDownloadLimit {
                 hold_rate: None,
                 hold_until: None,
                 successes_since_cut: None,
-                request_starts: VecDeque::new(),
-                measuring_since: now,
                 last_pressure_at: None,
             }),
         }
@@ -197,18 +186,6 @@ impl AdaptiveDownloadLimit {
     /// while thousands of small ones wait.
     pub(crate) fn large_download_slots(&self) -> usize {
         (self.current() / 4).max(1)
-    }
-
-    /// Counts a Graph request starting now, for the measured request rate.
-    pub(crate) fn record_request_start(&self) {
-        self.record_request_start_at(Instant::now());
-    }
-
-    fn record_request_start_at(&self, now: Instant) {
-        if let Ok(mut state) = self.state.lock() {
-            state.request_starts.push_back(now);
-            prune_request_starts(&mut state, now);
-        }
     }
 
     /// How many of `wanted` new downloads may start now under the start
@@ -271,9 +248,7 @@ impl AdaptiveDownloadLimit {
             probing = state.starts_per_second >= settle_rate;
             if state.hold_until.is_some_and(|until| now < until) {
                 parallel_cap = parallel_cap.min(ceiling_parallel.max(state.current));
-                let hold_rate = state
-                    .hold_rate
-                    .unwrap_or(ceiling_rate * CEILING_HOLD_FRACTION);
+                let hold_rate = state.hold_rate.unwrap_or(state.starts_per_second);
                 rate_cap = rate_cap.min(hold_rate.max(START_RATE_FLOOR));
             }
             if !probing {
@@ -302,7 +277,7 @@ impl AdaptiveDownloadLimit {
 
     /// Records a 429 for a request that started at `request_started_at`,
     /// answered with "wait `retry_after`". Sets the limits to
-    /// `SETTLE_FRACTION` of the measured request rate, unless the refusal
+    /// `SETTLE_FRACTION` of the refused rate, unless the refusal
     /// belongs to the last cut's penalty (the request started before it
     /// ended, or too few transfers have succeeded since). Returns the change
     /// when it lowered them.
@@ -330,26 +305,13 @@ impl AdaptiveDownloadLimit {
         if started_in_penalty || same_episode {
             return None;
         }
-        // The configured rate can be above what actually ran (too few jobs
-        // ready, all slots busy, or a cycle that just started into a window
-        // an earlier one filled): the measured rate is what Microsoft saw,
-        // once enough of it has been measured since the last penalty.
-        let measured_long_enough =
-            now.saturating_duration_since(state.measuring_since) >= MIN_MEASURE_SPAN;
-        let measured = measured_request_rate(&mut state, now);
-        let refused_rate = if measured_long_enough && measured > 0.0 {
-            measured.min(state.starts_per_second)
-        } else {
-            state.starts_per_second
-        };
+        let refused_rate = state.starts_per_second;
         state.cut_covers_until = Some(now + retry_after + CUT_GRACE);
         state.last_change_at = now + retry_after;
         state.ceiling = Some((state.current, refused_rate));
         state.hold_until = Some(now + CEILING_HOLD);
-        state.hold_rate = Some((refused_rate * CEILING_HOLD_FRACTION).max(START_RATE_FLOOR));
+        state.hold_rate = Some((refused_rate * SETTLE_FRACTION).max(START_RATE_FLOOR));
         state.successes_since_cut = Some(0);
-        state.request_starts.clear();
-        state.measuring_since = now + retry_after;
         let from = state.current;
         state.current =
             ((state.current as f64 * SETTLE_FRACTION).floor() as usize).max(self.floor());
@@ -403,28 +365,6 @@ impl AdaptiveDownloadLimit {
             starts_per_second: state.starts_per_second,
         })
     }
-}
-
-fn prune_request_starts(state: &mut AdaptiveDownloadLimitState, now: Instant) {
-    while state
-        .request_starts
-        .front()
-        .is_some_and(|started| now.saturating_duration_since(*started) > RATE_WINDOW)
-    {
-        state.request_starts.pop_front();
-    }
-}
-
-/// Requests per second over the last `RATE_WINDOW` (or since the cycle
-/// started, when that is shorter).
-fn measured_request_rate(state: &mut AdaptiveDownloadLimitState, now: Instant) -> f64 {
-    prune_request_starts(state, now);
-    let span = now
-        .saturating_duration_since(state.measuring_since)
-        .min(RATE_WINDOW)
-        .as_secs_f64()
-        .max(1.0);
-    state.request_starts.len() as f64 / span
 }
 
 #[cfg(test)]

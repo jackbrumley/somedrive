@@ -1,5 +1,9 @@
 //! Tests for the adaptive transfer limit.
 use super::*;
+use std::collections::VecDeque;
+
+/// Microsoft's quota window in the simulations below.
+const QUOTA_WINDOW: Duration = Duration::from_secs(60);
 
 fn learned(parallel: usize, rate: f64, ceiling: Option<(usize, f64)>) -> LearnedDownloadRate {
     LearnedDownloadRate {
@@ -80,23 +84,14 @@ fn rises_one_small_step_per_interval_and_never_above_the_setting() {
 }
 
 #[test]
-fn a_429_settles_at_85_percent_of_the_measured_rate() {
+fn a_429_settles_at_85_percent_of_the_refused_rate() {
     let start = Instant::now();
     let limit = AdaptiveDownloadLimit::new_at(32, Some(learned(20, 20.0, None)), start);
-    // Configured for 20 a second, but only 10 a second actually ran.
-    for tenth in 0..600 {
-        limit.record_request_start_at(start + Duration::from_millis(100 * tenth));
-    }
-    let refused_at = start + RATE_WINDOW;
     let change = limit
-        .record_throttle_at(refused_at, Duration::ZERO, refused_at)
+        .record_throttle_at(start, Duration::ZERO, start)
         .expect("cut");
     assert_eq!((change.from, change.to), (20, 17));
-    assert!(
-        (change.starts_per_second - 8.5).abs() < 0.1,
-        "85% of the measured 10 a second, not of the configured 20: {}",
-        change.starts_per_second
-    );
+    assert!((change.starts_per_second - 17.0).abs() < 1e-9);
 }
 
 #[test]
@@ -165,7 +160,7 @@ fn a_wait_and_its_staggered_release_are_one_cut() {
 }
 
 #[test]
-fn after_a_429_it_probes_slowly_and_holds_under_the_old_ceiling() {
+fn after_a_429_it_holds_flat_then_probes_slowly() {
     let mut now = Instant::now();
     let limit = AdaptiveDownloadLimit::new_at(32, Some(learned(20, 20.0, None)), now);
     limit
@@ -173,34 +168,24 @@ fn after_a_429_it_probes_slowly_and_holds_under_the_old_ceiling() {
         .expect("cut");
     assert_eq!(limit.current(), 17);
 
-    now += RAISE_INTERVAL;
-    assert_eq!(
-        limit.record_success_at(now),
-        None,
-        "one step a minute after a cut"
-    );
-    now += PROBE_INTERVAL;
-    let change = limit
-        .record_success_at(now)
-        .expect("a probe after a minute");
-    assert_eq!((change.from, change.to), (17, 18));
-    assert!((change.starts_per_second - 17.0 * 1.02).abs() < 1e-9);
-
-    for _ in 0..20 {
+    for _ in 0..29 {
         now += PROBE_INTERVAL;
         limit.record_success_at(now);
     }
     let held = limit.learned().expect("rate");
-    assert_eq!(held.parallel, 20, "not past the refused parallel count");
     assert!(
-        (held.starts_per_second - 19.0).abs() < 1e-9,
-        "held at 95% of the refused rate for half an hour: {}",
+        (held.starts_per_second - 17.0).abs() < 1e-9,
+        "the rate holds at 85% of the refused rate for half an hour: {}",
         held.starts_per_second
     );
+    assert!(held.parallel <= 20, "not past the refused parallel count");
 
     now += CEILING_HOLD;
-    limit.record_success_at(now).expect("probing resumes");
-    assert!(limit.learned().expect("rate").starts_per_second > 19.0);
+    let change = limit.record_success_at(now).expect("probing resumes");
+    assert!(
+        (change.starts_per_second - 17.0 * (1.0 + PROBE_STEP)).abs() < 1e-9,
+        "one small probe step"
+    );
 }
 
 #[test]
@@ -271,37 +256,6 @@ fn refusals_during_a_penalty_are_one_episode_until_transfers_succeed() {
 }
 
 #[test]
-fn a_held_period_is_not_taken_as_the_refused_rate() {
-    let start = Instant::now();
-    let limit = AdaptiveDownloadLimit::new_at(32, Some(learned(20, 20.0, None)), start);
-    for tenth in 0..600 {
-        limit.record_request_start_at(start + Duration::from_millis(100 * tenth));
-    }
-    let first_cut = start + RATE_WINDOW;
-    let wait = Duration::from_secs(30);
-    let change = limit
-        .record_throttle_at(first_cut, wait, first_cut)
-        .expect("cut");
-    assert!((change.starts_per_second - 8.5).abs() < 0.1);
-    // Transfers resume after the wait; Microsoft refuses again 15 s later
-    // (after the cut's grace, before 20 s of clean measurement).
-    let resumed = first_cut + wait;
-    for second in 0..MIN_SUCCESSES_FOR_NEW_CUT as u64 {
-        limit.record_request_start_at(resumed + Duration::from_millis(500 * second));
-        limit.record_success_at(resumed + Duration::from_millis(500 * second));
-    }
-    let refused = resumed + Duration::from_secs(15);
-    let change = limit
-        .record_throttle_at(refused, wait, refused)
-        .expect("second cut");
-    assert!(
-        (change.starts_per_second - 8.5 * SETTLE_FRACTION).abs() < 0.1,
-        "85% of the configured rate, not of the few requests the wait let through: {}",
-        change.starts_per_second
-    );
-}
-
-#[test]
 fn after_an_early_warning_it_holds_at_the_eased_rate() {
     let mut now = Instant::now();
     let limit = AdaptiveDownloadLimit::new_at(32, Some(learned(16, 20.0, None)), now);
@@ -334,16 +288,15 @@ fn a_steady_quota_is_met_once_and_then_held_without_stops() {
         }
         while window
             .front()
-            .is_some_and(|sent| now.saturating_duration_since(*sent) > RATE_WINDOW)
+            .is_some_and(|sent| now.saturating_duration_since(*sent) > QUOTA_WINDOW)
         {
             window.pop_front();
         }
         let granted = limit.take_start_permits_at(usize::MAX, now);
         for _ in 0..granted {
-            limit.record_request_start_at(now);
             window.push_back(now);
         }
-        if window.len() as f64 > quota * RATE_WINDOW.as_secs_f64() {
+        if window.len() as f64 > quota * QUOTA_WINDOW.as_secs_f64() {
             let wait = Duration::from_secs(30);
             limit.record_throttle_at(now, wait, now);
             refusals.push(second);
@@ -370,7 +323,7 @@ fn a_steady_quota_is_met_once_and_then_held_without_stops() {
 #[test]
 fn early_warnings_keep_a_quota_from_ever_refusing() {
     let quota = 10.0;
-    let window_quota = quota * RATE_WINDOW.as_secs_f64();
+    let window_quota = quota * QUOTA_WINDOW.as_secs_f64();
     let start = Instant::now();
     let limit = AdaptiveDownloadLimit::new_at(32, None, start);
     let mut window: VecDeque<Instant> = VecDeque::new();
@@ -379,12 +332,11 @@ fn early_warnings_keep_a_quota_from_ever_refusing() {
         let now = start + Duration::from_secs(second);
         while window
             .front()
-            .is_some_and(|sent| now.saturating_duration_since(*sent) > RATE_WINDOW)
+            .is_some_and(|sent| now.saturating_duration_since(*sent) > QUOTA_WINDOW)
         {
             window.pop_front();
         }
         for _ in 0..limit.take_start_permits_at(usize::MAX, now) {
-            limit.record_request_start_at(now);
             window.push_back(now);
         }
         let used = window.len() as f64;
