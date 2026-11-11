@@ -249,6 +249,8 @@ pub(crate) async fn upload_small_file_simple(
         };
 
         let status = response.status();
+
+        graph.note_rate_limit_headers(response.headers());
         let text = response
             .text()
             .await

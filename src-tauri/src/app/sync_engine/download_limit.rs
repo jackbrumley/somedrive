@@ -1,19 +1,20 @@
 use super::*;
+use std::collections::VecDeque;
 use std::time::Instant;
 
-/// Parallel downloads a cycle starts with, before it has learned how much
+/// Parallel downloads an account starts with before it has learned how much
 /// Microsoft will take.
 const DOWNLOAD_LIMIT_START: usize = 8;
 /// The limit never falls below this, however often Microsoft throttles.
 const DOWNLOAD_LIMIT_FLOOR: usize = 4;
-/// The limits rise by at most one small step per this interval, and only
-/// while downloads are succeeding: a steady creep upwards, never a jump, so
-/// the rate settles just under Microsoft's limit instead of swinging between
-/// fast and throttled.
-const RAISE_INTERVAL: Duration = Duration::from_secs(10);
+/// Before Microsoft has ever refused, the limits rise by one step per this
+/// interval while downloads succeed. Microsoft counts usage over a window of
+/// minutes, so its 429 arrives well after the rate has passed what it
+/// allows: a slow climb overshoots less.
+const RAISE_INTERVAL: Duration = Duration::from_secs(30);
 /// Each step raises the start rate by this fraction (and parallel downloads
 /// by one).
-const START_RATE_STEP: f64 = 0.10;
+const START_RATE_STEP: f64 = 0.05;
 /// New downloads that may start per second at first. Microsoft limits files
 /// per minute as well as bandwidth: thousands of tiny files started as fast
 /// as slots free up use that quota in seconds.
@@ -25,28 +26,51 @@ const START_RATE_CEILING: f64 = 40.0;
 /// Microsoft keeps refusing for a moment after the wait, so without it each
 /// request released after the wait would count as a new cut.
 const CUT_GRACE: Duration = Duration::from_secs(10);
-/// After a 429 the limits climb back (one step a minute) only to this
-/// fraction of where Microsoft refused, so the rate settles under the level
-/// it tolerates instead of hitting it again (each 429 costs a full stop of
-/// up to 30 s).
-const SETTLE_FRACTION: f64 = 0.8;
-/// Above that, the limits only probe upwards slowly: one small step per
+/// A 429 sets the rate to this fraction of the request rate Microsoft
+/// refused (measured over `RATE_WINDOW`, not the configured rate), so it
+/// runs steadily just under the limit instead of dropping far below it and
+/// climbing back.
+const SETTLE_FRACTION: f64 = 0.85;
+/// Above the settle point the limits only probe upwards: one small step per
 /// interval, in case Microsoft now allows more.
 const PROBE_INTERVAL: Duration = Duration::from_secs(60);
 const PROBE_STEP: f64 = 0.02;
+/// For this long after a refusal, probing stops at `CEILING_HOLD_FRACTION`
+/// of the refused rate, so the same limit is not met again every few
+/// minutes. After it, probing may pass the old ceiling (Microsoft's limits
+/// move with the load on the tenant).
+const CEILING_HOLD: Duration = Duration::from_secs(30 * 60);
+const CEILING_HOLD_FRACTION: f64 = 0.95;
+/// The request rate is measured over this window.
+const RATE_WINDOW: Duration = Duration::from_secs(60);
+/// Microsoft's `RateLimit-*` headers (sent once most of a quota is used)
+/// ease the start rate by this factor, at most once per `PRESSURE_INTERVAL`
+/// and without stopping anything, so the 429 they warn of never comes.
+const PRESSURE_EASE: f64 = 0.9;
+const PRESSURE_INTERVAL: Duration = Duration::from_secs(30);
 /// Files at least this big take the large-file lane (see
 /// `large_download_slots`).
 pub(crate) const LARGE_DOWNLOAD_BYTES: u64 = 8 * 1024 * 1024;
 
-/// How fast one account downloads during a cycle: how many downloads run at
-/// once, and how many may start per second. Both start low, creep up one
-/// small step per `RAISE_INTERVAL` while downloads succeed, and drop to three
-/// quarters when Microsoft answers 429. One cut covers the whole penalty
-/// (`CUT_GRACE`): a 429 only counts when its request started after that, so
-/// one throttle episode is one cut, never a cascade. The level of the last
-/// 429 is remembered: the limits climb back one step a minute to
-/// `SETTLE_FRACTION` of it and then only probe above it in small steps, so
-/// the rate settles instead of swinging.
+/// What an account has learned about Microsoft's limit, kept between cycles
+/// and restarts (`download_rate_store`) so each cycle starts at the settled
+/// rate instead of climbing into the limit again.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct LearnedDownloadRate {
+    pub(crate) parallel: usize,
+    pub(crate) starts_per_second: f64,
+    /// Parallel downloads and request rate when Microsoft last refused.
+    pub(crate) ceiling: Option<(usize, f64)>,
+}
+
+/// How fast one account transfers: how many downloads run at once, and how
+/// many may start per second. Before the first refusal both creep up one
+/// small step per `RAISE_INTERVAL` while downloads succeed. A 429 sets them
+/// to `SETTLE_FRACTION` of the request rate actually measured when Microsoft
+/// refused; above that they only probe upwards slowly, and for
+/// `CEILING_HOLD` not past `CEILING_HOLD_FRACTION` of the refused rate.
+/// Microsoft's early-warning headers ease the rate before a refusal comes.
+/// One throttle episode is one cut (`CUT_GRACE`), never a cascade.
 pub(crate) struct AdaptiveDownloadLimit {
     maximum: usize,
     state: std::sync::Mutex<AdaptiveDownloadLimitState>,
@@ -57,15 +81,20 @@ struct AdaptiveDownloadLimitState {
     starts_per_second: f64,
     start_permits: f64,
     permits_refilled_at: Instant,
-    successes_since_change: usize,
     last_change_at: Instant,
     /// 429s for requests started before this belong to the last cut.
     cut_covers_until: Option<Instant>,
-    /// Parallel downloads and starts per second when Microsoft last refused.
-    throttled_at: Option<(usize, f64)>,
+    /// Parallel downloads and request rate when Microsoft last refused (or
+    /// warned), and when.
+    ceiling: Option<(usize, f64)>,
+    ceiling_set_at: Instant,
+    /// Requests started within the last `RATE_WINDOW`.
+    request_starts: VecDeque<Instant>,
+    measuring_since: Instant,
+    last_pressure_at: Option<Instant>,
 }
 
-/// A change to the limits, for the caller to log.
+/// A change to the limits, for the caller to log and save.
 #[derive(Debug, PartialEq)]
 pub(crate) struct DownloadLimitChange {
     pub(crate) from: usize,
@@ -74,19 +103,41 @@ pub(crate) struct DownloadLimitChange {
 }
 
 impl AdaptiveDownloadLimit {
-    pub(crate) fn new(maximum: usize) -> Self {
+    /// Starts at `learned` (clamped to `maximum`) when the account has
+    /// learned a rate, otherwise at the first-run defaults.
+    pub(crate) fn new(maximum: usize, learned: Option<LearnedDownloadRate>) -> Self {
+        Self::new_at(maximum, learned, Instant::now())
+    }
+
+    fn new_at(maximum: usize, learned: Option<LearnedDownloadRate>, now: Instant) -> Self {
         let maximum = maximum.max(1);
+        let floor = DOWNLOAD_LIMIT_FLOOR.min(maximum);
+        let (current, starts_per_second, ceiling) = match learned {
+            Some(learned) => (
+                learned.parallel.clamp(floor, maximum),
+                learned
+                    .starts_per_second
+                    .clamp(START_RATE_FLOOR, START_RATE_CEILING),
+                learned.ceiling,
+            ),
+            None => (DOWNLOAD_LIMIT_START.min(maximum), START_RATE_INITIAL, None),
+        };
         Self {
             maximum,
             state: std::sync::Mutex::new(AdaptiveDownloadLimitState {
-                current: DOWNLOAD_LIMIT_START.min(maximum),
-                starts_per_second: START_RATE_INITIAL,
-                start_permits: START_RATE_INITIAL,
-                permits_refilled_at: Instant::now(),
-                successes_since_change: 0,
-                last_change_at: Instant::now(),
+                current,
+                starts_per_second,
+                start_permits: starts_per_second,
+                permits_refilled_at: now,
+                last_change_at: now,
                 cut_covers_until: None,
-                throttled_at: None,
+                ceiling,
+                // A ceiling learned in an earlier cycle is held as if just
+                // met: the hold restarts with each cycle.
+                ceiling_set_at: now,
+                request_starts: VecDeque::new(),
+                measuring_since: now,
+                last_pressure_at: None,
             }),
         }
     }
@@ -106,11 +157,33 @@ impl AdaptiveDownloadLimit {
             .unwrap_or_else(|_| self.floor())
     }
 
+    /// The rate to keep for the next cycle.
+    pub(crate) fn learned(&self) -> Option<LearnedDownloadRate> {
+        let state = self.state.lock().ok()?;
+        Some(LearnedDownloadRate {
+            parallel: state.current,
+            starts_per_second: state.starts_per_second,
+            ceiling: state.ceiling,
+        })
+    }
+
     /// Slots kept for files of `LARGE_DOWNLOAD_BYTES` or more: a quarter of
     /// the limit (at least one), so a few big files cannot hold every slot
     /// while thousands of small ones wait.
     pub(crate) fn large_download_slots(&self) -> usize {
         (self.current() / 4).max(1)
+    }
+
+    /// Counts a Graph request starting now, for the measured request rate.
+    pub(crate) fn record_request_start(&self) {
+        self.record_request_start_at(Instant::now());
+    }
+
+    fn record_request_start_at(&self, now: Instant) {
+        if let Ok(mut state) = self.state.lock() {
+            state.request_starts.push_back(now);
+            prune_request_starts(&mut state, now);
+        }
     }
 
     /// How many of `wanted` new downloads may start now under the start
@@ -135,60 +208,6 @@ impl AdaptiveDownloadLimit {
         granted
     }
 
-    /// Records a finished download; returns the change when it raises the
-    /// limits: one step per `RAISE_INTERVAL` up to `SETTLE_FRACTION` of the
-    /// last 429's level, then one small step per `PROBE_INTERVAL`.
-    pub(crate) fn record_success(&self) -> Option<DownloadLimitChange> {
-        self.record_success_at(Instant::now())
-    }
-
-    fn record_success_at(&self, now: Instant) -> Option<DownloadLimitChange> {
-        let mut state = self.state.lock().ok()?;
-        state.successes_since_change += 1;
-        let at_ceiling =
-            state.current >= self.maximum && state.starts_per_second >= START_RATE_CEILING;
-        let settle_point = state.throttled_at.map(|(parallel, rate)| {
-            (
-                ((parallel as f64) * SETTLE_FRACTION).floor() as usize,
-                rate * SETTLE_FRACTION,
-            )
-        });
-        let probing = settle_point.is_some_and(|(parallel, rate)| {
-            state.current >= parallel || state.starts_per_second >= rate
-        });
-        // Before the first 429: a step every 10 s. After any 429: a step a
-        // minute (back to the settle point in normal-sized steps, then small
-        // probes above it), since climbing back fast just meets the limit
-        // again.
-        let interval = if settle_point.is_some() {
-            PROBE_INTERVAL
-        } else {
-            RAISE_INTERVAL
-        };
-        let rate_step = if probing { PROBE_STEP } else { START_RATE_STEP };
-        let step_due = now.saturating_duration_since(state.last_change_at) >= interval;
-        if at_ceiling || !step_due {
-            return None;
-        }
-        let mut next_parallel = (state.current + 1).min(self.maximum);
-        let mut next_rate = (state.starts_per_second * (1.0 + rate_step)).min(START_RATE_CEILING);
-        if let (false, Some((parallel, rate))) = (probing, settle_point) {
-            // Climbing back: stop at the settle point, never past it.
-            next_parallel = next_parallel.min(parallel.max(state.current));
-            next_rate = next_rate.min(rate.max(state.starts_per_second));
-        }
-        let from = state.current;
-        state.current = next_parallel;
-        state.starts_per_second = next_rate;
-        state.successes_since_change = 0;
-        state.last_change_at = now;
-        Some(DownloadLimitChange {
-            from,
-            to: state.current,
-            starts_per_second: state.starts_per_second,
-        })
-    }
-
     /// Hands back start permits that were granted but not used (the queue
     /// had fewer jobs ready), so they are not lost.
     pub(crate) fn return_start_permits(&self, unused: usize) {
@@ -201,10 +220,60 @@ impl AdaptiveDownloadLimit {
         }
     }
 
+    /// Records a finished transfer; returns the change when it raises the
+    /// limits (see the type's description for the pace).
+    pub(crate) fn record_success(&self) -> Option<DownloadLimitChange> {
+        self.record_success_at(Instant::now())
+    }
+
+    fn record_success_at(&self, now: Instant) -> Option<DownloadLimitChange> {
+        let mut state = self.state.lock().ok()?;
+        let interval = if state.ceiling.is_some() {
+            PROBE_INTERVAL
+        } else {
+            RAISE_INTERVAL
+        };
+        if now.saturating_duration_since(state.last_change_at) < interval {
+            return None;
+        }
+        let (mut parallel_cap, mut rate_cap) = (self.maximum, START_RATE_CEILING);
+        let mut probing = false;
+        if let Some((ceiling_parallel, ceiling_rate)) = state.ceiling {
+            let settle_rate = ceiling_rate * SETTLE_FRACTION;
+            probing = state.starts_per_second >= settle_rate;
+            if now.saturating_duration_since(state.ceiling_set_at) < CEILING_HOLD {
+                parallel_cap = parallel_cap.min(ceiling_parallel.max(state.current));
+                rate_cap = rate_cap.min(ceiling_rate * CEILING_HOLD_FRACTION);
+            }
+            if !probing {
+                // Climbing back: stop at the settle point, never past it.
+                rate_cap = rate_cap.min(settle_rate);
+            }
+        }
+        let rate_step = if probing { PROBE_STEP } else { START_RATE_STEP };
+        let next_parallel = (state.current + 1).min(parallel_cap).max(state.current);
+        let next_rate = (state.starts_per_second * (1.0 + rate_step))
+            .min(rate_cap)
+            .max(state.starts_per_second);
+        if next_parallel == state.current && next_rate <= state.starts_per_second {
+            return None;
+        }
+        let from = state.current;
+        state.current = next_parallel;
+        state.starts_per_second = next_rate;
+        state.last_change_at = now;
+        Some(DownloadLimitChange {
+            from,
+            to: state.current,
+            starts_per_second: state.starts_per_second,
+        })
+    }
+
     /// Records a 429 for a request that started at `request_started_at`,
-    /// answered with "wait `retry_after`". Lowers both limits to three
-    /// quarters, unless the request started while the last cut's penalty
-    /// was still running. Returns the change when it lowered them.
+    /// answered with "wait `retry_after`". Sets the limits to
+    /// `SETTLE_FRACTION` of the measured request rate, unless the request
+    /// started while the last cut's penalty was still running. Returns the
+    /// change when it lowered them.
     pub(crate) fn record_throttle(
         &self,
         request_started_at: Instant,
@@ -220,19 +289,29 @@ impl AdaptiveDownloadLimit {
         now: Instant,
     ) -> Option<DownloadLimitChange> {
         let mut state = self.state.lock().ok()?;
-        state.successes_since_change = 0;
         if state
             .cut_covers_until
             .is_some_and(|covered| request_started_at <= covered)
         {
             return None;
         }
+        // The configured rate can be above what actually ran (too few jobs
+        // ready, all slots busy, or a cycle that just started into a window
+        // an earlier one filled): the measured rate is what Microsoft saw.
+        let measured = measured_request_rate(&mut state, now);
+        let refused_rate = if measured > 0.0 {
+            measured.min(state.starts_per_second)
+        } else {
+            state.starts_per_second
+        };
         state.cut_covers_until = Some(now + retry_after + CUT_GRACE);
         state.last_change_at = now + retry_after;
-        state.throttled_at = Some((state.current, state.starts_per_second));
+        state.ceiling = Some((state.current, refused_rate));
+        state.ceiling_set_at = now;
         let from = state.current;
-        state.current = (state.current * 3 / 4).max(self.floor());
-        state.starts_per_second = (state.starts_per_second * 0.75).max(START_RATE_FLOOR);
+        state.current =
+            ((state.current as f64 * SETTLE_FRACTION).floor() as usize).max(self.floor());
+        state.starts_per_second = (refused_rate * SETTLE_FRACTION).max(START_RATE_FLOOR);
         state.start_permits = state.start_permits.min(state.starts_per_second);
         Some(DownloadLimitChange {
             from,
@@ -240,184 +319,70 @@ impl AdaptiveDownloadLimit {
             starts_per_second: state.starts_per_second,
         })
     }
+
+    /// Records Microsoft's early warning (`RateLimit-*` headers: most of a
+    /// quota is used): eases the start rate a little, at most once per
+    /// `PRESSURE_INTERVAL`, and holds it there as the new ceiling. Nothing
+    /// stops. Returns the change when it eased.
+    pub(crate) fn record_pressure(&self) -> Option<DownloadLimitChange> {
+        self.record_pressure_at(Instant::now())
+    }
+
+    fn record_pressure_at(&self, now: Instant) -> Option<DownloadLimitChange> {
+        let mut state = self.state.lock().ok()?;
+        let recently_eased = state
+            .last_pressure_at
+            .is_some_and(|eased| now.saturating_duration_since(eased) < PRESSURE_INTERVAL);
+        let penalty_running = state.cut_covers_until.is_some_and(|covered| now <= covered);
+        if recently_eased || penalty_running {
+            return None;
+        }
+        let before = state.starts_per_second;
+        let eased = (before * PRESSURE_EASE).max(START_RATE_FLOOR);
+        state.last_pressure_at = Some(now);
+        if eased >= before {
+            return None;
+        }
+        state.starts_per_second = eased;
+        state.start_permits = state.start_permits.min(eased);
+        state.last_change_at = now;
+        if state
+            .ceiling
+            .is_none_or(|(_, ceiling_rate)| ceiling_rate > before)
+        {
+            state.ceiling = Some((state.current, before));
+            state.ceiling_set_at = now;
+        }
+        Some(DownloadLimitChange {
+            from: state.current,
+            to: state.current,
+            starts_per_second: state.starts_per_second,
+        })
+    }
+}
+
+fn prune_request_starts(state: &mut AdaptiveDownloadLimitState, now: Instant) {
+    while state
+        .request_starts
+        .front()
+        .is_some_and(|started| now.saturating_duration_since(*started) > RATE_WINDOW)
+    {
+        state.request_starts.pop_front();
+    }
+}
+
+/// Requests per second over the last `RATE_WINDOW` (or since the cycle
+/// started, when that is shorter).
+fn measured_request_rate(state: &mut AdaptiveDownloadLimitState, now: Instant) -> f64 {
+    prune_request_starts(state, now);
+    let span = now
+        .saturating_duration_since(state.measuring_since)
+        .min(RATE_WINDOW)
+        .as_secs_f64()
+        .max(1.0);
+    state.request_starts.len() as f64 / span
 }
 
 #[cfg(test)]
-mod adaptive_limit_tests {
-    use super::*;
-
-    #[test]
-    fn starts_at_eight_or_the_setting_when_lower() {
-        assert_eq!(AdaptiveDownloadLimit::new(12).current(), 8);
-        assert_eq!(AdaptiveDownloadLimit::new(4).current(), 4);
-    }
-
-    #[test]
-    fn rises_one_small_step_per_interval_and_never_above_the_setting() {
-        let limit = AdaptiveDownloadLimit::new(9);
-        let start = Instant::now();
-        for _ in 0..100 {
-            assert_eq!(
-                limit.record_success_at(start),
-                None,
-                "a burst of successes is not a step"
-            );
-        }
-        let change = limit
-            .record_success_at(start + RAISE_INTERVAL)
-            .expect("one step after the interval");
-        assert_eq!((change.from, change.to), (8, 9));
-        assert!((change.starts_per_second - START_RATE_INITIAL * 1.1).abs() < 1e-9);
-        assert_eq!(
-            limit.record_success_at(start + RAISE_INTERVAL + Duration::from_secs(1)),
-            None,
-            "the next step waits a full interval"
-        );
-        for step in 2..10 {
-            limit.record_success_at(start + RAISE_INTERVAL * step);
-        }
-        assert_eq!(limit.current(), 9, "never above the setting");
-    }
-
-    #[test]
-    fn a_cut_restarts_the_interval() {
-        let limit = AdaptiveDownloadLimit::new(32);
-        let sent = Instant::now();
-        let cut_at = sent + RAISE_INTERVAL;
-        limit
-            .record_throttle_at(sent, Duration::ZERO, cut_at)
-            .expect("cut");
-        assert_eq!(
-            limit.record_success_at(cut_at + Duration::from_secs(1)),
-            None
-        );
-        assert!(limit.record_success_at(cut_at + PROBE_INTERVAL).is_some());
-    }
-
-    #[test]
-    fn a_429_from_a_request_sent_before_the_cut_is_ignored() {
-        let limit = AdaptiveDownloadLimit::new(32);
-        let sent_early = Instant::now();
-        let first_cut = sent_early + Duration::from_millis(10);
-        let change = limit
-            .record_throttle_at(sent_early, Duration::ZERO, first_cut)
-            .expect("cut");
-        assert_eq!((change.from, change.to), (8, 6), "three quarters");
-
-        let late_answer = first_cut + Duration::from_secs(6);
-        let after_the_penalty = first_cut + CUT_GRACE + Duration::from_secs(1);
-        assert_eq!(
-            limit.record_throttle_at(sent_early, Duration::ZERO, late_answer),
-            None,
-            "sent at the old rate"
-        );
-        assert_eq!(limit.current(), 6);
-
-        let sent_during_penalty = first_cut + Duration::from_secs(1);
-        assert_eq!(
-            limit.record_throttle_at(sent_during_penalty, Duration::ZERO, late_answer),
-            None,
-            "sent while the penalty was still running"
-        );
-        assert!(limit
-            .record_throttle_at(after_the_penalty, Duration::ZERO, after_the_penalty)
-            .is_some());
-    }
-
-    #[test]
-    fn a_wait_and_its_staggered_release_are_one_cut() {
-        let limit = AdaptiveDownloadLimit::new(32);
-        let sent = Instant::now();
-        let wait = Duration::from_secs(30);
-        limit.record_throttle_at(sent, wait, sent).expect("cut");
-        for released_after in [30, 31, 32, 33, 35, 39] {
-            let released = sent + Duration::from_secs(released_after);
-            assert_eq!(
-                limit.record_throttle_at(released, wait, released),
-                None,
-                "still the same penalty at {released_after} s"
-            );
-        }
-        assert_eq!(limit.current(), 6);
-    }
-
-    #[test]
-    fn after_a_429_it_climbs_back_slowly_to_80_percent_then_probes() {
-        let limit = AdaptiveDownloadLimit::new(32);
-        let mut now = Instant::now();
-        // Climb to 20 parallel at the first-run pace, then get refused there.
-        for _ in 0..12 {
-            now += RAISE_INTERVAL;
-            limit.record_success_at(now);
-        }
-        assert_eq!(limit.current(), 20);
-        limit
-            .record_throttle_at(now, Duration::ZERO, now)
-            .expect("cut");
-        assert_eq!(limit.current(), 15);
-
-        // After a cut, 10 s is no longer enough for a step.
-        now += RAISE_INTERVAL;
-        assert_eq!(
-            limit.record_success_at(now),
-            None,
-            "one step a minute after a cut"
-        );
-        now += PROBE_INTERVAL;
-        let change = limit.record_success_at(now).expect("a step after a minute");
-        assert_eq!(
-            (change.from, change.to),
-            (15, 16),
-            "the settle point, 80% of 20"
-        );
-
-        // Above it, the next step is a small probe a minute later.
-        now += PROBE_INTERVAL;
-        let change = limit.record_success_at(now).expect("probe");
-        assert_eq!((change.from, change.to), (16, 17));
-    }
-
-    #[test]
-    fn never_below_the_floor() {
-        let limit = AdaptiveDownloadLimit::new(32);
-        let mut now = Instant::now();
-        for _ in 0..10 {
-            let sent = now + CUT_GRACE + Duration::from_millis(1);
-            now = sent + Duration::from_millis(1);
-            limit.record_throttle_at(sent, Duration::ZERO, now);
-        }
-        assert_eq!(limit.current(), DOWNLOAD_LIMIT_FLOOR);
-    }
-
-    #[test]
-    fn starts_are_paced_to_the_start_rate() {
-        let limit = AdaptiveDownloadLimit::new(32);
-        let now = Instant::now();
-        assert_eq!(
-            limit.take_start_permits_at(100, now),
-            8,
-            "one second's worth"
-        );
-        assert_eq!(limit.take_start_permits_at(100, now), 0);
-        let half_second = now + Duration::from_millis(500);
-        assert_eq!(limit.take_start_permits_at(100, half_second), 4);
-        limit.return_start_permits(3);
-        assert_eq!(
-            limit.take_start_permits_at(100, half_second),
-            3,
-            "unused permits come back"
-        );
-        let much_later = half_second + Duration::from_secs(60);
-        assert_eq!(
-            limit.take_start_permits_at(100, much_later),
-            8,
-            "a long wait still releases at most one second's worth"
-        );
-    }
-
-    #[test]
-    fn large_files_get_a_quarter_of_the_slots() {
-        assert_eq!(AdaptiveDownloadLimit::new(32).large_download_slots(), 2);
-        assert_eq!(AdaptiveDownloadLimit::new(2).large_download_slots(), 1);
-    }
-}
+#[path = "download_limit_tests.rs"]
+mod adaptive_limit_tests;

@@ -82,6 +82,8 @@ pub(crate) async fn graph_get(
         };
 
         let status = response.status();
+
+        graph.note_rate_limit_headers(response.headers());
         if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
             if status == StatusCode::TOO_MANY_REQUESTS {
                 let _ = record_throttle_event(&graph.profile_id, DOWNLOAD_JOB_DIRECTION);
@@ -229,6 +231,7 @@ pub(crate) async fn graph_delete(
             }
         };
         let status = response.status();
+        graph.note_rate_limit_headers(response.headers());
         if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
             let delay = parse_retry_after_delay(response.headers())
                 .unwrap_or_else(|| exponential_backoff_delay(attempt));

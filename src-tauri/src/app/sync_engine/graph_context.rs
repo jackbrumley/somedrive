@@ -121,7 +121,7 @@ impl GraphContext {
                         self.account_prefix,
                         self.cycle_id
                     );
-                    return Ok(std::time::Instant::now());
+                    return Ok(self.start_request());
                 }
             }
             let probe_until = self
@@ -130,7 +130,7 @@ impl GraphContext {
                 .map_err(|_| "Graph throttle lock is poisoned".to_string())?
                 .filter(|until| *until > now);
             let Some(probe_until) = probe_until else {
-                return Ok(std::time::Instant::now());
+                return Ok(self.start_request());
             };
             let spread = release
                 .and_then(|order| u32::try_from(order % THROTTLE_RELEASE_SPREAD).ok())
@@ -140,6 +140,50 @@ impl GraphContext {
                 (probe_until - now) + THROTTLE_RELEASE_STEP * spread,
             )
             .await?;
+        }
+    }
+
+    /// Counts a request starting now (for the measured request rate) and
+    /// returns its start time.
+    fn start_request(&self) -> std::time::Instant {
+        self.download_limit.record_request_start();
+        std::time::Instant::now()
+    }
+
+    /// Saves the limits after a change, so the next cycle starts there.
+    fn save_learned_rate(&self) {
+        let Some(learned) = self.download_limit.learned() else {
+            return;
+        };
+        if let Err(error) = save_learned_download_rate(&self.profile_id, &learned) {
+            log::warn!(
+                "{} [cycle:{}] DOWNLOAD_RATE_SAVE_FAILED error={}",
+                self.account_prefix,
+                self.cycle_id,
+                error
+            );
+        }
+    }
+
+    /// Reads Microsoft's early warning on a response (`RateLimit-*`
+    /// headers, sent once most of a quota is used) and eases the rate
+    /// before a 429 comes.
+    pub(crate) fn note_rate_limit_headers(&self, headers: &reqwest::header::HeaderMap) {
+        let Some(warning) = parse_rate_limit_warning(headers) else {
+            return;
+        };
+        if let Some(change) = self.download_limit.record_pressure() {
+            log::warn!(
+                "{} [cycle:{}] DOWNLOAD_LIMIT_EASED parallel={} starts_per_second={:.1} reason=rate_limit_warning limit={} remaining={} reset_seconds={}",
+                self.account_prefix,
+                self.cycle_id,
+                change.to,
+                change.starts_per_second,
+                warning.limit.map_or_else(|| "-".to_string(), |value| value.to_string()),
+                warning.remaining.map_or_else(|| "-".to_string(), |value| value.to_string()),
+                warning.reset_seconds.map_or_else(|| "-".to_string(), |value| value.to_string())
+            );
+            self.save_learned_rate();
         }
     }
 
@@ -184,6 +228,7 @@ impl GraphContext {
                 change.to,
                 change.starts_per_second
             );
+            self.save_learned_rate();
         }
         Ok(())
     }
@@ -201,6 +246,7 @@ impl GraphContext {
                 self.download_limit.maximum(),
                 change.starts_per_second
             );
+            self.save_learned_rate();
         }
     }
 

@@ -264,6 +264,8 @@ pub(crate) async fn upload_large_file_session(
             };
 
             let status = response.status();
+
+            graph.note_rate_limit_headers(response.headers());
             if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
                 if status == StatusCode::TOO_MANY_REQUESTS {
                     let _ = record_throttle_event(&graph.profile_id, UPLOAD_JOB_DIRECTION);
@@ -419,6 +421,8 @@ pub(crate) async fn create_upload_session(
         };
 
         let status = response.status();
+
+        graph.note_rate_limit_headers(response.headers());
         if status.as_u16() == 401 && !refreshed {
             log::warn!(
                 "{} [cycle:{}] GRAPH_UPLOAD_SESSION_401_REFRESH",

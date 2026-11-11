@@ -179,7 +179,7 @@ pub(crate) fn test_graph_context(label: &str) -> GraphContext {
         http_no_redirect: reqwest::Client::new(),
         content_http: reqwest::Client::new(),
         pending_dir_syncs: Arc::new(std::sync::Mutex::new(HashSet::new())),
-        download_limit: Arc::new(AdaptiveDownloadLimit::new(32)),
+        download_limit: Arc::new(AdaptiveDownloadLimit::new(32, None)),
         throttle_releases: Arc::new(AtomicUsize::new(0)),
         throttle_probe_until: Arc::new(std::sync::Mutex::new(None)),
     }

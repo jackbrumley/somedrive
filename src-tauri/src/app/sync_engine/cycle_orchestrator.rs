@@ -48,7 +48,10 @@ pub(crate) async fn tick_sync_cycle(
         http_no_redirect: graph_http_client_no_redirect()?,
         content_http: content_http_client()?,
         pending_dir_syncs: Arc::new(std::sync::Mutex::new(HashSet::new())),
-        download_limit: Arc::new(AdaptiveDownloadLimit::new(resolve_download_concurrency())),
+        download_limit: Arc::new(AdaptiveDownloadLimit::new(
+            resolve_download_concurrency(),
+            read_learned_download_rate(profile_id)?,
+        )),
         throttle_releases: Arc::new(AtomicUsize::new(0)),
         throttle_probe_until: Arc::new(std::sync::Mutex::new(None)),
     };

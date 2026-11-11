@@ -55,6 +55,8 @@ pub(crate) async fn create_remote_folder(
         };
 
         let status = response.status();
+
+        graph.note_rate_limit_headers(response.headers());
         let text = response
             .text()
             .await

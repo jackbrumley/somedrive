@@ -87,6 +87,7 @@ pub(crate) async fn download_remote_item_content(
         };
         let mut response = response;
         let mut status = response.status();
+        graph.note_rate_limit_headers(response.headers());
         if direct_url.is_some() && matches!(status.as_u16(), 401 | 403 | 404 | 410) {
             log::info!(
                 "{} [cycle:{}] DOWNLOAD_DIRECT_URL_REFUSED path={} status={} action=use_graph",
@@ -274,6 +275,7 @@ pub(crate) async fn download_remote_item_content(
                 }
             };
             status = response.status();
+            graph.note_rate_limit_headers(response.headers());
             log::info!(
                 "{} [cycle:{}] DOWNLOAD_REDIRECT_RESULT item_id={} path={} status={} host={}",
                 graph.account_prefix,

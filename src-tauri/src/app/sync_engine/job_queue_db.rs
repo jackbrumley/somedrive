@@ -160,6 +160,16 @@ pub(crate) const SYNC_SCHEMA_SQL: &str = "
         watching INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
     );
+    -- The transfer rate each account has learned under Microsoft's limits
+    -- (sync_engine/download_rate_store.rs).
+    CREATE TABLE IF NOT EXISTS sync_download_rate (
+        profile_id TEXT PRIMARY KEY,
+        parallel INTEGER NOT NULL,
+        starts_per_second REAL NOT NULL,
+        ceiling_parallel INTEGER,
+        ceiling_starts_per_second REAL,
+        updated_at INTEGER NOT NULL
+    );
     -- Big uploads' sessions, so a cut-off upload continues where it stopped
     -- (sync_engine/upload_session.rs).
     CREATE TABLE IF NOT EXISTS sync_upload_sessions (
@@ -174,7 +184,8 @@ pub(crate) const SYNC_SCHEMA_SQL: &str = "
 ";
 
 /// Tables of the pre-baseline engine, dropped when an old database is found.
-pub(crate) const LEGACY_SYNC_TABLES: [&str; 12] = [
+pub(crate) const LEGACY_SYNC_TABLES: [&str; 13] = [
+    "sync_download_rate",
     "sync_local_watch",
     "sync_upload_sessions",
     "ui_data_revisions",
