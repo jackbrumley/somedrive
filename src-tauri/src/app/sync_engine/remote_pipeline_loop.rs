@@ -37,6 +37,7 @@ pub(crate) async fn run_remote_pipeline_loop(
         None;
     let mut producer_done = false;
     let mut deferred_delta_link: Option<String> = None;
+    let mut finishing_phase_set = false;
 
     loop {
         ensure_not_cancelled(cycle_cancel_flag)?;
@@ -99,17 +100,21 @@ pub(crate) async fn run_remote_pipeline_loop(
                     apply_remote_download_result(graph, stats, batched_result)?;
                 }
 
-                if !producer_done {
+                if !producer_done || finishing_phase_set {
                     continue;
                 }
+                // Set once: the count left lives in the download counters,
+                // so the phase (a log line and a database write) is not
+                // rewritten for every batch of finished downloads.
                 let latest_counters = sync_download_counters_from_db(graph)?;
                 if latest_counters.remaining > 0 {
                     runtime_set_phase(
                         &graph.sync_runtime,
                         &graph.profile_id,
                         "applying_remote",
-                        &format!("Finishing remote downloads - {} items remaining", latest_counters.remaining),
+                        "Finishing remote downloads",
                     );
+                    finishing_phase_set = true;
                 }
             }
             _ = heartbeat_ticker.tick() => {
