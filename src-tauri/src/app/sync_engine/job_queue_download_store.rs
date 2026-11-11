@@ -8,6 +8,25 @@ const PLANNED_DOWNLOADS_WHERE: &str = "profile_id = ?1
     AND cloud_present = 1
     AND remote_item_id IS NOT NULL";
 
+/// Drops queued or retry-waiting downloads the plan no longer wants.
+/// The lookup is pinned to the item index: left to choose, SQLite takes
+/// `idx_sync_files_plan` (every planned download matches it), which scans
+/// the whole plan once per queued job. On a 40,000-file first sync that held
+/// the write lock for minutes after every change-feed page.
+pub(crate) const DROP_UNPLANNED_DOWNLOADS_SQL: &str = "DELETE FROM sync_jobs
+     WHERE profile_id = ?1
+       AND direction = ?3
+       AND state IN (?4, ?5)
+       AND NOT EXISTS (
+           SELECT 1 FROM sync_files AS planned INDEXED BY idx_sync_files_remote_item
+           WHERE planned.profile_id = sync_jobs.profile_id
+             AND planned.remote_item_id = sync_jobs.item_id
+             AND planned.desired_action = ?2
+             AND planned.is_dir = 0
+             AND planned.is_shared_reference = 0
+             AND planned.cloud_present = 1
+       )";
+
 /// Makes the download queue match the plan in one short transaction: queues
 /// new downloads, re-queues finished jobs the plan wants again, refreshes
 /// changed metadata, and drops queued or retry-waiting jobs the plan no
@@ -66,19 +85,7 @@ pub(crate) fn queue_planned_downloads(profile_id: &str) -> Result<usize, String>
 
     transaction
         .execute(
-            "DELETE FROM sync_jobs
-             WHERE profile_id = ?1
-               AND direction = ?3
-               AND state IN (?4, ?5)
-               AND NOT EXISTS (
-                   SELECT 1 FROM sync_files AS planned
-                   WHERE planned.profile_id = sync_jobs.profile_id
-                     AND planned.remote_item_id = sync_jobs.item_id
-                     AND planned.desired_action = ?2
-                     AND planned.is_dir = 0
-                     AND planned.is_shared_reference = 0
-                     AND planned.cloud_present = 1
-               )",
+            DROP_UNPLANNED_DOWNLOADS_SQL,
             params![
                 profile_id,
                 PLANNER_ACTION_DOWNLOAD,

@@ -151,3 +151,33 @@ fn the_download_queue_follows_the_plan_and_rewrites_only_what_changed() {
     drop(connection);
     clear_profile_rows(&profile_id);
 }
+
+#[test]
+fn dropping_unplanned_downloads_looks_each_job_up_by_item() {
+    let profile_id = test_profile_id("drop-unplanned-plan");
+    let connection = open_sync_jobs_connection(&profile_id).expect("open sync jobs db");
+    let mut statement = connection
+        .prepare(&format!(
+            "EXPLAIN QUERY PLAN {DROP_UNPLANNED_DOWNLOADS_SQL}"
+        ))
+        .expect("prepare query plan");
+    let plan: Vec<String> = statement
+        .query_map(
+            params![
+                profile_id,
+                PLANNER_ACTION_DOWNLOAD,
+                DOWNLOAD_JOB_DIRECTION,
+                DOWNLOAD_JOB_STATE_QUEUED,
+                DOWNLOAD_JOB_STATE_RETRY_WAIT
+            ],
+            |row| row.get::<_, String>(3),
+        )
+        .expect("query plan")
+        .collect::<rusqlite::Result<_>>()
+        .expect("read plan");
+    assert!(
+        plan.iter()
+            .any(|step| step.contains("idx_sync_files_remote_item")),
+        "each queued job is checked by item, not by scanning the plan: {plan:?}"
+    );
+}
