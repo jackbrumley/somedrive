@@ -96,12 +96,49 @@
   color: var(--brand-on-color);
 }
 
+/* Pause or resume every account. */
+.sync-state-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--sync-toggle-bg);
+  color: var(--success-strong);
+}
+
+.sync-state-btn:hover {
+  background: var(--sync-toggle-bg-hover);
+}
+
+.sync-state-btn:disabled {
+  background: var(--control-muted-bg);
+  color: var(--text-faint);
+}
+
+/* App actions (settings, pause) sit left of a divider; the window's own
+   controls sit right of it, quiet until hovered. */
 .window-controls {
+  position: relative;
   display: flex;
   gap: 6px;
   flex-wrap: nowrap;
   flex-shrink: 0;
-  margin-left: 0;
+  margin-left: 10px;
+  padding-left: 16px;
+}
+
+.window-controls::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 1px;
+  height: 18px;
+  transform: translateY(-50%);
+  background: var(--line-strong);
 }
 
 .window-control {
@@ -120,12 +157,18 @@
   background: var(--top-control-bg-hover);
 }
 
-.window-control.close {
-  background: var(--window-close-bg);
-  color: var(--brand-on-color);
+.window-controls .window-control {
+  background: transparent;
+  color: var(--window-control-text);
 }
 
-.window-control.close:hover {
+.window-controls .window-control:hover {
+  background: var(--top-control-bg-hover);
+  color: var(--top-control-text);
+}
+
+.window-controls .window-control.close:hover {
+  color: var(--brand-on-color);
   background: var(--window-close-bg-hover);
 }
 

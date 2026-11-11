@@ -56,8 +56,10 @@
   --top-control-border: rgba(255, 255, 255, 0.12);
   --top-control-text: #f3f7ff;
   --top-control-active-border: rgba(91, 140, 255, 0.55);
-  --window-close-bg: #e0617f;
-  --window-close-bg-hover: #ec7590;
+  --window-control-text: #a7b6cc;
+  --sync-toggle-bg: rgba(16, 185, 129, 0.16);
+  --sync-toggle-bg-hover: rgba(16, 185, 129, 0.28);
+  --window-close-bg-hover: #d93a52;
 
   --control-muted-bg: #1a2333;
   --control-muted-bg-hover: #212c40;
