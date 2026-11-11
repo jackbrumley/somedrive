@@ -121,6 +121,9 @@ fn a_429_from_a_request_sent_before_the_cut_is_ignored() {
         None,
         "sent while the penalty was still running"
     );
+    for _ in 0..MIN_SUCCESSES_FOR_NEW_CUT {
+        limit.record_success_at(late_answer);
+    }
     assert!(limit
         .record_throttle_at(after_the_penalty, Duration::ZERO, after_the_penalty)
         .is_some());
@@ -187,6 +190,9 @@ fn never_below_the_floor() {
     let mut now = Instant::now();
     let limit = AdaptiveDownloadLimit::new_at(32, None, now);
     for _ in 0..10 {
+        for _ in 0..MIN_SUCCESSES_FOR_NEW_CUT {
+            limit.record_success_at(now);
+        }
         let sent = now + CUT_GRACE + Duration::from_millis(1);
         now = sent + Duration::from_millis(1);
         limit.record_throttle_at(sent, Duration::ZERO, now);
@@ -217,6 +223,78 @@ fn an_early_warning_eases_without_a_stop_and_at_most_every_30_seconds() {
         limit.learned().and_then(|rate| rate.ceiling),
         Some((16, 18.0)),
         "a warning still coming at 18 a second lowers the ceiling to 18"
+    );
+}
+
+#[test]
+fn refusals_during_a_penalty_are_one_episode_until_transfers_succeed() {
+    let start = Instant::now();
+    let limit = AdaptiveDownloadLimit::new_at(32, Some(learned(20, 20.0, None)), start);
+    limit
+        .record_throttle_at(start, Duration::from_secs(30), start)
+        .expect("first cut");
+    // Microsoft refuses the probes released after its wait.
+    let probe = start + Duration::from_secs(45);
+    assert_eq!(
+        limit.record_throttle_at(probe, Duration::from_secs(30), probe),
+        None,
+        "still the same penalty: nothing at the new rate has succeeded yet"
+    );
+    for second in 0..MIN_SUCCESSES_FOR_NEW_CUT as u64 {
+        limit.record_success_at(probe + Duration::from_secs(30 + second));
+    }
+    let later = probe + Duration::from_secs(120);
+    assert!(
+        limit
+            .record_throttle_at(later, Duration::ZERO, later)
+            .is_some(),
+        "refused again after transfers at the new rate succeeded: a new cut"
+    );
+}
+
+#[test]
+fn a_held_period_is_not_taken_as_the_refused_rate() {
+    let start = Instant::now();
+    let limit = AdaptiveDownloadLimit::new_at(32, Some(learned(20, 20.0, None)), start);
+    for tenth in 0..600 {
+        limit.record_request_start_at(start + Duration::from_millis(100 * tenth));
+    }
+    let first_cut = start + RATE_WINDOW;
+    let wait = Duration::from_secs(30);
+    let change = limit
+        .record_throttle_at(first_cut, wait, first_cut)
+        .expect("cut");
+    assert!((change.starts_per_second - 8.5).abs() < 0.1);
+    // Transfers resume after the wait; Microsoft refuses again 15 s later
+    // (after the cut's grace, before 20 s of clean measurement).
+    let resumed = first_cut + wait;
+    for second in 0..MIN_SUCCESSES_FOR_NEW_CUT as u64 {
+        limit.record_request_start_at(resumed + Duration::from_millis(500 * second));
+        limit.record_success_at(resumed + Duration::from_millis(500 * second));
+    }
+    let refused = resumed + Duration::from_secs(15);
+    let change = limit
+        .record_throttle_at(refused, wait, refused)
+        .expect("second cut");
+    assert!(
+        (change.starts_per_second - 8.5 * SETTLE_FRACTION).abs() < 0.1,
+        "85% of the configured rate, not of the few requests the wait let through: {}",
+        change.starts_per_second
+    );
+}
+
+#[test]
+fn after_an_early_warning_it_holds_at_the_eased_rate() {
+    let mut now = Instant::now();
+    let limit = AdaptiveDownloadLimit::new_at(32, Some(learned(16, 20.0, None)), now);
+    limit.record_pressure_at(now).expect("eased");
+    for _ in 0..20 {
+        now += PROBE_INTERVAL;
+        limit.record_success_at(now);
+    }
+    assert!(
+        (limit.learned().expect("rate").starts_per_second - 18.0).abs() < 1e-9,
+        "no probing back towards the warned rate during the hold"
     );
 }
 

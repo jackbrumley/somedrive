@@ -43,6 +43,15 @@ const CEILING_HOLD: Duration = Duration::from_secs(30 * 60);
 const CEILING_HOLD_FRACTION: f64 = 0.95;
 /// The request rate is measured over this window.
 const RATE_WINDOW: Duration = Duration::from_secs(60);
+/// Measuring restarts after each penalty (requests held by Microsoft's wait
+/// say nothing about the rate it refused). A refusal with less clean
+/// measurement than this takes the configured rate as the refused one.
+const MIN_MEASURE_SPAN: Duration = Duration::from_secs(20);
+/// After a cut, Microsoft often refuses the requests released after its
+/// wait for a while longer: the same penalty, not a verdict on the new rate.
+/// A refusal is a new cut only after this many transfers have succeeded
+/// since the last one.
+const MIN_SUCCESSES_FOR_NEW_CUT: usize = 20;
 /// Microsoft's `RateLimit-*` headers (sent once most of a quota is used)
 /// ease the start rate by this factor, at most once per `PRESSURE_INTERVAL`
 /// and without stopping anything, so the 429 they warn of never comes.
@@ -88,6 +97,13 @@ struct AdaptiveDownloadLimitState {
     /// warned), and when.
     ceiling: Option<(usize, f64)>,
     ceiling_set_at: Instant,
+    /// The highest start rate allowed until `CEILING_HOLD` after the
+    /// ceiling was set: 95% of a refused rate, or the eased rate after an
+    /// early warning.
+    hold_rate: Option<f64>,
+    /// Transfers that succeeded since the last cut; `None` before the
+    /// cycle's first cut.
+    successes_since_cut: Option<usize>,
     /// Requests started within the last `RATE_WINDOW`.
     request_starts: VecDeque<Instant>,
     measuring_since: Instant,
@@ -135,6 +151,12 @@ impl AdaptiveDownloadLimit {
                 // A ceiling learned in an earlier cycle is held as if just
                 // met: the hold restarts with each cycle.
                 ceiling_set_at: now,
+                hold_rate: ceiling.map(|(_, rate)| {
+                    (rate * CEILING_HOLD_FRACTION)
+                        .min(starts_per_second)
+                        .max(START_RATE_FLOOR)
+                }),
+                successes_since_cut: None,
                 request_starts: VecDeque::new(),
                 measuring_since: now,
                 last_pressure_at: None,
@@ -228,6 +250,9 @@ impl AdaptiveDownloadLimit {
 
     fn record_success_at(&self, now: Instant) -> Option<DownloadLimitChange> {
         let mut state = self.state.lock().ok()?;
+        if let Some(successes) = state.successes_since_cut.as_mut() {
+            *successes += 1;
+        }
         let interval = if state.ceiling.is_some() {
             PROBE_INTERVAL
         } else {
@@ -243,7 +268,10 @@ impl AdaptiveDownloadLimit {
             probing = state.starts_per_second >= settle_rate;
             if now.saturating_duration_since(state.ceiling_set_at) < CEILING_HOLD {
                 parallel_cap = parallel_cap.min(ceiling_parallel.max(state.current));
-                rate_cap = rate_cap.min(ceiling_rate * CEILING_HOLD_FRACTION);
+                let hold_rate = state
+                    .hold_rate
+                    .unwrap_or(ceiling_rate * CEILING_HOLD_FRACTION);
+                rate_cap = rate_cap.min(hold_rate.max(START_RATE_FLOOR));
             }
             if !probing {
                 // Climbing back: stop at the settle point, never past it.
@@ -271,9 +299,10 @@ impl AdaptiveDownloadLimit {
 
     /// Records a 429 for a request that started at `request_started_at`,
     /// answered with "wait `retry_after`". Sets the limits to
-    /// `SETTLE_FRACTION` of the measured request rate, unless the request
-    /// started while the last cut's penalty was still running. Returns the
-    /// change when it lowered them.
+    /// `SETTLE_FRACTION` of the measured request rate, unless the refusal
+    /// belongs to the last cut's penalty (the request started before it
+    /// ended, or too few transfers have succeeded since). Returns the change
+    /// when it lowered them.
     pub(crate) fn record_throttle(
         &self,
         request_started_at: Instant,
@@ -289,17 +318,23 @@ impl AdaptiveDownloadLimit {
         now: Instant,
     ) -> Option<DownloadLimitChange> {
         let mut state = self.state.lock().ok()?;
-        if state
+        let started_in_penalty = state
             .cut_covers_until
-            .is_some_and(|covered| request_started_at <= covered)
-        {
+            .is_some_and(|covered| request_started_at <= covered);
+        let same_episode = state
+            .successes_since_cut
+            .is_some_and(|successes| successes < MIN_SUCCESSES_FOR_NEW_CUT);
+        if started_in_penalty || same_episode {
             return None;
         }
         // The configured rate can be above what actually ran (too few jobs
         // ready, all slots busy, or a cycle that just started into a window
-        // an earlier one filled): the measured rate is what Microsoft saw.
+        // an earlier one filled): the measured rate is what Microsoft saw,
+        // once enough of it has been measured since the last penalty.
+        let measured_long_enough =
+            now.saturating_duration_since(state.measuring_since) >= MIN_MEASURE_SPAN;
         let measured = measured_request_rate(&mut state, now);
-        let refused_rate = if measured > 0.0 {
+        let refused_rate = if measured_long_enough && measured > 0.0 {
             measured.min(state.starts_per_second)
         } else {
             state.starts_per_second
@@ -308,6 +343,10 @@ impl AdaptiveDownloadLimit {
         state.last_change_at = now + retry_after;
         state.ceiling = Some((state.current, refused_rate));
         state.ceiling_set_at = now;
+        state.hold_rate = Some((refused_rate * CEILING_HOLD_FRACTION).max(START_RATE_FLOOR));
+        state.successes_since_cut = Some(0);
+        state.request_starts.clear();
+        state.measuring_since = now + retry_after;
         let from = state.current;
         state.current =
             ((state.current as f64 * SETTLE_FRACTION).floor() as usize).max(self.floor());
@@ -322,8 +361,9 @@ impl AdaptiveDownloadLimit {
 
     /// Records Microsoft's early warning (`RateLimit-*` headers: most of a
     /// quota is used): eases the start rate a little, at most once per
-    /// `PRESSURE_INTERVAL`, and holds it there as the new ceiling. Nothing
-    /// stops. Returns the change when it eased.
+    /// `PRESSURE_INTERVAL`, and holds it at the eased rate for
+    /// `CEILING_HOLD` (a warning means the rate before it was already too
+    /// close). Nothing stops. Returns the change when it eased.
     pub(crate) fn record_pressure(&self) -> Option<DownloadLimitChange> {
         self.record_pressure_at(Instant::now())
     }
@@ -346,12 +386,13 @@ impl AdaptiveDownloadLimit {
         state.starts_per_second = eased;
         state.start_permits = state.start_permits.min(eased);
         state.last_change_at = now;
+        state.hold_rate = Some(eased);
+        state.ceiling_set_at = now;
         if state
             .ceiling
             .is_none_or(|(_, ceiling_rate)| ceiling_rate > before)
         {
             state.ceiling = Some((state.current, before));
-            state.ceiling_set_at = now;
         }
         Some(DownloadLimitChange {
             from: state.current,
