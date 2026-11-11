@@ -250,7 +250,6 @@ export function AccountSyncActivityList({
   const listBodyRef = useRef<HTMLDivElement>(null);
   const listBodyHeight = useElementHeight(listBodyRef);
   const rows = runtimeStatus ? feedRows(runtimeStatus) : [];
-  const runningCount = rows.filter((row) => row.kind === "running").length;
   const emptyText =
     runtimeStatus?.phase === "paused"
       ? "Paused. Nothing is transferring."
@@ -263,7 +262,7 @@ export function AccountSyncActivityList({
           Summary
         </TabButton>
         <TabButton tab="activity" current={tab} onSelect={setTab} title="What SomeDrive is doing and did in the last 10 minutes">
-          Activity <TabCount count={runningCount} />
+          Activity
         </TabButton>
         <TabButton tab="problems" current={tab} onSelect={setTab}>
           Sync problems{" "}
