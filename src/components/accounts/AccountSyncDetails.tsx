@@ -1,3 +1,4 @@
+import type { TransferRates } from "../../hooks/useTransferRates";
 import type { SyncRuntimeAccountStatus } from "../../types/somedrive";
 import { formatBytes, formatClockTime } from "./syncFormatting";
 
@@ -12,7 +13,11 @@ function count(value: number | undefined): string {
   return (value ?? 0).toLocaleString();
 }
 
-function metricGroups(status: SyncRuntimeAccountStatus): MetricGroup[] {
+function filesPerSecond(value: number): string {
+  return value.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+function metricGroups(status: SyncRuntimeAccountStatus, rates: TransferRates): MetricGroup[] {
   return [
     {
       title: "Lifecycle",
@@ -52,6 +57,7 @@ function metricGroups(status: SyncRuntimeAccountStatus): MetricGroup[] {
         ["Failed", count(status.remoteDownloadFailedTotal)],
         ["Downloaded size", formatBytes(status.remoteDownloadCompletedBytesTotal ?? 0)],
         ["Remaining size", formatBytes(status.remoteDownloadRemainingBytesTotal ?? 0)],
+        ["Files per second", filesPerSecond(rates.downloadFilesPerSecond)],
         ["Rate limits (last minute)", count(status.remoteDownloadThrottleLastMinute)],
         ["Rate limits (total)", count(status.remoteDownloadThrottleTotal)],
       ],
@@ -66,6 +72,7 @@ function metricGroups(status: SyncRuntimeAccountStatus): MetricGroup[] {
         ["Failed", count(status.uploadFailedTotal)],
         ["Uploaded size", formatBytes(status.uploadCompletedBytesTotal ?? 0)],
         ["Remaining size", formatBytes(status.uploadRemainingBytesTotal ?? 0)],
+        ["Files per second", filesPerSecond(rates.uploadFilesPerSecond)],
         ["Rate limits (last minute)", count(status.uploadThrottleLastMinute)],
         ["Rate limits (total)", count(status.uploadThrottleTotal)],
       ],
@@ -75,10 +82,11 @@ function metricGroups(status: SyncRuntimeAccountStatus): MetricGroup[] {
 
 interface AccountSyncDetailsProps {
   runtimeStatus: SyncRuntimeAccountStatus;
+  rates: TransferRates;
 }
 
 /** The sync engine's raw state for one account: lifecycle, planner and transfer counters. */
-export function AccountSyncDetails({ runtimeStatus }: AccountSyncDetailsProps) {
+export function AccountSyncDetails({ runtimeStatus, rates }: AccountSyncDetailsProps) {
   return (
     <div class="sync-details">
       {runtimeStatus.issueMessage && <p class="diagnostics-issue">{runtimeStatus.issueMessage}</p>}
@@ -93,7 +101,7 @@ export function AccountSyncDetails({ runtimeStatus }: AccountSyncDetailsProps) {
         </div>
       )}
       <div class="diagnostics-groups">
-        {metricGroups(runtimeStatus).map((group) => (
+        {metricGroups(runtimeStatus, rates).map((group) => (
           <section key={group.title} class="diagnostics-group">
             <p class="diagnostics-group-title">{group.title}</p>
             <dl class="diagnostics-metrics">

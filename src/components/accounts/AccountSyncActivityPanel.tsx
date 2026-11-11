@@ -60,7 +60,8 @@ export function AccountSyncActivityPanel({
   onResolveSyncConflicts,
   cleanupActions,
 }: AccountSyncActivityPanelProps) {
-  const transfers = accountTransfers(runtimeStatus, useTransferRates(runtimeStatus));
+  const rates = useTransferRates(runtimeStatus);
+  const transfers = accountTransfers(runtimeStatus, rates);
   const areas = useAccountAreas();
   const problemsArea = areas.useSyncProblems(accountId, runtimeStatus?.dataRevisions.problems);
   const problems = problemsArea.data?.problems ?? [];
@@ -99,6 +100,7 @@ export function AccountSyncActivityPanel({
         <AccountSyncActivityList
           runtimeStatus={runtimeStatus}
           summary={overview}
+          rates={rates}
           transfersMoving={transfers.engineRunning}
           problemCount={problems.length}
           notSyncedCount={notSynced.length}

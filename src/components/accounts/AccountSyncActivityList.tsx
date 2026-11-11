@@ -2,6 +2,7 @@ import { IconAlertTriangle, IconCircleCheckFilled, IconDownload, IconTrash, Icon
 import type { ComponentChildren } from "preact";
 import { useRef, useState } from "preact/hooks";
 import { useElementHeight } from "../../hooks/useElementHeight";
+import type { TransferRates } from "../../hooks/useTransferRates";
 import type { SyncRuntimeAccountStatus, SyncRuntimeRecentItem } from "../../types/somedrive";
 import { VirtualizedList } from "../ui/VirtualizedList";
 import { AccountSyncDetails } from "./AccountSyncDetails";
@@ -36,6 +37,8 @@ interface AccountSyncActivityListProps {
   runtimeStatus: SyncRuntimeAccountStatus | null;
   /** The plain-language overview with the full progress bars. */
   summary: ComponentChildren;
+  /** Transfer speeds, shown in Details. */
+  rates: TransferRates;
   /** Transfers are moving: the page opens on Activity, otherwise Summary. */
   transfersMoving: boolean;
   problemCount: number;
@@ -237,6 +240,7 @@ function TabButton({
 export function AccountSyncActivityList({
   runtimeStatus,
   summary,
+  rates,
   transfersMoving,
   problemCount,
   problems,
@@ -299,7 +303,7 @@ export function AccountSyncActivityList({
           <div class="sync-tab-scroll">{cleanup}</div>
         ) : tab === "details" ? (
           runtimeStatus ? (
-            <AccountSyncDetails runtimeStatus={runtimeStatus} />
+            <AccountSyncDetails runtimeStatus={runtimeStatus} rates={rates} />
           ) : (
             <p class="sync-activity-empty">No status has been received for this account yet.</p>
           )
