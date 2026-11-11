@@ -3939,7 +3939,7 @@ dependencies = [
 
 [[package]]
 name = "somedrive"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "arboard",
  "base64 0.22.1",
