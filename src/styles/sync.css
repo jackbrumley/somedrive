@@ -352,9 +352,13 @@
   color: var(--text-main);
 }
 
+/* Every tab count: one fixed width (wide enough for "99+"), so a count
+   changing never moves the tabs. */
 .sync-activity-count {
-  min-width: 22px;
-  padding: 1px 7px;
+  box-sizing: border-box;
+  display: inline-block;
+  width: 32px;
+  padding: 1px 0;
   border-radius: 999px;
   background: var(--line-soft);
   color: var(--text-muted);

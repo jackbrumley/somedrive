@@ -188,6 +188,25 @@ function ActivityRowView({ row, onOpen }: { row: ActivityRow; onOpen: (path: str
   );
 }
 
+/** Counts above this show as "99+" (exact number in the tooltip). */
+const TAB_COUNT_SHOWN_MAX = 99;
+
+/**
+ * A tab's count: always shown (0 included) at one fixed width, so a count
+ * changing never moves the tabs beside it.
+ */
+function TabCount({ count, attention = false }: { count: number; attention?: boolean }) {
+  const shown = count > TAB_COUNT_SHOWN_MAX ? `${TAB_COUNT_SHOWN_MAX}+` : String(count);
+  return (
+    <span
+      class={attention ? "sync-activity-count is-attention" : "sync-activity-count"}
+      title={count > TAB_COUNT_SHOWN_MAX ? count.toLocaleString() : undefined}
+    >
+      {shown}
+    </span>
+  );
+}
+
 function TabButton({
   tab,
   current,
@@ -244,11 +263,11 @@ export function AccountSyncActivityList({
           Summary
         </TabButton>
         <TabButton tab="activity" current={tab} onSelect={setTab} title="What SomeDrive is doing and did in the last 10 minutes">
-          Activity{runningCount > 0 && <span class="sync-activity-count">{runningCount}</span>}
+          Activity <TabCount count={runningCount} />
         </TabButton>
         <TabButton tab="problems" current={tab} onSelect={setTab}>
           Sync problems{" "}
-          <span class={problemCount > 0 ? "sync-activity-count is-attention" : "sync-activity-count"}>{problemCount}</span>
+          <TabCount count={problemCount} attention={problemCount > 0} />
         </TabButton>
         <TabButton
           tab="notSynced"
@@ -256,7 +275,7 @@ export function AccountSyncActivityList({
           onSelect={setTab}
           title="Items skipped on purpose, such as OneNote notebooks and shared folders"
         >
-          Not synced <span class="sync-activity-count">{notSyncedCount}</span>
+          Not synced <TabCount count={notSyncedCount} />
         </TabButton>
         <TabButton
           tab="cleanup"
