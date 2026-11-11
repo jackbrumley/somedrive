@@ -225,10 +225,10 @@ fn an_early_warning_eases_without_a_stop_and_at_most_every_30_seconds() {
     let limit = AdaptiveDownloadLimit::new_at(32, Some(learned(16, 20.0, None)), now);
     let change = limit.record_pressure_at(now).expect("eased");
     assert_eq!((change.from, change.to), (16, 16), "parallel unchanged");
-    assert!((change.starts_per_second - 18.0).abs() < 1e-9);
+    assert!((change.starts_per_second - 16.0).abs() < 1e-9);
     assert_eq!(
         limit.take_start_permits_at(100, now),
-        18,
+        16,
         "starts continue at once"
     );
     assert_eq!(
@@ -239,8 +239,8 @@ fn an_early_warning_eases_without_a_stop_and_at_most_every_30_seconds() {
     assert!(limit.record_pressure_at(now + PRESSURE_INTERVAL).is_some());
     assert_eq!(
         limit.learned().and_then(|rate| rate.ceiling),
-        Some((16, 18.0)),
-        "a warning still coming at 18 a second lowers the ceiling to 18"
+        Some((16, 16.0)),
+        "a warning still coming at 16 a second lowers the ceiling to 16"
     );
 }
 
@@ -311,7 +311,7 @@ fn after_an_early_warning_it_holds_at_the_eased_rate() {
         limit.record_success_at(now);
     }
     assert!(
-        (limit.learned().expect("rate").starts_per_second - 18.0).abs() < 1e-9,
+        (limit.learned().expect("rate").starts_per_second - 16.0).abs() < 1e-9,
         "no probing back towards the warned rate during the hold"
     );
 }
@@ -361,6 +361,48 @@ fn a_steady_quota_is_met_once_and_then_held_without_stops() {
     assert!(
         settled >= quota * 0.8 && settled < quota,
         "settled just under the quota: {settled}"
+    );
+}
+
+/// Microsoft modelled as before, warning (RateLimit headers) once a minute's
+/// requests pass 80% of the quota: the warning alone keeps the rate under
+/// the limit, so nothing is ever refused and nothing stops.
+#[test]
+fn early_warnings_keep_a_quota_from_ever_refusing() {
+    let quota = 10.0;
+    let window_quota = quota * RATE_WINDOW.as_secs_f64();
+    let start = Instant::now();
+    let limit = AdaptiveDownloadLimit::new_at(32, None, start);
+    let mut window: VecDeque<Instant> = VecDeque::new();
+    let mut refusals = 0;
+    for second in 0..30 * 60 {
+        let now = start + Duration::from_secs(second);
+        while window
+            .front()
+            .is_some_and(|sent| now.saturating_duration_since(*sent) > RATE_WINDOW)
+        {
+            window.pop_front();
+        }
+        for _ in 0..limit.take_start_permits_at(usize::MAX, now) {
+            limit.record_request_start_at(now);
+            window.push_back(now);
+        }
+        let used = window.len() as f64;
+        if used > window_quota {
+            refusals += 1;
+            limit.record_throttle_at(now, Duration::ZERO, now);
+            continue;
+        }
+        if used > window_quota * 0.8 {
+            limit.record_pressure_at(now);
+        }
+        limit.record_success_at(now);
+    }
+    assert_eq!(refusals, 0, "warned in time, never refused");
+    let settled = limit.learned().expect("rate").starts_per_second;
+    assert!(
+        settled >= quota * 0.5 && settled < quota * 0.8,
+        "held under the warning level: {settled}"
     );
 }
 

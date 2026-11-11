@@ -52,10 +52,12 @@ const MIN_MEASURE_SPAN: Duration = Duration::from_secs(20);
 /// A refusal is a new cut only after this many transfers have succeeded
 /// since the last one.
 const MIN_SUCCESSES_FOR_NEW_CUT: usize = 20;
-/// Microsoft's `RateLimit-*` headers (sent once most of a quota is used)
+/// Microsoft's `RateLimit-*` headers (sent once 80% of a quota is used)
 /// ease the start rate by this factor, at most once per `PRESSURE_INTERVAL`
 /// and without stopping anything, so the 429 they warn of never comes.
-const PRESSURE_EASE: f64 = 0.9;
+/// Seen live: two 10% eases (9.3 to 7.5 a second) still met the 429 within
+/// a minute, because Microsoft's window still held the faster minute.
+const PRESSURE_EASE: f64 = 0.8;
 const PRESSURE_INTERVAL: Duration = Duration::from_secs(30);
 /// Files at least this big take the large-file lane (see
 /// `large_download_slots`).
