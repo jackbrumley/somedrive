@@ -61,25 +61,23 @@ export function AccountCleanup({ accountId, revision, actions, onOpenItemFolder 
 
   return (
     <div class="sync-problems cleanup">
-      <div class="sync-problems-bulk cleanup-bar">
-        <div class="cleanup-switch" role="group" aria-label="Which list to show">
-          <button
-            type="button"
-            class={list === "copies" ? "cleanup-switch-option is-active" : "cleanup-switch-option"}
-            aria-pressed={list === "copies"}
-            onClick={() => setList("copies")}
-          >
-            Identical copies <span class="cleanup-switch-count">{formatBytes(view.duplicateBytes)}</span>
-          </button>
-          <button
-            type="button"
-            class={list === "large" ? "cleanup-switch-option is-active" : "cleanup-switch-option"}
-            aria-pressed={list === "large"}
-            onClick={() => setList("large")}
-          >
-            Large files <span class="cleanup-switch-count">{view.largeFiles.length}</span>
-          </button>
-        </div>
+      <div class="cleanup-switch" role="group" aria-label="Which list to show">
+        <button
+          type="button"
+          class={list === "copies" ? "cleanup-switch-option is-active" : "cleanup-switch-option"}
+          aria-pressed={list === "copies"}
+          onClick={() => setList("copies")}
+        >
+          Identical copies <span class="cleanup-switch-count">{formatBytes(view.duplicateBytes)}</span>
+        </button>
+        <button
+          type="button"
+          class={list === "large" ? "cleanup-switch-option is-active" : "cleanup-switch-option"}
+          aria-pressed={list === "large"}
+          onClick={() => setList("large")}
+        >
+          Large files <span class="cleanup-switch-count">{view.largeFiles.length}</span>
+        </button>
       </div>
       {loadError && <p class="sync-problems-note">Couldn't update this list: {loadError}</p>}
 

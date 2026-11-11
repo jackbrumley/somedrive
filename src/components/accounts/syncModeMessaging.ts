@@ -104,3 +104,27 @@ export function syncModeMessage(
 
   return { title: "Up to date", detail: "Changes on this device and in OneDrive stay in step.", tone: "success" };
 }
+
+/**
+ * The account's state in a few words, for the page header when nothing is
+ * transferring (with transfers, the header shows their progress instead).
+ * While the engine works through a step, the step is named, e.g.
+ * "First sync · Fetching remote files". After the first sync the periodic
+ * checks stay "Up to date", so the text does not flicker every few seconds.
+ */
+export function headerStatusText(
+  runtimeStatus: SyncRuntimeAccountStatus | null,
+  message: SyncModeMessage,
+  engineRunning: boolean
+): string {
+  const step = runtimeStatus?.phaseMessage?.trim();
+  if (engineRunning && step) {
+    if (message.title === "First sync in progress") {
+      return `First sync · ${step}`;
+    }
+    if (message.title === "Syncing") {
+      return `Syncing · ${step}`;
+    }
+  }
+  return message.title;
+}

@@ -7,6 +7,7 @@ import { useTransferRates } from "../../hooks/useTransferRates";
 import { AccountSyncActivityList } from "./AccountSyncActivityList";
 import { AccountSyncIssues } from "./AccountSyncIssues";
 import { AccountSyncOverview } from "./AccountSyncOverview";
+import { accountTransfers } from "./transferProgress";
 
 interface AccountSyncActivityPanelProps {
   accountId: string;
@@ -32,9 +33,10 @@ interface AccountSyncActivityPanelProps {
 }
 
 /**
- * The account's sync page: a plain-language overview, anything that needs
- * the user, and the files moving now. Engine telemetry (lanes, planner
- * counters, retry queues) lives on the Debug Tools page.
+ * The account's sync page: anything that needs the user (above the tabs, so
+ * it is never hidden), then the tabs: a plain-language Summary, the files
+ * moving now, problems, skipped items, clean-up and details. The header
+ * keeps a one-line progress in view on every tab.
  */
 export function AccountSyncActivityPanel({
   accountId,
@@ -58,7 +60,7 @@ export function AccountSyncActivityPanel({
   onResolveSyncConflicts,
   cleanupActions,
 }: AccountSyncActivityPanelProps) {
-  const rates = useTransferRates(runtimeStatus);
+  const transfers = accountTransfers(runtimeStatus, useTransferRates(runtimeStatus));
   const areas = useAccountAreas();
   const problemsArea = areas.useSyncProblems(accountId, runtimeStatus?.dataRevisions.problems);
   const problems = problemsArea.data?.problems ?? [];
@@ -66,15 +68,18 @@ export function AccountSyncActivityPanel({
   const resolve = (paths: string[], resolution: ConflictResolution) =>
     onResolveSyncConflicts(accountId, paths, resolution);
   const openConflictCount = problems.filter((problem) => problem.isConflict && problem.resolution === null).length;
+  const overview = (
+    <AccountSyncOverview
+      runtimeStatus={runtimeStatus}
+      hasCompletedInitialSync={hasCompletedInitialSync}
+      transfers={transfers}
+      openConflictCount={openConflictCount}
+    />
+  );
+  const showTabs = runtimeStatus?.authReady !== false;
   return (
     <div class="sync-panel" role="region" aria-label="Sync status">
-      <AccountSyncOverview
-        runtimeStatus={runtimeStatus}
-        hasCompletedInitialSync={hasCompletedInitialSync}
-        downloadBytesPerSecond={rates.downloadBytesPerSecond}
-        uploadBytesPerSecond={rates.uploadBytesPerSecond}
-        openConflictCount={openConflictCount}
-      />
+      {!showTabs && overview}
       <AccountSyncIssues
         issueMessage={issueMessage}
         issueKind={issueKind}
@@ -90,9 +95,11 @@ export function AccountSyncActivityPanel({
         onKeepCloudFiles={onKeepCloudFiles}
         onExportLargeDeletePreview={onExportLargeDeletePreview}
       />
-      {runtimeStatus?.authReady !== false && (
+      {showTabs && (
         <AccountSyncActivityList
           runtimeStatus={runtimeStatus}
+          summary={overview}
+          transfersMoving={transfers.engineRunning}
           problemCount={problems.length}
           notSyncedCount={notSynced.length}
           notSynced={<AccountNotSynced items={notSynced} onOpenItemFolder={onOpenItemFolder} />}

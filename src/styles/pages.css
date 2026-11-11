@@ -21,43 +21,115 @@
   padding: 12px 14px 14px;
 }
 
-/* PageHeader: fixed height, three columns, so the back control, title and
-   actions sit in the same place on every page. */
+/* PageHeader: fixed height. Where you are on the left (back control and
+   title together), what is happening and what you can do on the right. The
+   title keeps its natural width; the progress line takes what is left and
+   is cut off first. */
 .page-header {
   height: 40px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   margin: 0;
 }
 
-.page-header-start,
-.page-header-end {
-  min-width: 0;
+.page-header-start {
+  flex: 0 1 auto;
+  min-width: 3rem;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .page-header-end {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 6px;
 }
 
 .page-header-title {
   margin: 0;
-  max-width: 46vw;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-align: center;
   font-size: 1.2rem;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--heading);
 }
 
+.page-header-title-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  margin: 0 2px 0 2px;
+  color: var(--text-muted);
+}
+
+/* The subject's status beside the actions: progress numbers, or a few
+   words with a state dot. Cut off from the end (the speed goes first) when
+   the window is narrow. */
+.page-header-status {
+  min-width: 0;
+  margin-right: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.page-header-status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-header-status-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--sync-tone-info-text);
+}
+
+.page-header-status-dot.is-success {
+  background: var(--success);
+}
+
+.page-header-status-dot.is-caution {
+  background: var(--sync-tone-caution-text);
+}
+
+.page-header-status-dot.is-warning {
+  background: var(--danger);
+}
+
+/* The progress bar sits on the header's bottom border, so it adds no
+   height. */
+.page-header-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 3px;
+  background: transparent;
+}
+
+.page-header-progress-fill {
+  height: 100%;
+  background: var(--accent-bar);
+  transition: width 400ms ease;
+}
+
 .page-header-back-link {
+  flex: none;
   display: inline-grid;
   place-items: center;
   width: 32px;

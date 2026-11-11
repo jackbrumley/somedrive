@@ -316,7 +316,7 @@
   inset: 0;
 }
 
-/* Five tabs: they wrap rather than overflow at the narrowest window. */
+/* Six tabs: they wrap rather than overflow at the narrowest window. */
 .sync-activity-tabs {
   flex: none;
   display: flex;
@@ -462,6 +462,21 @@
 }
 
 /* Sync problems tab (AccountSyncProblems) */
+
+/* The Summary tab shows the overview inside the activity card: no second
+   frame, accent bar or shadow of its own. */
+.sync-tab-scroll > .sync-overview {
+  padding: 12px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.sync-tab-scroll > .sync-overview::before {
+  content: none;
+}
 
 .sync-tab-scroll {
   position: absolute;

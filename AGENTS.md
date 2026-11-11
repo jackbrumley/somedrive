@@ -170,8 +170,9 @@ unreadable-settings error dialog).
 - `main.tsx` is entry wiring only; `App.tsx` composes shell, layout and hooks.
 - `src/styles.css` only imports the focused files in `src/styles/`.
 - **UI consistency contract:** shared layout primitives (`.page`,
-  `.page-header`, cards, header actions) are defined once and reused; back
-  control left, title centred, actions right; operational telemetry on
+  `.page-header`, cards, header actions) are defined once and reused;
+  header: back control and title together on the left, progress and actions
+  on the right; operational telemetry on
   operational pages, account settings pages configuration-only; replacing a
   pattern removes the old one in the same change.
 

@@ -17,7 +17,11 @@ import type {
   ConflictResolution,
   SyncRuntimeAccountStatus,
 } from "../types/somedrive";
-import { computeEffectiveSyncState } from "../components/accounts/syncStateSelectors";
+import { computeEffectiveSyncState, computeHasCompletedInitialSync } from "../components/accounts/syncStateSelectors";
+import { headerStatusText, syncModeMessage } from "../components/accounts/syncModeMessaging";
+import type { PageHeaderStatus } from "../components/shell/PageHeader";
+import { accountTransfers, headerProgress } from "../components/accounts/transferProgress";
+import { useTransferRates } from "../hooks/useTransferRates";
 
 interface AccountDetailPageProps {
   account: AccountProfile | null;
@@ -66,16 +70,29 @@ const AccountDetailHeader = memo(function AccountDetailHeader({
 }: AccountDetailHeaderProps) {
   const { syncState } = computeEffectiveSyncState(account, runtimeStatus);
   const { pendingState, requestAgentState } = useAgentStateRequest(account.id, onSetAgentState);
-  const accountKindLabel = account.kind === "business" ? "Business" : "Personal";
-  const accountKindIcon = account.kind === "business" ? <IconBuildingBank size={14} /> : <IconUser size={14} />;
+  const accountKindLabel = account.kind === "business" ? "Business account" : "Personal account";
+  const accountKindIcon = (
+    <span class="account-kind-icon" title={accountKindLabel} aria-label={accountKindLabel} role="img">
+      {account.kind === "business" ? <IconBuildingBank size={18} /> : <IconUser size={18} />}
+    </span>
+  );
   const isSyncView = view === "sync";
+  const transfers = accountTransfers(runtimeStatus, useTransferRates(runtimeStatus));
+  const message = syncModeMessage(runtimeStatus, computeHasCompletedInitialSync(account, runtimeStatus));
+  const progress = headerProgress(transfers);
+  // Progress while something transfers; otherwise the state in a few words.
+  const status: PageHeaderStatus = progress
+    ? { ...progress, tone: message.tone }
+    : {
+        summary: headerStatusText(runtimeStatus, message, transfers.engineRunning),
+        label: `${message.title}. ${message.detail}`,
+        percent: null,
+        tone: message.tone,
+      };
 
   // The same actions show in both views so the header never shifts.
   const actions = (
     <>
-      <span class="pill icon-pill account-kind-pill">
-        {accountKindIcon} {accountKindLabel}
-      </span>
       <button
         type="button"
         class={isSyncView ? "ghost header-icon-btn" : "ghost header-icon-btn is-active"}
@@ -118,6 +135,7 @@ const AccountDetailHeader = memo(function AccountDetailHeader({
   return (
     <PageHeader
       title={account.displayName}
+      titleIcon={accountKindIcon}
       back={
         isSyncView
           ? { href: "#/accounts", label: "Back to accounts", onBack }
@@ -128,6 +146,7 @@ const AccountDetailHeader = memo(function AccountDetailHeader({
             }
       }
       actions={actions}
+      status={status}
     />
   );
 });

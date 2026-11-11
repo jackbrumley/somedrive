@@ -209,14 +209,13 @@
   justify-content: flex-end;
 }
 
-/* Identical copies | Large files: one list on screen at a time. */
+/* Identical copies | Large files: one list on screen at a time. Two plain
+   options; only the selected one gets a pill. It scrolls with the list. */
 .cleanup-switch {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--line-soft);
-  border-radius: 999px;
-  background: var(--bg-elevated);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
 }
 
 .cleanup-switch-option {
@@ -292,15 +291,6 @@
 .cleanup-confirm-word {
   overflow-wrap: anywhere;
   color: var(--text-main);
-}
-
-/* The list switch stays in view while the list scrolls under it. The
-   negative top covers the scroll area's own top padding. */
-.cleanup-bar {
-  position: sticky;
-  top: -4px;
-  z-index: 1;
-  box-shadow: 0 6px 10px -6px rgba(0, 0, 0, 0.45);
 }
 
 .cleanup-confirm-prompt {

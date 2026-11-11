@@ -182,27 +182,6 @@
   font-weight: 500;
 }
 
-.sync-state-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--success);
-  color: var(--brand-on-color);
-}
-
-.sync-state-btn:hover {
-  background: var(--success-strong);
-}
-
-.sync-state-btn:disabled {
-  background: var(--control-muted-bg);
-  color: var(--text-faint);
-}
-
 .account-sync-nav-btn {
   width: 56px;
   height: 56px;
@@ -261,4 +240,10 @@
 
 .sync-stopped-icon {
   color: var(--danger);
+}
+
+/* The account's kind, as an icon before its name in the page header. */
+.account-kind-icon {
+  display: inline-flex;
+  cursor: default;
 }

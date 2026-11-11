@@ -13,7 +13,7 @@ const MIN_VISIBLE_ROWS = 4;
 /** Finished rows shown at most (the engine sends the last 10 minutes). */
 const FINISHED_LIMIT = 200;
 
-type ActivityTab = "activity" | "problems" | "notSynced" | "cleanup" | "details";
+type ActivityTab = "summary" | "activity" | "problems" | "notSynced" | "cleanup" | "details";
 
 /** What a feed row is: still running, or how it finished. */
 type RowKind = "running" | "done" | "deleted" | "failed";
@@ -34,6 +34,10 @@ interface ActivityRow {
 
 interface AccountSyncActivityListProps {
   runtimeStatus: SyncRuntimeAccountStatus | null;
+  /** The plain-language overview with the full progress bars. */
+  summary: ComponentChildren;
+  /** Transfers are moving: the page opens on Activity, otherwise Summary. */
+  transfersMoving: boolean;
   problemCount: number;
   problems: ComponentChildren;
   notSyncedCount: number;
@@ -213,6 +217,8 @@ function TabButton({
 
 export function AccountSyncActivityList({
   runtimeStatus,
+  summary,
+  transfersMoving,
   problemCount,
   problems,
   notSyncedCount,
@@ -220,7 +226,8 @@ export function AccountSyncActivityList({
   cleanup,
   onOpenItemFolder,
 }: AccountSyncActivityListProps) {
-  const [tab, setTab] = useState<ActivityTab>("activity");
+  // Chosen once, when the page opens; it never switches under the user.
+  const [tab, setTab] = useState<ActivityTab>(() => (transfersMoving ? "activity" : "summary"));
   const listBodyRef = useRef<HTMLDivElement>(null);
   const listBodyHeight = useElementHeight(listBodyRef);
   const rows = runtimeStatus ? feedRows(runtimeStatus) : [];
@@ -233,6 +240,9 @@ export function AccountSyncActivityList({
   return (
     <section class="sync-activity">
       <div class="sync-activity-tabs" role="tablist" aria-label="Sync activity and details">
+        <TabButton tab="summary" current={tab} onSelect={setTab} title="Where this account's sync is up to">
+          Summary
+        </TabButton>
         <TabButton tab="activity" current={tab} onSelect={setTab} title="What SomeDrive is doing and did in the last 10 minutes">
           Activity{runningCount > 0 && <span class="sync-activity-count">{runningCount}</span>}
         </TabButton>
@@ -261,7 +271,9 @@ export function AccountSyncActivityList({
         </TabButton>
       </div>
       <div class="sync-activity-body" ref={listBodyRef}>
-        {tab === "problems" ? (
+        {tab === "summary" ? (
+          <div class="sync-tab-scroll">{summary}</div>
+        ) : tab === "problems" ? (
           <div class="sync-tab-scroll">{problems}</div>
         ) : tab === "notSynced" ? (
           <div class="sync-tab-scroll">{notSynced}</div>
