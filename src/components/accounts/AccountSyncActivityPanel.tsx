@@ -6,7 +6,7 @@ import { AccountSyncProblems } from "./AccountSyncProblems";
 import { useTransferRates } from "../../hooks/useTransferRates";
 import { AccountSyncActivityList } from "./AccountSyncActivityList";
 import { AccountSyncIssues } from "./AccountSyncIssues";
-import { AccountSyncOverview } from "./AccountSyncOverview";
+import { AccountSyncOverview, CLOUD_LOCKED_ISSUE_CODE } from "./AccountSyncOverview";
 import { accountTransfers } from "./transferProgress";
 
 interface AccountSyncActivityPanelProps {
@@ -69,12 +69,16 @@ export function AccountSyncActivityPanel({
   const resolve = (paths: string[], resolution: ConflictResolution) =>
     onResolveSyncConflicts(accountId, paths, resolution);
   const openConflictCount = problems.filter((problem) => problem.isConflict && problem.resolution === null).length;
+  const cloudLockedPaths = problems
+    .filter((problem) => problem.code === CLOUD_LOCKED_ISSUE_CODE)
+    .map((problem) => problem.path);
   const overview = (
     <AccountSyncOverview
       runtimeStatus={runtimeStatus}
       hasCompletedInitialSync={hasCompletedInitialSync}
       transfers={transfers}
       openConflictCount={openConflictCount}
+      cloudLockedPaths={cloudLockedPaths}
     />
   );
   const showTabs = runtimeStatus?.authReady !== false;

@@ -122,6 +122,19 @@ const previewSyncProblems: SyncProblem[] = [
     retryId: null,
   },
   {
+    path: "Work/MCP Connections.xlsx",
+    code: "cloud_locked",
+    detail:
+      "Deleted on this device, but OneDrive won't delete it because it is open in an Office app or checked out. Close it there; SomeDrive tries again every 5 minutes.",
+    isConflict: false,
+    resolution: null,
+    localSize: null,
+    localModifiedAt: null,
+    cloudSize: 10_490,
+    cloudModifiedAt: "2026-11-12T00:34:00+11:00",
+    retryId: null,
+  },
+  {
     path: "Notes/meeting: plan.txt",
     code: "name_invalid",
     detail: "The name contains a character OneDrive does not allow (\" * : < > ? \\ |).",

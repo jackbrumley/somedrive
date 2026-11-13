@@ -11,9 +11,9 @@ pub(crate) const ISSUE_CLOUD_LOCKED: &str = "cloud_locked";
 /// How long a locked item waits before SomeDrive tries the delete again.
 pub(crate) const CLOUD_LOCKED_RETRY_DELAY: Duration = Duration::from_secs(5 * 60);
 
-const CLOUD_LOCKED_DETAIL: &str = "OneDrive has this file locked, usually because it is open in \
-     an Office app or checked out. SomeDrive deletes it from OneDrive once it is unlocked, \
-     trying again every 5 minutes.";
+const CLOUD_LOCKED_DETAIL: &str = "Deleted on this device, but OneDrive won't delete it \
+     because it is open in an Office app or checked out. Close it there; SomeDrive tries \
+     again every 5 minutes.";
 
 /// Holds `path` as locked in OneDrive until `now` plus the retry delay.
 pub(crate) fn hold_cloud_locked_item(profile_id: &str, path: &str, now: i64) -> Result<(), String> {

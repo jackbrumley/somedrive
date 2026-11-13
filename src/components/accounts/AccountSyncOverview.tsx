@@ -7,11 +7,12 @@ import {
   IconCloudDownload,
   IconHourglassHigh,
   IconInfoCircle,
+  IconLock,
   IconRadar,
 } from "@tabler/icons-preact";
 import type { SyncRuntimeAccountStatus } from "../../types/somedrive";
 import { syncModeMessage, type SyncModeTone } from "./syncModeMessaging";
-import { formatBytes, formatTransferRate, percentOf } from "./syncFormatting";
+import { formatBytes, formatTransferRate, percentOf, splitSyncPath } from "./syncFormatting";
 import type { AccountTransfers, TransferProgress } from "./transferProgress";
 
 interface AccountSyncOverviewProps {
@@ -19,6 +20,22 @@ interface AccountSyncOverviewProps {
   hasCompletedInitialSync: boolean;
   transfers: AccountTransfers;
   openConflictCount: number;
+  /** Files OneDrive would not delete because they are open or checked out. */
+  cloudLockedPaths: string[];
+}
+
+/** Mirrors `sync_engine::ISSUE_CLOUD_LOCKED`. */
+export const CLOUD_LOCKED_ISSUE_CODE = "cloud_locked";
+
+/** Names the locked file, or counts them when there are several. */
+function cloudLockedNote(paths: string[]): string {
+  const reason = "open in an Office app or checked out in OneDrive";
+  if (paths.length === 1) {
+    const { name, folder } = splitSyncPath(paths[0]);
+    const where = folder ? ` (in ${folder})` : "";
+    return `${name}${where} can't be deleted from OneDrive because it is ${reason}. Close it there; SomeDrive tries again every 5 minutes. Everything else keeps syncing.`;
+  }
+  return `${paths.length.toLocaleString()} files can't be deleted from OneDrive because they are ${reason}. They are listed in Sync problems. Everything else keeps syncing.`;
 }
 
 const TONE_ICONS: Record<SyncModeTone, typeof IconInfoCircle> = {
@@ -63,6 +80,7 @@ export function AccountSyncOverview({
   hasCompletedInitialSync,
   transfers,
   openConflictCount,
+  cloudLockedPaths,
 }: AccountSyncOverviewProps) {
   const message = syncModeMessage(runtimeStatus, hasCompletedInitialSync);
   const ToneIcon = TONE_ICONS[message.tone];
@@ -104,7 +122,7 @@ export function AccountSyncOverview({
         </div>
       )}
 
-      {(showStepLine || notWatched || throttledRecently || retryWaiting > 0 || openConflictCount > 0) && (
+      {(showStepLine || notWatched || throttledRecently || retryWaiting > 0 || openConflictCount > 0 || cloudLockedPaths.length > 0) && (
         <ul class="sync-overview-notes">
           {openConflictCount > 0 && (
             <li class="sync-overview-note-attention">
@@ -113,6 +131,12 @@ export function AccountSyncOverview({
                 {openConflictCount.toLocaleString()} file{openConflictCount === 1 ? " needs" : "s need"} your decision in
                 Sync problems. Nothing has been changed or duplicated.
               </span>
+            </li>
+          )}
+          {cloudLockedPaths.length > 0 && (
+            <li class="sync-overview-note-attention">
+              <IconLock size={15} />
+              <span>{cloudLockedNote(cloudLockedPaths)}</span>
             </li>
           )}
           {showStepLine && (
