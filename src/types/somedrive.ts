@@ -39,6 +39,27 @@ export interface RenameAccountProfileInput {
   displayName: string;
 }
 
+export interface RemoveAccountProfileInput {
+  id: string;
+  /** Also move the account's local sync folder to the Trash. */
+  moveLocalFolderToTrash: boolean;
+}
+
+/** What the remove-account dialog shows before the user confirms. */
+export interface AccountRemovalPreview {
+  syncRoot: string;
+  /** Files queued for upload that have not reached OneDrive. */
+  unuploadedFiles: number;
+  /** Why the local folder cannot go to the Trash; null when it can. */
+  localFolderBlockedReason: string | null;
+}
+
+/** What removal did; `warnings` lists clean-up steps after it that failed. */
+export interface AccountRemovalOutcome {
+  localFolderTrashed: boolean;
+  warnings: string[];
+}
+
 export interface SetAccountAgentStateInput {
   id: string;
   agentState: SyncAgentState;

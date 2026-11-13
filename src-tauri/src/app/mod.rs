@@ -1,4 +1,5 @@
 pub mod account_profiles;
+pub mod account_removal;
 pub mod activity_log;
 pub mod app_settings;
 pub mod auth;

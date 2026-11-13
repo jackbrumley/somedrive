@@ -74,10 +74,22 @@ impl SyncShutdownReason {
 pub(crate) static SYNC_SHUTDOWN_PHASE: std::sync::Mutex<SyncShutdownPhase> =
     std::sync::Mutex::new(SyncShutdownPhase::Running);
 
-/// Download worker tasks still alive across all accounts. They outlive their
-/// cycle briefly after a cancel (removing temp files, requeueing their job), so
-/// shutdown waits for them as well as for the sync workers.
-pub(crate) static ACTIVE_DOWNLOAD_WORKER_TASKS: AtomicUsize = AtomicUsize::new(0);
+/// Download worker tasks still alive, per account. They outlive their cycle
+/// briefly after a cancel (removing temp files, requeueing their job), so
+/// shutdown and account removal wait for them as well as for the sync workers.
+static ACTIVE_DOWNLOAD_WORKER_TASKS: std::sync::LazyLock<std::sync::Mutex<HashMap<String, usize>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
+/// Download worker tasks still alive: for one account, or across all of them.
+pub(crate) fn active_download_worker_tasks(profile_id: Option<&str>) -> usize {
+    let Ok(tasks) = ACTIVE_DOWNLOAD_WORKER_TASKS.lock() else {
+        return 0;
+    };
+    match profile_id {
+        Some(profile_id) => tasks.get(profile_id).copied().unwrap_or(0),
+        None => tasks.values().sum(),
+    }
+}
 
 pub(crate) const SYNC_SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
@@ -111,19 +123,33 @@ pub(crate) fn ensure_accepting_new_transfers() -> Result<(), String> {
     }
 }
 
-/// Counts a download worker task from before it is spawned until it exits.
-pub(crate) struct DownloadWorkerTaskGuard;
+/// Counts an account's download worker task from before it is spawned until
+/// it exits.
+pub(crate) struct DownloadWorkerTaskGuard {
+    profile_id: String,
+}
 
 impl DownloadWorkerTaskGuard {
-    pub(crate) fn register() -> Self {
-        ACTIVE_DOWNLOAD_WORKER_TASKS.fetch_add(1, Ordering::SeqCst);
-        Self
+    pub(crate) fn register(profile_id: &str) -> Self {
+        if let Ok(mut tasks) = ACTIVE_DOWNLOAD_WORKER_TASKS.lock() {
+            *tasks.entry(profile_id.to_string()).or_default() += 1;
+        }
+        Self {
+            profile_id: profile_id.to_string(),
+        }
     }
 }
 
 impl Drop for DownloadWorkerTaskGuard {
     fn drop(&mut self) {
-        ACTIVE_DOWNLOAD_WORKER_TASKS.fetch_sub(1, Ordering::SeqCst);
+        if let Ok(mut tasks) = ACTIVE_DOWNLOAD_WORKER_TASKS.lock() {
+            if let Some(count) = tasks.get_mut(&self.profile_id) {
+                *count = count.saturating_sub(1);
+                if *count == 0 {
+                    tasks.remove(&self.profile_id);
+                }
+            }
+        }
     }
 }
 
@@ -279,11 +305,11 @@ pub(crate) async fn wait_for_sync_workers_to_exit(
         }
     }
 
-    while ACTIVE_DOWNLOAD_WORKER_TASKS.load(Ordering::SeqCst) > 0 {
+    while active_download_worker_tasks(None) > 0 {
         if tokio::time::Instant::now() >= deadline {
             log::error!(
                 "SYNC_SHUTDOWN_DOWNLOAD_WORKERS_STOP_TIMEOUT active_tasks={}",
-                ACTIVE_DOWNLOAD_WORKER_TASKS.load(Ordering::SeqCst)
+                active_download_worker_tasks(None)
             );
             return Err(format!(
                 "Downloads did not stop within {} seconds. Try again in a moment.",
@@ -357,14 +383,14 @@ mod sync_shutdown_tests {
         );
         assert!(begin_sync_shutdown(SyncShutdownReason::Exit).is_err());
 
-        let before = ACTIVE_DOWNLOAD_WORKER_TASKS.load(Ordering::SeqCst);
-        let guard = DownloadWorkerTaskGuard::register();
-        assert_eq!(
-            ACTIVE_DOWNLOAD_WORKER_TASKS.load(Ordering::SeqCst),
-            before + 1
-        );
+        let account = "shutdown-test-account";
+        let before = active_download_worker_tasks(None);
+        let guard = DownloadWorkerTaskGuard::register(account);
+        assert_eq!(active_download_worker_tasks(Some(account)), 1);
+        assert_eq!(active_download_worker_tasks(None), before + 1);
         drop(guard);
-        assert_eq!(ACTIVE_DOWNLOAD_WORKER_TASKS.load(Ordering::SeqCst), before);
+        assert_eq!(active_download_worker_tasks(Some(account)), 0);
+        assert_eq!(active_download_worker_tasks(None), before);
 
         set_sync_shutdown_phase(SyncShutdownPhase::Stopped);
         assert!(tauri::async_runtime::block_on(wait_for_sync_stopped(

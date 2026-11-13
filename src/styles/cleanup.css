@@ -39,9 +39,7 @@
   color: var(--text-main);
 }
 
-.cleanup-kept,
-.cleanup-confirm-safe,
-.cleanup-confirm-warning {
+.cleanup-kept {
   display: flex;
   align-items: flex-start;
   gap: 6px;
@@ -50,21 +48,10 @@
   color: var(--sync-tone-success-detail);
 }
 
-.cleanup-kept svg,
-.cleanup-confirm-safe svg {
+.cleanup-kept svg {
   flex: none;
   margin-top: 1px;
   color: var(--sync-tone-success-text);
-}
-
-.cleanup-confirm-warning {
-  color: var(--sync-tone-warning-detail);
-}
-
-.cleanup-confirm-warning svg {
-  flex: none;
-  margin-top: 1px;
-  color: var(--sync-tone-warning-text);
 }
 
 .cleanup-pairs {
@@ -163,52 +150,6 @@
   color: var(--text-muted);
 }
 
-.cleanup-confirm {
-  display: grid;
-  gap: var(--space-3);
-}
-
-.cleanup-confirm-summary {
-  display: grid;
-  gap: var(--space-2);
-  font-size: 0.875rem;
-  overflow-wrap: anywhere;
-}
-
-.cleanup-confirm-summary p {
-  margin: 0;
-}
-
-.cleanup-confirm-label {
-  display: grid;
-  gap: 6px;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-.cleanup-confirm-busy {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--sync-tone-info-text);
-}
-
-.cleanup-confirm-error {
-  margin: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--sync-tone-warning-border);
-  border-radius: 8px;
-  background: var(--sync-tone-warning-bg);
-  font-size: 0.85rem;
-  color: var(--sync-tone-warning-text);
-}
-
-.cleanup-confirm-actions {
-  justify-content: flex-end;
-}
-
 /* Identical copies | Large files: one list on screen at a time. Two plain
    options; only the selected one gets a pill. It scrolls with the list. */
 .cleanup-switch {
@@ -288,30 +229,3 @@
   border-color: var(--danger-border);
 }
 
-.cleanup-confirm-word {
-  overflow-wrap: anywhere;
-  color: var(--text-main);
-}
-
-.cleanup-confirm-prompt {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-}
-
-/* A bare icon, as in Voquill: no button chrome until hovered. */
-.cleanup-confirm-copy {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-}
-
-.cleanup-confirm-copy:hover:not(:disabled) {
-  background: var(--control-muted-bg-hover);
-  color: var(--text-main);
-}

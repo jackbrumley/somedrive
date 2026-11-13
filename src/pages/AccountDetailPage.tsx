@@ -35,7 +35,7 @@ interface AccountDetailPageProps {
   onRename: (id: string, name: string) => Promise<void>;
   onSetSyncRoot: (id: string, path: string) => Promise<void>;
   onClearAuth: (id: string) => Promise<void>;
-  onRemoveProfile: (id: string) => Promise<void>;
+  onRemoveProfile: (id: string, moveLocalFolderToTrash: boolean) => Promise<void>;
   onOpenSyncRootFolder: (accountId: string) => Promise<void>;
   onOpenItemFolder: (accountId: string, relativePath: string) => Promise<void>;
   onReauthenticate: (accountId: string) => Promise<unknown>;
@@ -210,7 +210,10 @@ export function AccountDetailPage({
           onRename={onRename}
           onSetSyncRoot={onSetSyncRoot}
           onClearAuth={onClearAuth}
-          onRemoveProfile={onRemoveProfile}
+          onRemoveProfile={async (id, moveLocalFolderToTrash) => {
+            await onRemoveProfile(id, moveLocalFolderToTrash);
+            onBack();
+          }}
           onOpenSyncRootFolder={onOpenSyncRootFolder}
           onOpenItemFolder={onOpenItemFolder}
           onReauthenticate={onReauthenticate}

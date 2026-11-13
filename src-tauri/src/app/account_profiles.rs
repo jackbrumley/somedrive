@@ -39,12 +39,6 @@ pub struct RenameAccountProfileInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RemoveAccountProfileInput {
-    pub id: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SetAccountAgentStateInput {
     pub id: String,
     pub agent_state: String,
@@ -164,10 +158,10 @@ pub fn rename_profile(input: RenameAccountProfileInput) -> Result<AccountProfile
     Ok(updated)
 }
 
-pub fn remove_profile(input: RemoveAccountProfileInput) -> Result<(), String> {
+pub fn remove_profile(profile_id: &str) -> Result<(), String> {
     let mut profiles = load_profiles()?;
     let initial_len = profiles.len();
-    profiles.retain(|profile| profile.id != input.id);
+    profiles.retain(|profile| profile.id != profile_id);
     if profiles.len() == initial_len {
         return Err("Account profile not found".to_string());
     }

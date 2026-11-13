@@ -17,7 +17,7 @@ interface AccountDetailUnifiedPanelProps {
   onRename: (id: string, name: string) => Promise<void>;
   onSetSyncRoot: (id: string, path: string) => Promise<void>;
   onClearAuth: (id: string) => Promise<void>;
-  onRemoveProfile: (id: string) => Promise<void>;
+  onRemoveProfile: (id: string, moveLocalFolderToTrash: boolean) => Promise<void>;
   onOpenSyncRootFolder: (accountId: string) => Promise<void>;
   onOpenItemFolder: (accountId: string, relativePath: string) => Promise<void>;
   onReauthenticate: (accountId: string) => Promise<unknown>;
@@ -104,6 +104,8 @@ export function AccountDetailUnifiedPanel({
   return (
     <AccountSettingsPanel
       account={account}
+      activityRevision={runtimeStatus?.dataRevisions.activity}
+      onCopyText={cleanupActions.copyText}
       onStartAuth={onStartAuth}
       onRename={onRename}
       onSetSyncRoot={onSetSyncRoot}

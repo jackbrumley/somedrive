@@ -212,7 +212,7 @@ export function DuplicateDeleteSummary({ suggestion }: { suggestion: DuplicateSu
         This deletes <strong>{what}</strong>: {plural(suggestion.fileCount, "file")}, {formatBytes(suggestion.bytes)}.
         {suggestion.kind === "partial" && ` The ${plural(differing, "file")} that differ stay.`}
       </p>
-      <p class="cleanup-confirm-safe">
+      <p class="confirm-dialog-safe">
         <IconShieldCheck size={16} />
         <span>
           Every one of these files has an identical copy that stays, in{" "}
@@ -234,7 +234,7 @@ export function LargeFileDeleteSummary({ file }: { file: LargeFile }) {
       <p>
         This deletes <strong>{file.path}</strong> ({formatBytes(file.size)}).
       </p>
-      <p class="cleanup-confirm-warning">
+      <p class="confirm-dialog-warning">
         <IconAlertTriangle size={16} />
         <span>This is the only copy of this file in your OneDrive. There is no other copy to fall back on.</span>
       </p>

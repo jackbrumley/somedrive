@@ -212,6 +212,42 @@ const CONNECTION_POOL_CAPACITY_PER_ACCOUNT: usize = 8;
 static CONNECTION_POOL: std::sync::LazyLock<std::sync::Mutex<HashMap<String, Vec<Connection>>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
+/// Accounts removed while SomeDrive runs. Their database is closed for good:
+/// no connection to it is opened or pooled again, so a task that outlived the
+/// account's sync worker cannot recreate the file after removal deleted it.
+static RETIRED_ACCOUNTS: std::sync::LazyLock<std::sync::Mutex<HashSet<String>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashSet::new()));
+
+fn is_retired_account(profile_id: &str) -> bool {
+    RETIRED_ACCOUNTS
+        .lock()
+        .map(|retired| retired.contains(profile_id))
+        .unwrap_or(true)
+}
+
+/// Closes an account's database for good before its files are deleted: no
+/// new connection opens, idle pooled connections close, and connections on
+/// loan are dropped instead of returning to the pool.
+pub(crate) fn retire_sync_database(profile_id: &str) -> Result<(), String> {
+    RETIRED_ACCOUNTS
+        .lock()
+        .map_err(|_| "Retired account lock is poisoned".to_string())?
+        .insert(profile_id.to_string());
+    CONNECTION_POOL
+        .lock()
+        .map_err(|_| "Sync database pool lock is poisoned".to_string())?
+        .remove(profile_id);
+    SYNC_SCHEMA_READY
+        .lock()
+        .map_err(|_| "Sync schema lock is poisoned".to_string())?
+        .remove(profile_id);
+    log::info!(
+        "{} SYNC_DATABASE_RETIRED",
+        log_context::account_prefix(profile_id)
+    );
+    Ok(())
+}
+
 /// A connection on loan from the account's pool; it goes back on drop.
 pub(crate) struct PooledConnection {
     profile_id: String,
@@ -241,7 +277,7 @@ impl Drop for PooledConnection {
             return;
         };
         // A connection still inside a transaction is never reused.
-        if !connection.is_autocommit() {
+        if !connection.is_autocommit() || is_retired_account(&self.profile_id) {
             return;
         }
         if let Ok(mut pool) = CONNECTION_POOL.lock() {
@@ -263,6 +299,9 @@ pub(crate) fn idle_pooled_connections(profile_id: &str) -> usize {
 }
 
 pub(crate) fn open_sync_jobs_connection(profile_id: &str) -> Result<PooledConnection, String> {
+    if is_retired_account(profile_id) {
+        return Err("This account was removed from SomeDrive".to_string());
+    }
     let pooled = CONNECTION_POOL
         .lock()
         .map_err(|_| "Sync database pool lock is poisoned".to_string())?

@@ -70,7 +70,7 @@ progress); the watcher is what guarantees nothing is missed when it doesn't.
 | :--- | :--- |
 | `backendReads.ts` | Every backend read the window makes |
 | `useAppData.ts` | Live account status (`sync-status`, numbered; a gap rereads the snapshot), the account list and settings (reread on `app-data-changed`), system info |
-| `accountAreas.ts` | Per-account lists: Sync problems and Not synced, Clean up (only while its tab is open), the large-delete review (only while deletes are held). Each is reread when its counter moves |
+| `accountAreas.ts` | Per-account lists: Sync problems and Not synced, Clean up (only while its tab is open), the large-delete review (only while deletes are held), the remove-account folder check (only while its dialog is open). Each is reread when its counter moves |
 | `useRevisionedRead.ts`, `coalesce.ts` | One read at a time: a change during a read runs it once more afterwards |
 
 Screens read from the store and send actions (delete, pause, save a setting).

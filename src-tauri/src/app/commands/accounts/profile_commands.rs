@@ -56,33 +56,6 @@ pub fn rename_account_profile(
     Ok(profile)
 }
 
-#[tauri::command]
-pub fn remove_account_profile(
-    state: tauri::State<'_, AppState>,
-    input: RemoveAccountProfileInput,
-) -> Result<(), String> {
-    let _guard = state
-        .profiles_lock
-        .lock()
-        .map_err(|_| "Account profile lock is poisoned".to_string())?;
-    let profile_id = input.id.clone();
-    remove_profile(input)?;
-    sync_engine::on_agent_state_changed(&state, &profile_id, "idle")?;
-    if let Ok(mut runtime_map) = state.sync_runtime.lock() {
-        sync_runtime::remove_account(&mut runtime_map, &profile_id);
-    }
-    let _ = activity_log::append_event(
-        &profile_id,
-        &profile_id,
-        "warning",
-        &format!(
-            "{} Account profile removed",
-            log_context::account_prefix(&profile_id)
-        ),
-    );
-    Ok(())
-}
-
 /// Async so it runs off the UI thread: pausing writes to the sync database,
 /// which can wait on the engine's write lock, and a synchronous command
 /// would freeze the window meanwhile.

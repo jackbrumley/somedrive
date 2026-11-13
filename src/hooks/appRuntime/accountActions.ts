@@ -1,10 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import type {
+  AccountRemovalOutcome,
   ConflictResolution,
   AccountKind,
   AccountProfile,
   CreateAccountProfileInput,
+  RemoveAccountProfileInput,
   RenameAccountProfileInput,
   SetAccountAgentStateInput,
   SetAccountSyncRootInput,
@@ -57,12 +59,18 @@ export function createAccountActions({ showToast, openAccountWhenListed }: Accou
     }
   };
 
-  const removeAccountProfile = async (id: string) => {
-    try {
-      await invoke("remove_account_profile", { input: { id } });
-      showToast("Account removed. Synced files were not deleted.", "info");
-    } catch (error) {
-      showToast(`Failed to remove account: ${error}`, "error");
+  /** Rejects with the reason when the account was not removed (the dialog shows it). */
+  const removeAccountProfile = async (id: string, moveLocalFolderToTrash: boolean) => {
+    const input: RemoveAccountProfileInput = { id, moveLocalFolderToTrash };
+    const outcome = await invoke<AccountRemovalOutcome>("remove_account_profile", { input });
+    showToast(
+      outcome.localFolderTrashed
+        ? "Account removed. Its sync folder is in the Trash; your files in OneDrive are kept."
+        : "Account removed. Its sync folder and your files in OneDrive are kept.",
+      "info"
+    );
+    for (const warning of outcome.warnings) {
+      showToast(`Account removed, but: ${warning}`, "error");
     }
   };
 

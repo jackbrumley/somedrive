@@ -20,6 +20,7 @@ pub(crate) use std::sync::Arc;
 pub(crate) use std::time::Duration;
 pub(crate) use tokio::sync::mpsc;
 
+mod account_sync_stop;
 mod approved_deletes_store;
 mod cleanup_delete;
 mod cleanup_finder;
@@ -103,6 +104,7 @@ mod upload_lane;
 mod upload_session;
 mod worker_lifecycle;
 
+pub use account_sync_stop::*;
 pub(crate) use approved_deletes_store::*;
 pub use cleanup_delete::*;
 pub use cleanup_finder::*;

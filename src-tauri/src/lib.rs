@@ -48,6 +48,7 @@ pub fn run(launch: LaunchOptions) {
             create_account_profile,
             rename_account_profile,
             remove_account_profile,
+            get_account_removal_preview,
             set_account_agent_state,
             confirm_account_large_delete,
             keep_cloud_files_after_large_delete,

@@ -141,6 +141,10 @@ const previewAccountAreas: AccountAreaSource = {
   useSyncProblems: () => ({ data: { problems: previewSyncProblems, notSynced: previewNotSynced }, error: null }),
   useCleanup: () => ({ data: previewCleanupView, error: null }),
   useLargeDeletePreview: () => ({ data: [], error: null }),
+  useRemovalPreview: () => ({
+    data: { syncRoot: "/home/user/SomeDrive/preview", unuploadedFiles: 0, localFolderBlockedReason: null },
+    error: null,
+  }),
 };
 
 const previewNotSynced: NotSyncedItem[] = [

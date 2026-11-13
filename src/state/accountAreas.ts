@@ -1,7 +1,7 @@
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
-import type { CleanupView, SyncProblemsView } from "../types/somedrive";
-import { readCleanup, readLargeDeletePreview, readSyncProblems } from "./backendReads";
+import type { AccountRemovalPreview, CleanupView, SyncProblemsView } from "../types/somedrive";
+import { readAccountRemovalPreview, readCleanup, readLargeDeletePreview, readSyncProblems } from "./backendReads";
 import { useRevisionedRead, type AreaState } from "./useRevisionedRead";
 
 /**
@@ -16,6 +16,12 @@ export interface AccountAreaSource {
   useCleanup: (accountId: string, revision: number | undefined) => AreaState<CleanupView>;
   /** Read only while deletes are held for review. */
   useLargeDeletePreview: (accountId: string, revision: number | undefined, held: boolean) => AreaState<string[]>;
+  /** Read only while the remove-account dialog is open; `revision` is the activity counter. */
+  useRemovalPreview: (
+    accountId: string,
+    revision: number | undefined,
+    dialogOpen: boolean
+  ) => AreaState<AccountRemovalPreview>;
 }
 
 export const backendAccountAreas: AccountAreaSource = {
@@ -23,6 +29,8 @@ export const backendAccountAreas: AccountAreaSource = {
   useCleanup: (accountId, revision) => useRevisionedRead(accountId, revision, readCleanup),
   useLargeDeletePreview: (accountId, revision, held) =>
     useRevisionedRead(accountId, revision, readLargeDeletePreview, held),
+  useRemovalPreview: (accountId, revision, dialogOpen) =>
+    useRevisionedRead(accountId, revision, readAccountRemovalPreview, dialogOpen),
 };
 
 export const AccountAreasContext = createContext<AccountAreaSource>(backendAccountAreas);

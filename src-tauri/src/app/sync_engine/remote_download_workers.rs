@@ -16,7 +16,7 @@ pub(crate) fn spawn_remote_download_workers(
         let worker_result_tx = download_result_tx.clone();
         let active_worker_count = Arc::clone(&active_download_workers);
         let worker_pending_download_count = Arc::clone(&pending_download_count);
-        let task_guard = DownloadWorkerTaskGuard::register();
+        let task_guard = DownloadWorkerTaskGuard::register(&graph.profile_id);
         tauri::async_runtime::spawn(async move {
             let _task_guard = task_guard;
             active_worker_count.fetch_add(1, Ordering::Relaxed);

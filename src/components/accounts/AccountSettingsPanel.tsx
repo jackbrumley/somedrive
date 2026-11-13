@@ -2,15 +2,23 @@ import { IconFolderOpen, IconLogin2, IconLogout, IconTrash } from "@tabler/icons
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "preact/hooks";
 import type { AccountProfile } from "../../types/somedrive";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { SettingRow } from "../ui/SettingRow";
+import { RemoveAccountDialog } from "./RemoveAccountDialog";
+
+/** The confirmation on screen, if any. */
+type PendingConfirm = { kind: "signOut" } | { kind: "remove" } | { kind: "oneDriveFolder"; path: string };
 
 interface AccountSettingsPanelProps {
   account: AccountProfile;
+  /** The account's activity change counter, for the remove dialog's folder check. */
+  activityRevision: number | undefined;
+  onCopyText: (text: string) => Promise<boolean>;
   onStartAuth: (accountId: string) => Promise<unknown>;
   onRename: (id: string, name: string) => Promise<void>;
   onSetSyncRoot: (id: string, path: string) => Promise<void>;
   onClearAuth: (id: string) => Promise<void>;
-  onRemoveProfile: (id: string) => Promise<void>;
+  onRemoveProfile: (id: string, moveLocalFolderToTrash: boolean) => Promise<void>;
   onOpenSyncRootFolder: (accountId: string) => Promise<void>;
 }
 
@@ -21,6 +29,8 @@ function formatLastSync(lastSyncAt: string | null | undefined): string {
 /** Account configuration: name, sync folder, Microsoft sign-in and removal. */
 export function AccountSettingsPanel({
   account,
+  activityRevision,
+  onCopyText,
   onStartAuth,
   onRename,
   onSetSyncRoot,
@@ -29,6 +39,7 @@ export function AccountSettingsPanel({
   onOpenSyncRootFolder,
 }: AccountSettingsPanelProps) {
   const [draftName, setDraftName] = useState(account.displayName);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const trimmedDraftName = draftName.trim();
   const nameChanged = trimmedDraftName !== "" && trimmedDraftName !== account.displayName;
   const accountKindLabel = account.kind === "business" ? "Work or school account" : "Personal account";
@@ -47,32 +58,10 @@ export function AccountSettingsPanel({
       return;
     }
     if (/\/OneDrive$/i.test(selected.replace(/\/+$/, ""))) {
-      const confirmed = window.confirm(
-        "This looks like the default folder used by other OneDrive apps. It is safer to use a SomeDrive folder to avoid conflicts. Continue anyway?"
-      );
-      if (!confirmed) {
-        return;
-      }
+      setPendingConfirm({ kind: "oneDriveFolder", path: selected });
+      return;
     }
     await onSetSyncRoot(account.id, selected);
-  };
-
-  const signOut = () => {
-    const confirmed = window.confirm(
-      `Sign ${account.email || account.displayName} out of SomeDrive? Syncing stops until you sign in again. Files on this device are kept.`
-    );
-    if (confirmed) {
-      void onClearAuth(account.id);
-    }
-  };
-
-  const removeAccount = () => {
-    const confirmed = window.confirm(
-      `Remove ${account.displayName} from SomeDrive? Syncing stops and the account is forgotten. Files in ${account.syncRoot} and in OneDrive are not deleted.`
-    );
-    if (confirmed) {
-      void onRemoveProfile(account.id);
-    }
   };
 
   return (
@@ -161,7 +150,7 @@ export function AccountSettingsPanel({
               {account.authConfigured ? "Sign in again" : "Sign in"}
             </button>
             {account.authConfigured && (
-              <button type="button" class="ghost" onClick={signOut}>
+              <button type="button" class="ghost" onClick={() => setPendingConfirm({ kind: "signOut" })}>
                 <IconLogout size={15} />
                 Sign out
               </button>
@@ -177,13 +166,51 @@ export function AccountSettingsPanel({
             label="Remove from SomeDrive"
             description="Stops syncing and forgets this account. Your files on this device and in OneDrive are kept."
           >
-            <button type="button" class="danger" onClick={removeAccount}>
+            <button type="button" class="danger" onClick={() => setPendingConfirm({ kind: "remove" })}>
               <IconTrash size={15} />
               Remove
             </button>
           </SettingRow>
         </div>
       </article>
+
+      {pendingConfirm?.kind === "signOut" && (
+        <ConfirmDialog
+          title={`Sign out ${account.email || account.displayName}?`}
+          summary={<p>Syncing stops until you sign in again. Files on this device and in OneDrive are kept.</p>}
+          confirmLabel="Sign out"
+          confirmIcon={<IconLogout size={15} />}
+          danger={false}
+          busyText="Signing out…"
+          onConfirm={() => onClearAuth(account.id)}
+          onClose={() => setPendingConfirm(null)}
+        />
+      )}
+      {pendingConfirm?.kind === "oneDriveFolder" && (
+        <ConfirmDialog
+          title="Use this folder?"
+          summary={
+            <p>
+              <strong>{pendingConfirm.path}</strong> looks like the default folder of other OneDrive apps. A
+              separate SomeDrive folder avoids conflicts between them.
+            </p>
+          }
+          confirmLabel="Use it anyway"
+          danger={false}
+          busyText="Changing the sync folder…"
+          onConfirm={() => onSetSyncRoot(account.id, pendingConfirm.path)}
+          onClose={() => setPendingConfirm(null)}
+        />
+      )}
+      {pendingConfirm?.kind === "remove" && (
+        <RemoveAccountDialog
+          account={account}
+          activityRevision={activityRevision}
+          onCopyText={onCopyText}
+          onRemove={(moveLocalFolderToTrash) => onRemoveProfile(account.id, moveLocalFolderToTrash)}
+          onClose={() => setPendingConfirm(null)}
+        />
+      )}
     </div>
   );
 }

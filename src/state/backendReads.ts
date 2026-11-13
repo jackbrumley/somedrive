@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isEnabled as isAutostartEnabled } from "@tauri-apps/plugin-autostart";
 import type {
+  AccountRemovalPreview,
   AppStatusSnapshot,
   CleanupView,
   ConflictPolicy,
@@ -73,6 +74,9 @@ export const readCleanup = (profileId: string) => invoke<CleanupView>("list_clea
 
 export const readLargeDeletePreview = (profileId: string) =>
   invoke<string[]>("get_account_large_delete_preview", { profileId });
+
+export const readAccountRemovalPreview = (profileId: string) =>
+  invoke<AccountRemovalPreview>("get_account_removal_preview", { profileId });
 
 /** The session log as text, read on demand for the Debug Tools preview. */
 export const readSessionLogText = () => invoke<string>("get_session_log_text");

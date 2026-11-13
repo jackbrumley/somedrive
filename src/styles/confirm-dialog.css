@@ -1,0 +1,102 @@
+/* ConfirmDialog (components/ui/ConfirmDialog.tsx): asks before an action,
+   with an optional typed confirm word. */
+
+.confirm-dialog-safe,
+.confirm-dialog-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--sync-tone-success-detail);
+}
+
+.confirm-dialog-safe svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--sync-tone-success-text);
+}
+
+.confirm-dialog-warning {
+  color: var(--sync-tone-warning-detail);
+}
+
+.confirm-dialog-warning svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--sync-tone-warning-text);
+}
+
+.confirm-dialog {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.confirm-dialog-summary {
+  display: grid;
+  gap: var(--space-2);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.confirm-dialog-summary p {
+  margin: 0;
+}
+
+.confirm-dialog-label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.confirm-dialog-busy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--sync-tone-info-text);
+}
+
+.confirm-dialog-error {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--sync-tone-warning-border);
+  border-radius: 8px;
+  background: var(--sync-tone-warning-bg);
+  font-size: 0.85rem;
+  color: var(--sync-tone-warning-text);
+}
+
+.confirm-dialog-actions {
+  justify-content: flex-end;
+}
+
+.confirm-dialog-word {
+  overflow-wrap: anywhere;
+  color: var(--text-main);
+}
+
+.confirm-dialog-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+/* A bare icon, as in Voquill: no button chrome until hovered. */
+.confirm-dialog-copy {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.confirm-dialog-copy:hover:not(:disabled) {
+  background: var(--control-muted-bg-hover);
+  color: var(--text-main);
+}

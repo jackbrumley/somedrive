@@ -8,7 +8,8 @@ const allowedFiles = new Set([
   path.join(appRoot, "sync_runtime.rs"),
   path.join(appRoot, "sync_engine", "lifecycle_writer.rs"),
   path.join(appRoot, "sync_engine", "runtime_and_models.rs"),
-  path.join(appRoot, "commands", "accounts", "profile_commands.rs"),
+  // Account removal drops the removed account's live status.
+  path.join(appRoot, "sync_engine", "account_sync_stop.rs"),
 ]);
 
 const forbiddenPattern = /sync_runtime::(?:set_|clear_|record_|start_transfer|update_transfer_progress|finish_transfer|remove_account)/g;

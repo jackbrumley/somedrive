@@ -8,6 +8,7 @@
 @import "./styles/sync.css";
 @import "./styles/sync-details.css";
 @import "./styles/cleanup.css";
+@import "./styles/confirm-dialog.css";
 @import "./styles/forms.css";
 @import "./styles/toast.css";
 @import "./styles/updates.css";

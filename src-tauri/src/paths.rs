@@ -123,6 +123,18 @@ pub fn debug_dir() -> Result<PathBuf, String> {
     ensure_dir(config_root()?.join("debug"))
 }
 
+/// The user's home folder. Account removal never moves it (or a folder that
+/// holds it) to the Trash.
+#[cfg(not(test))]
+pub fn home_dir() -> Result<PathBuf, String> {
+    dirs::home_dir().ok_or_else(|| "Could not resolve the home directory".to_string())
+}
+
+#[cfg(test)]
+pub fn home_dir() -> Result<PathBuf, String> {
+    Ok(test_root().join("home"))
+}
+
 /// Where new accounts sync by default: `~/SomeDrive`.
 #[cfg(not(test))]
 pub fn default_sync_roots_dir() -> Result<PathBuf, String> {

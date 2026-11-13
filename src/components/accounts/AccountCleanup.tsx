@@ -1,8 +1,8 @@
-import { IconAlertTriangle, IconEye } from "@tabler/icons-preact";
+import { IconAlertTriangle, IconEye, IconTrash } from "@tabler/icons-preact";
 import { useRef, useState } from "preact/hooks";
 import { useAccountAreas } from "../../state/accountAreas";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import type { CleanupActions, CleanupView, DuplicateSuggestion, LargeFile } from "../../types/somedrive";
-import { CleanupDeleteDialog } from "./CleanupDeleteDialog";
 import { DuplicateDeleteSummary, DuplicateSuggestionItem, LargeFileDeleteSummary, LargeFileItem } from "./CleanupItems";
 import { formatBytes, splitSyncPath } from "./syncFormatting";
 
@@ -118,11 +118,13 @@ export function AccountCleanup({ accountId, revision, actions, onOpenItemFolder 
       )}
 
       {pending?.kind === "duplicates" && (
-        <CleanupDeleteDialog
+        <ConfirmDialog
           title="Delete identical copies?"
           summary={<DuplicateDeleteSummary suggestion={pending.suggestion} />}
           confirmWord={COPIES_CONFIRM_WORD}
           confirmLabel={copiesLabel(pending.suggestion.fileCount)}
+          confirmIcon={<IconTrash size={15} />}
+          danger
           busyText="Comparing every file with its copy, then moving them to the Trash…"
           onConfirm={async () => {
             await actionsRef.current.deleteDuplicates(accountId, pending.suggestion.id);
@@ -131,12 +133,14 @@ export function AccountCleanup({ accountId, revision, actions, onOpenItemFolder 
         />
       )}
       {pending?.kind === "large" && (
-        <CleanupDeleteDialog
+        <ConfirmDialog
           title="Delete the only copy of this file?"
           summary={<LargeFileDeleteSummary file={pending.file} />}
           confirmWord={splitSyncPath(pending.file.path).name}
           onCopyConfirmWord={(word) => actionsRef.current.copyText(word)}
           confirmLabel="Delete file"
+          confirmIcon={<IconTrash size={15} />}
+          danger
           busyText="Moving the file to the Trash…"
           onConfirm={async () => {
             await actionsRef.current.deleteLargeFile(accountId, pending.file.path);
