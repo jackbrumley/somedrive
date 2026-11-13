@@ -252,6 +252,12 @@ Removing the rule brings it back under normal sync.
 - **Jobs:** any action the plan needs is re-queued from any state (B1).
   Permanent per-file failures become per-file issues with a Retry, never a
   cycle-wide error.
+- **Locked cloud items (423):** a cloud delete OneDrive refuses because the
+  item is locked (open in an Office app, checked out) holds the item as a
+  `cloud_locked` issue and the rest of the cycle continues. The item is
+  released for another try 5 minutes later
+  (`sync_engine/locked_items_store.rs`); a whole-folder delete that hits a
+  lock falls back to per-item deletes.
 - **Expired delta token (410 / `resyncRequired`):** clear the delta link and
   enumerate the drive again. Items not returned are **not** treated as
   deletes until a second enumeration confirms it (B2).

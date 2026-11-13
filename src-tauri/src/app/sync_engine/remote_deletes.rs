@@ -208,8 +208,18 @@ async fn delete_whole_folder(
         );
         let outcome =
             delete_remote_folder_if_unchanged(graph, &item_id, &expected_etag, cancel_flag).await?;
-        if outcome == GraphDeleteOutcome::ChangedSinceRead {
-            return Ok(false);
+        match outcome {
+            GraphDeleteOutcome::Deleted | GraphDeleteOutcome::NotFound => {}
+            GraphDeleteOutcome::ChangedSinceRead => return Ok(false),
+            GraphDeleteOutcome::Locked => {
+                log::info!(
+                    "{} [cycle:{}] REMOTE_FOLDER_DELETE_FALLBACK path={} reason=locked",
+                    graph.account_prefix,
+                    graph.cycle_id,
+                    folder.path
+                );
+                return Ok(false);
+            }
         }
     }
     forget_folder_tree(&graph.profile_id, &folder.path)?;
@@ -238,6 +248,8 @@ pub(crate) enum ItemDeleteOutcome {
     ChangedSincePlan,
     /// Never uploaded, so there is nothing in OneDrive to delete.
     NotInCloud,
+    /// OneDrive holds a lock on it (open in an Office app, checked out).
+    Locked,
 }
 
 /// Deletes cloud items the plan deletes (OneDrive keeps them in its recycle
@@ -306,6 +318,7 @@ pub(crate) async fn delete_one_remote_item(
         match delete_remote_item(graph, item_id, Some(etag), cancel_flag).await? {
             GraphDeleteOutcome::Deleted => return Ok(ItemDeleteOutcome::Deleted),
             GraphDeleteOutcome::NotFound => return Ok(ItemDeleteOutcome::AlreadyGone),
+            GraphDeleteOutcome::Locked => return Ok(ItemDeleteOutcome::Locked),
             GraphDeleteOutcome::ChangedSinceRead => log::info!(
                 "{} [cycle:{}] REMOTE_DELETE_ETAG_REFUSED path={} action=compare_content",
                 graph.account_prefix,
@@ -331,8 +344,10 @@ pub(crate) async fn delete_one_remote_item(
     }
     Ok(
         match delete_remote_item(graph, item_id, None, cancel_flag).await? {
+            GraphDeleteOutcome::Deleted => ItemDeleteOutcome::Deleted,
             GraphDeleteOutcome::NotFound => ItemDeleteOutcome::AlreadyGone,
-            _ => ItemDeleteOutcome::Deleted,
+            GraphDeleteOutcome::Locked => ItemDeleteOutcome::Locked,
+            GraphDeleteOutcome::ChangedSinceRead => ItemDeleteOutcome::ChangedSincePlan,
         },
     )
 }
@@ -353,6 +368,16 @@ fn record_remote_delete(
             graph.cycle_id,
             row.path
         ),
+        ItemDeleteOutcome::Locked => {
+            hold_cloud_locked_item(&graph.profile_id, &row.path, current_unix_seconds())?;
+            log::warn!(
+                "{} [cycle:{}] REMOTE_DELETE_HELD path={} reason=locked retry_in_s={}",
+                graph.account_prefix,
+                graph.cycle_id,
+                row.path,
+                CLOUD_LOCKED_RETRY_DELAY.as_secs()
+            );
+        }
         ItemDeleteOutcome::AlreadyGone => {
             record_cloud_absent(&graph.profile_id, &row.path)?;
             forget_sync_file(&graph.profile_id, &row.path)?;

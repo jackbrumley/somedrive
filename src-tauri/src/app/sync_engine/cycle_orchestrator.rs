@@ -112,6 +112,14 @@ pub(crate) async fn tick_sync_cycle(
         "planning_actions",
         "Planning sync actions",
     );
+    for path in release_due_cloud_locked_items(profile_id, current_unix_seconds())? {
+        log::info!(
+            "{} [cycle:{}] CLOUD_LOCKED_RELEASED path={} action=retry",
+            account_prefix,
+            cycle_id,
+            path
+        );
+    }
     let counters = recompute_sync_file_actions(profile_id)?;
     log::info!(
         "{} [cycle:{}] SYNC_PLANNER_SUMMARY cloud={} local={} shared_excluded={} download={} upload={} delete_remote={} delete_local={} conflicts={}",

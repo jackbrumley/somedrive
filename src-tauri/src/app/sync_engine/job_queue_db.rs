@@ -181,10 +181,18 @@ pub(crate) const SYNC_SCHEMA_SQL: &str = "
         expires_at INTEGER NOT NULL,
         PRIMARY KEY(profile_id, path)
     );
+    -- Cloud items OneDrive refused to delete because they are locked, and
+    -- when to try again (sync_engine/locked_items_store.rs).
+    CREATE TABLE IF NOT EXISTS sync_cloud_locked (
+        profile_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        retry_at INTEGER NOT NULL,
+        PRIMARY KEY(profile_id, path)
+    );
 ";
 
 /// Tables of the pre-baseline engine, dropped when an old database is found.
-pub(crate) const LEGACY_SYNC_TABLES: [&str; 13] = [
+pub(crate) const LEGACY_SYNC_TABLES: [&str; 14] = [
     "sync_download_rate",
     "sync_local_watch",
     "sync_upload_sessions",
@@ -198,6 +206,7 @@ pub(crate) const LEGACY_SYNC_TABLES: [&str; 13] = [
     "sync_throttle_events",
     "sync_lifecycle_state",
     "sync_state_store",
+    "sync_cloud_locked",
 ];
 
 pub(crate) fn sync_jobs_db_path(profile_id: &str) -> Result<PathBuf, String> {

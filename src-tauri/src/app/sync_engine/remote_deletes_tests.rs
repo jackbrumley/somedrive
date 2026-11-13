@@ -1,6 +1,7 @@
 use super::*;
 
-// Planning whole-folder cloud deletes (remote_deletes.rs).
+// Planning whole-folder cloud deletes and holding locked items
+// (remote_deletes.rs, locked_items_store.rs).
 
 const SYNCED_DIR_DELETED_HERE: RowSpec = RowSpec {
     is_dir: true,
@@ -94,4 +95,42 @@ fn inside_means_strictly_below_a_folder() {
     assert!(!is_inside("Old", "Old"));
     assert!(!is_inside("Older.txt", "Old"));
     assert!(!is_inside("Old/", "Old"));
+}
+
+#[test]
+fn a_locked_cloud_file_is_held_then_tried_again_after_the_delay() {
+    let profile_id = test_profile_id("cloud-locked");
+    insert_row(&profile_id, "Book.xlsx", &deleted_here_file());
+    recompute_sync_file_actions(&profile_id).expect("plan");
+    assert_eq!(
+        action_for(&profile_id, "Book.xlsx"),
+        PLANNER_ACTION_DELETE_REMOTE
+    );
+
+    let locked_at = 1_000_000;
+    hold_cloud_locked_item(&profile_id, "Book.xlsx", locked_at).expect("hold");
+    recompute_sync_file_actions(&profile_id).expect("plan");
+    assert_eq!(action_for(&profile_id, "Book.xlsx"), PLANNER_ACTION_NONE);
+    let problems = list_file_problems(&profile_id).expect("problems");
+    assert_eq!(problems.len(), 1);
+    assert_eq!(problems[0].path, "Book.xlsx");
+    assert_eq!(problems[0].code, ISSUE_CLOUD_LOCKED);
+
+    let retry_at = locked_at + CLOUD_LOCKED_RETRY_DELAY.as_secs() as i64;
+    let early = release_due_cloud_locked_items(&profile_id, retry_at - 1).expect("early");
+    assert!(early.is_empty(), "held until the retry time");
+
+    let due = release_due_cloud_locked_items(&profile_id, retry_at).expect("due");
+    assert_eq!(due, vec!["Book.xlsx".to_string()]);
+    recompute_sync_file_actions(&profile_id).expect("plan");
+    assert_eq!(
+        action_for(&profile_id, "Book.xlsx"),
+        PLANNER_ACTION_DELETE_REMOTE
+    );
+    assert!(list_file_problems(&profile_id)
+        .expect("problems")
+        .is_empty());
+    assert!(release_due_cloud_locked_items(&profile_id, retry_at)
+        .expect("again")
+        .is_empty());
 }

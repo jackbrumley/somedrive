@@ -177,6 +177,9 @@ pub(crate) enum GraphDeleteOutcome {
     NotFound,
     /// The item no longer matched the `If-Match` eTag, so nothing was deleted.
     ChangedSinceRead,
+    /// OneDrive holds a lock on the item (423: open in an Office app, checked
+    /// out, or a folder holding such a file), so nothing was deleted.
+    Locked,
 }
 
 /// Deletes `url`. With `if_match`, OneDrive deletes only while the item's
@@ -272,6 +275,9 @@ pub(crate) async fn graph_delete(
         }
         if status.as_u16() == 412 && if_match.is_some() {
             return Ok(GraphDeleteOutcome::ChangedSinceRead);
+        }
+        if status == StatusCode::LOCKED {
+            return Ok(GraphDeleteOutcome::Locked);
         }
 
         let text = response.text().await.unwrap_or_default();
