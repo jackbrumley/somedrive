@@ -1,124 +1,74 @@
 <p align="center">
-  <img src="docs/logo.svg" alt="SomeDrive Logo" width="120" height="120" />
+  <img src="src-tauri/icons/128x128.png" alt="" width="96" height="96" />
 </p>
 
-<h1 align="center">SomeDrive - Linux-First Desktop Client for Microsoft OneDrive</h1>
+<h1 align="center">SomeDrive</h1>
 
-<p align="center">Simple GUI-first Microsoft OneDrive sync for Linux.</p>
+<p align="center">A Linux-first desktop client for Microsoft OneDrive.<br />Sign in, pick a folder and sync, with clear status for every account and no command line needed.</p>
 
 <p align="center">
-  <a href="https://www.gnu.org/licenses/agpl-3.0.html"><img src="https://img.shields.io/badge/License-AGPLv3-blue.svg" alt="AGPL v3 License" /></a>
-  <a href="https://github.com/jackbrumley/somedrive"><img src="https://img.shields.io/badge/Platform-Linux-16a34a" alt="Platform" /></a>
-  <a href="https://tauri.app/"><img src="https://img.shields.io/badge/Built%20With-Tauri-14b8a6" alt="Built with Tauri" /></a>
+  <a href="https://github.com/jackbrumley/somedrive/releases/latest"><img src="https://img.shields.io/github/v/release/jackbrumley/somedrive?label=release&color=1677d2" alt="Latest release" /></a>
+  <img src="https://img.shields.io/badge/platform-Linux-1677d2" alt="Linux" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-1677d2" alt="AGPL-3.0" /></a>
 </p>
 
 <p align="center">
-  <a href="https://somedrive.org"><img src="https://img.shields.io/badge/Install-SomeDrive-1d4ed8?style=for-the-badge" alt="Install SomeDrive" /></a>
+  <a href="https://somedrive.org">Website</a> ·
+  <a href="https://github.com/jackbrumley/somedrive/releases/latest">Downloads</a> ·
+  <a href="https://github.com/jackbrumley/somedrive/issues">Report an issue</a>
 </p>
-
-SomeDrive is a Linux-first Microsoft OneDrive desktop client with account-first controls, in-app sign-in, per-account pause/resume, and detailed sync diagnostics.
-
-It exists because most Linux OneDrive tools are still command-line-heavy or awkward to install across different distributions. I wanted a straightforward desktop experience similar to what people expect on Windows: download it, install it, sign in, and sync.
 
 ## Install
 
-Open a terminal and run:
+**Linux** (installs the `.deb` on Debian, Ubuntu and Mint, or the `.rpm` on Fedora, and asks for your password)
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://somedrive.org/install.sh | bash
 ```
 
-This installs the `.deb` (Debian, Ubuntu, Mint) or `.rpm` (Fedora) and asks for your password. For a user-only AppImage install on any distro, use `curl --proto '=https' --tlsv1.2 -sSf https://somedrive.org/install.sh | bash -s -- --appimage`. To remove SomeDrive: `curl --proto '=https' --tlsv1.2 -sSf https://somedrive.org/uninstall.sh | bash`.
+**Linux AppImage** (any distro, installs to `~/.local/bin`, no password needed)
 
-SomeDrive updates itself from **Settings → Check for Updates**. Packages are also on the [releases page](https://github.com/jackbrumley/somedrive/releases/latest).
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://somedrive.org/install.sh | bash -s -- --appimage
+```
 
-## Getting Started
+**Uninstall**
 
-1. **Launch SomeDrive**
-   - Open the app and start from the accounts home screen.
-2. **Add your account**
-   - Click **Add Account**, choose personal or business, and complete Microsoft sign-in.
-3. **Confirm your sync root**
-   - Default per-account sync root is `~/SomeDrive/<profile-slug>/`.
-4. **Start syncing**
-   - Use per-account sync control to start/pause/resume as needed.
-5. **Check activity and logs**
-   - Open account activity and session logs for detailed sync diagnostics.
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://somedrive.org/uninstall.sh | bash
+```
 
-## Features
+Prefer a package? The [latest release](https://github.com/jackbrumley/somedrive/releases/latest) has `.deb`, `.rpm` and `.AppImage` files. SomeDrive updates itself from **Settings → Check for Updates**.
 
-- **Multi-Account by Design** - Manage personal, business, and additional accounts in one app.
-- **In-App Microsoft Sign-In** - Interactive authentication flow without manual token handling.
-- **Per-Account Sync Control** - Start, pause, and resume each account independently.
-- **Persistent Sync State** - Per-account state and sync metadata stored under `~/.config/somedrive/`.
-- **Detailed Diagnostics** - Session logs include cycle-level and file-level sync activity with account prefixes.
-- **Clean Desktop UI** - Account-first navigation with clear status, activity, and settings pages.
+## What it does
 
-## Why This Project Exists
+SomeDrive syncs Microsoft OneDrive folders to your Linux computer. Microsoft doesn't make a OneDrive app for Linux, so SomeDrive fills the gap with a simple desktop app: sign in, pick a folder, and see clearly what's synced for every account.
 
-I still use Windows for work and wanted that same level of simplicity on Linux for OneDrive: no setup maze, no command memorization, no terminal dependency.
+- Two-way OneDrive sync for personal and business accounts, side by side
+- Sign in to Microsoft inside the app, no tokens or config files
+- Pause and resume each account, with live activity and detailed logs
+- Updates itself in place, and finishes in-flight transfers before it restarts
 
-SomeDrive is built to do what it says on the tin:
+Each account syncs to `~/SomeDrive/<profile-slug>/` by default. SomeDrive is in active development, so its interface and stored data may still change. It is not affiliated with Microsoft.
 
-- install quickly,
-- connect your account in-app,
-- sync files reliably,
-- and show clear status in a GUI so you always know what is happening.
+## Build from source
 
----
+```bash
+npm install
+npm run tauri:dev                 # run in development
+npm run release:linux             # build release packages (needs podman)
+node scripts/package-release.mjs  # collect them into release-artifacts/
+```
 
-## The Philosophy
-
-SomeDrive is built around a simple idea: sync software should feel clear, predictable, and user-controlled.
-
-- **No Terminal Required** - Everyday account, auth, and sync workflows are in-app.
-- **Clarity First** - Logs and status are explicit so issues are debuggable without guesswork.
-- **Account Ownership** - Each account has independent sync state and controls.
-- **Linux-First Delivery** - Prioritize Linux packaging and behavior while keeping architecture portable.
-
-## Screenshots
-
-_Work in progress._
-
----
-
-## How to Build It Yourself
-
-1. **Open terminal in the project folder**
-2. **Install dependencies**
-   - Run: `npm install`
-3. **Run development build**
-   - Run: `npm run tauri:dev`
-4. **Build release packages** (needs `podman`)
-   - Run: `npm run release:linux`, then `node scripts/package-release.mjs`
-5. **Find output artifacts**
-   - `release-artifacts/` (see `docs/RELEASE.md`)
-
-## Known Issues
-
-- Microsoft app registration/auth configuration may need project-owned tenant/app settings for all target account types.
-- Project is in active development, so UX and storage schema may continue to evolve quickly.
-
----
-
-## Technology
-
-- **Tauri** - Desktop framework.
-- **Rust** - Backend sync/auth/runtime engine.
-- **Preact + TypeScript** - Frontend UI and typed runtime state.
-- **Vite + npm** - Frontend tooling and scripts.
-- **Microsoft Graph** - OneDrive API integration.
-
----
+Release packages land in `release-artifacts/`; [docs/RELEASE.md](docs/RELEASE.md) has the full procedure. Contributor notes are in [AGENTS.md](AGENTS.md).
 
 ## License
 
-This project is licensed under the GNU Affero General Public License v3.0 (AGPLv3). See the [LICENSE](LICENSE) file for details.
+[GNU AGPLv3](LICENSE). Use it, learn from it and build on it freely; if you improve it, share the changes back.
 
 ---
 
-<div align="center">
-
-[Report Bug](https://github.com/jackbrumley/somedrive/issues) • [Request Feature](https://github.com/jackbrumley/somedrive/issues)
-
-</div>
+<p align="center">
+  SomeDrive is one of the free apps by <a href="https://brumley.info">Jack Brumley</a>:<br />
+  <a href="https://voquill.org">Voquill</a> · <a href="https://brumley.info/rusty-g6/">Rusty G6</a> · <b>SomeDrive</b> · <a href="https://yambuck.com/">Yambuck</a> · <a href="https://brumley.info/rawtap/">RawTap</a> · <a href="https://bmuster.com/">BMuster</a>
+</p>
